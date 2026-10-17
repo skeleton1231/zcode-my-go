@@ -63,3 +63,19 @@ settings file).
 ## License
 
 MIT © 2026 skeleton1231
+
+## v0.4.0 highlights
+
+- Workspace checkpoints & file rewind (git temp-index snapshots; edit-
+  resend / retry / rewind restore transcript and files).
+- Diffs everywhere: colored unified diffs on edit/write/patch tool
+  blocks, approval-time previews (trial-computed, nothing written).
+- Multimodal input: image attachments (three wire dialects) and
+  @path mentions expanded at the service layer across all surfaces.
+- Scheduled automation: `zgo cron` + desktop jobs panel, hot-reloaded
+  jobs.json, overlap-safe minute scheduler.
+- Terminal panel (workspace shell, Ghostty vt core) and file tree with
+  read-only preview — local and SSH workspaces alike.
+- Browser target: `mygo build -platform web` + in-memory FS shim with
+  IndexedDB persistence — the whole agent in a page, reload-safe.
+- Session sharing = self-contained HTML/Markdown export.
