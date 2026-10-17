@@ -362,6 +362,12 @@ func TestUsageTotalAccumulatesAndPersists(t *testing.T) {
 	if got := again.UsageTotal(); got.InputTokens != 150 || got.OutputTokens != 30 {
 		t.Fatalf("reloaded total = %+v", got)
 	}
+	// 同步落账后连续累计单调不减（issue #47：裸 goroutine 乱序写盘会让
+	// 磁盘末条回退到较小值）。
+	again.addUsage(ai.Usage{InputTokens: 10, OutputTokens: 5})
+	if got := again.UsageTotal(); got.InputTokens != 160 || got.OutputTokens != 35 {
+		t.Fatalf("after third run = %+v", got)
+	}
 }
 
 func TestRenamePersists(t *testing.T) {

@@ -167,8 +167,11 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 	}, func(ev Event) {
 		ev.SessionID = id
 		if ev.Kind == EvAgentEnd && ev.Usage != (ai.Usage{}) {
-			// agent_end 携带本次运行的累计值：落账。
-			go s.addUsage(ev.Usage)
+			// agent_end 携带本次运行的累计值：落账。必须同步（issue #47）：
+			// 裸 goroutine 在 Chat 返回后进程即退时丢失本轮记录，连续
+			// 运行还可能乱序写盘让累计值回退。emit 本就在 loop 的
+			// goroutine 上，addUsage 只是一次加锁 append，无需再包一层。
+			s.addUsage(ev.Usage)
 		}
 		emit(ev)
 	})
