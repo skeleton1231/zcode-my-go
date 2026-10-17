@@ -28,7 +28,8 @@ func fenceFor(content string) string {
 // Markdown renders a session transcript as Markdown (the HTML export's
 // sibling): plain text in, plain text out — nothing to escape, fences
 // preserved verbatim, ready to paste into PRs and docs.
-func Markdown(messages []ai.Message, title, model, workspace string) string {	var b strings.Builder
+func Markdown(messages []ai.Message, title, model, workspace string) string {
+	var b strings.Builder
 	head := strings.TrimSpace(title)
 	if head == "" {
 		head = "会话导出"

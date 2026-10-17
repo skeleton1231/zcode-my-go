@@ -77,6 +77,10 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if b.ws.IsRemote() {
+		return b.execRemote(ctx, a.Command)
+	}
+
 	cmd, err := b.command(ctx, a.Command)
 	if err != nil {
 		return errResult("%v", err)
@@ -191,4 +195,25 @@ type jobWriter struct{ job *Job }
 func (w jobWriter) Write(p []byte) (int, error) {
 	w.job.append(p)
 	return len(p), nil
+}
+
+// execRemote runs the command on the SSH workspace (the test bed serves
+// the same shell semantics as a real host's default shell).
+func (b *Bash) execRemote(ctx context.Context, command string) agent.ToolResult {
+	type execResult interface {
+		Exec(cmd string) (ExecOutcome, error)
+	}
+	res, err := b.ws.Remote.Exec(command)
+	if err != nil {
+		if ctx.Err() != nil {
+			return agent.ToolResult{IsError: true, Content: "canceled"}
+		}
+		return errResult("running remote command: %v", err)
+	}
+	if res.ExitCode != 0 {
+		return agent.ToolResult{IsError: true,
+			Content: fmt.Sprintf("exit status %d\n%s", res.ExitCode,
+				truncateBytes([]byte(res.Output), bashHeadTail, bashHeadTail))}
+	}
+	return agent.ToolResult{Content: truncateBytes([]byte(res.Output), bashHeadTail, bashHeadTail)}
 }

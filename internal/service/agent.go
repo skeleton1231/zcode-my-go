@@ -67,6 +67,8 @@ type AgentService struct {
 	mcp      []*mcp.Server            // launched MCP servers
 	memories map[string]*tools.Memory // workspace-scoped long-term memory
 	memRoot  string
+	wsCache  map[string]tools.Workspace // sessionID → (possibly remote) workspace
+	wsClose  map[string]func()          // sessionID → dial cleanup
 	askMu    sync.Mutex // asker 单槽串行化（issue #79）
 }
 
@@ -77,6 +79,8 @@ func New(dataDir string) (*AgentService, error) {
 		states:   map[string]*tools.States{},
 		memories: map[string]*tools.Memory{},
 		memRoot:  filepath.Join(dataDir, "memory"),
+		wsCache:  map[string]tools.Workspace{},
+		wsClose:  map[string]func(){},
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -177,6 +181,10 @@ func (s *AgentService) Close() {
 	for _, state := range s.states {
 		state.Jobs.KillAll()
 	}
+	for _, close := range s.wsClose {
+		close()
+	}
+	s.wsClose = map[string]func(){}
 }
 
 // rewire installs the current settings into the manager. Callers hold s.mu.
@@ -208,7 +216,8 @@ func (s *AgentService) rewire() {
 					Tools:    tools.ReadOnly(workspace),
 				}, prompt)
 			})
-			all := append(tools.All(workspace, state, question), task,
+			ws := s.workspaceFor(sessionID, workspace)
+			all := append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)))
 			wfProvider := func() ai.Provider { return providerFor(cfg, s.persistOAuth) }
 			wfModel := cfg.Model
@@ -220,7 +229,7 @@ func (s *AgentService) rewire() {
 					Model:       wfModel,
 					System:      prompt.System(workspace),
 					ReadOnly:    tools.ReadOnly(workspace),
-					Editable:    tools.All(workspace, state, question),
+					Editable:    tools.AllW(ws, state, question),
 					Permissions: wfPerms,
 					Ask:         wfAsk,
 				}, steps)
@@ -519,6 +528,11 @@ func (s *AgentService) DeleteSession(id string) error {
 		state.Jobs.KillAll()
 		delete(s.states, id)
 	}
+	if close, ok := s.wsClose[id]; ok {
+		close()
+		delete(s.wsClose, id)
+	}
+	delete(s.wsCache, id)
 	s.mu.Unlock()
 	return s.mgr.Delete(id)
 }
@@ -607,6 +621,30 @@ func loadProjectRules(workspace string) permission.Ruleset {
 		return permission.Ruleset{}
 	}
 	return rules
+}
+
+// workspaceFor returns (dialing once) the session's workspace: local, or
+// an SSH workspace when the target is ssh://.
+func (s *AgentService) workspaceFor(sessionID, workspace string) tools.Workspace {
+	s.mu.Lock()
+	if ws, ok := s.wsCache[sessionID]; ok {
+		s.mu.Unlock()
+		return ws
+	}
+	s.mu.Unlock()
+	ws, cleanup, err := s.openWorkspace(workspace)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		// 拨号失败退化为本地路径工作区：会话仍可用，远程工具报错自纠。
+		s.wsCache[sessionID] = tools.Workspace{Root: workspace}
+		return tools.Workspace{Root: workspace}
+	}
+	if cleanup != nil {
+		s.wsClose[sessionID] = cleanup
+	}
+	s.wsCache[sessionID] = ws
+	return ws
 }
 
 // mcpServers snapshots the launched servers. Callers hold s.mu.

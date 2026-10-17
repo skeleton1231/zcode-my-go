@@ -1,4 +1,6 @@
-package remote
+// Package remotetest is an in-process SSH+SFTP test server,
+// shared by the remote client's tests and any tool wired over it.
+package remotetest
 
 // An in-process SSH test server: a real x/crypto/ssh server on a
 // loopback socket, serving "exec" sessions through the local shell and
@@ -17,19 +19,19 @@ import (
 	"testing"
 
 	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
+	ssh "golang.org/x/crypto/ssh"
 )
 
 // testServer is one running in-process SSH server.
-type testServer struct {
+type Server struct {
 	listener net.Listener
-	address  string
-	keyPEM   string // client private key (PEM) for Config.Key
-	root     string // workspace root on disk
+	Address  string
+	KeyPEM   string // client private key (PEM) for remote.Config.Key
+	Root     string // workspace root on disk
 }
 
-// startTestServer boots the server on an ephemeral loopback port.
-func startTestServer(t *testing.T) *testServer {
+// Start boots the server on an ephemeral loopback port.
+func Start(t *testing.T) *Server {
 	t.Helper()
 	root := t.TempDir()
 
@@ -69,7 +71,7 @@ func startTestServer(t *testing.T) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &testServer{listener: ln, address: ln.Addr().String(), keyPEM: clientPEM, root: root}
+	srv := &Server{listener: ln, Address: ln.Addr().String(), KeyPEM: clientPEM, Root: root}
 	go func() {
 		for {
 			conn, err := ln.Accept()

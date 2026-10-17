@@ -327,7 +327,7 @@ func (l *Loop) executeBatchParallel(ctx context.Context, turn int, msg ai.Messag
 // 无键的工具各自成组；PathGroupable 工具解析不出路径的保守归入
 // 串行组（与任何同批调用都不并行）。
 func (l *Loop) pathGroups(calls []ai.Block) [][]int {
-	var serial []int          // 保守串行组（解析失败的 RMW 调用）
+	var serial []int // 保守串行组（解析失败的 RMW 调用）
 	byPath := map[string][]int{}
 	singles := [][]int{}
 	for i, call := range calls {

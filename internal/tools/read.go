@@ -52,6 +52,9 @@ func (r *Read) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	if err != nil {
 		return errResult("%v", err)
 	}
+	if r.ws.IsRemote() {
+		return r.readRemote(a, abs)
+	}
 
 	f, err := os.Open(abs)
 	if err != nil {
@@ -123,4 +126,66 @@ func (r *Read) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 // Capability implements agent.Capabler: reading is safe to auto-allow.
 func (r *Read) Capability() permission.Capability {
 	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
+}
+
+// readRemote serves the read tool over the SSH workspace.
+func (r *Read) readRemote(a struct {
+	Path   string `json:"path"`
+	Offset int    `json:"offset"`
+	Limit  int    `json:"limit"`
+}, abs string) agent.ToolResult {
+	data, err := r.ws.Remote.ReadFile(remoteRel(r.ws, abs))
+	if err != nil {
+		return errResult("cannot read %s: %v", a.Path, err)
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return errResult("%s looks like a binary file", a.Path)
+	}
+	offset := a.Offset
+	if offset < 1 {
+		offset = 1
+	}
+	limit := a.Limit
+	if limit <= 0 {
+		limit = defaultReadLines
+	}
+	var b strings.Builder
+	shown := 0
+	hitLineCap, hitByteCap := false, false
+	for i, line := range strings.Split(string(data), "\n") {
+		n := i + 1
+		if n < offset {
+			continue
+		}
+		if shown >= limit {
+			hitLineCap = true
+			continue
+		}
+		if b.Len() >= readCapBytes {
+			hitByteCap = true
+			continue
+		}
+		fmt.Fprintf(&b, "%6d\t%s\n", n, line)
+		shown++
+	}
+	out := b.String()
+	if out == "" && len(data) == 0 {
+		return okResult("(empty file)")
+	}
+	switch {
+	case hitByteCap:
+		out += fmt.Sprintf("… output truncated at %d bytes; narrow with offset/limit …\n", readCapBytes)
+	case hitLineCap:
+		out += "… more lines; continue with a larger limit …\n"
+	}
+	return agent.ToolResult{Content: out}
+}
+
+// remoteRel strips the workspace root from a resolved absolute path for
+// the remote API (which resolves names against its own root).
+func remoteRel(ws Workspace, abs string) string {
+	root := strings.ReplaceAll(ws.Root, "\\", "/")
+	p := strings.ReplaceAll(abs, "\\", "/")
+	rel := strings.TrimPrefix(p, root)
+	return strings.TrimPrefix(rel, "/")
 }
