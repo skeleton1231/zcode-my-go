@@ -123,6 +123,18 @@ func (p *Patch) Capability() permission.Capability {
 	return permission.Capability{Risk: permission.RiskMedium}
 }
 
+// PathKey implements agent.PathGroupable: patch 是读-改-写语义，同路径
+// 的并行调用必须顺序执行（issue #78）。
+func (p *Patch) PathKey(args string) (string, bool) {
+	var a struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal([]byte(args), &a) != nil {
+		return "", false
+	}
+	return a.Path, true
+}
+
 // --- patch parsing and application ----------------------------------------
 
 // Patch kinds.

@@ -34,6 +34,14 @@ type SerialOnly interface {
 	SerialOnly() bool
 }
 
+// PathGroupable marks read-modify-write tools whose calls conflict on the
+// same path (write/edit/patch)：并行批次把同路径调用划入同组顺序执行
+// （issue #78：并行 RMW 竞态丢改动），不同路径保持并行。PathKey 解析
+// 失败时由批次调度保守串行。
+type PathGroupable interface {
+	PathKey(args string) (string, bool)
+}
+
 // Capabler lets a tool declare its permission posture (ZCode's
 // PermissionToolCapability): read-only tools skip approval, alwaysAsk tools
 // confirm every call. Undeclared tools get the default (ask when the
