@@ -19,10 +19,18 @@ modules:
     roots: [internal/tools]
     managed: true
     requires: [agent] # 仅 agent.Tool / agent.ToolResult 接口
+  - id: permission
+    roots: [internal/agent/permission]
+    managed: true
+    requires: []
+  - id: compact
+    roots: [internal/agent/compact]
+    managed: true
+    requires: [ai]
   - id: agent
     roots: [internal/agent]
     managed: true
-    requires: [ai]
+    requires: [ai, permission, compact]
   - id: service
     roots: [internal/service]
     managed: true
@@ -35,3 +43,7 @@ modules:
     roots: [main.go]
     managed: true
     requires: [service, uiapp]
+  - id: cli
+    roots: [cmd/zgo]
+    managed: true
+    requires: [service, agent]

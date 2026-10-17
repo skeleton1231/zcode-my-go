@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -19,8 +20,22 @@ const (
 	defaultReadLines = 2000
 )
 
-// All returns the built-in tools bound to a workspace.
-func All(workspace string) []agent.Tool {
+// States holds the session-scoped tool state (the todo plan), keyed by
+// session; All receives the owning session's slice.
+type States struct {
+	Todo *TodoState
+}
+
+// NewStates builds empty per-session state.
+func NewStates() *States { return &States{Todo: &TodoState{}} }
+
+// All returns the built-in tools bound to a workspace. state may be nil —
+// the todo tool then starts empty every turn — and ask may be nil, which
+// makes the ask tool report no user channel.
+func All(workspace string, state *States, ask func(ctx context.Context, q agent.Question) (string, error)) []agent.Tool {
+	if state == nil {
+		state = NewStates()
+	}
 	w := Workspace{Root: workspace}
 	return []agent.Tool{
 		NewRead(w),
@@ -30,6 +45,8 @@ func All(workspace string) []agent.Tool {
 		NewGrep(w),
 		NewGlob(w),
 		NewLs(w),
+		NewTodo(state.Todo),
+		NewAsk(ask),
 	}
 }
 

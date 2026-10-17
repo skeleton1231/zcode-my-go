@@ -14,6 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 )
 
@@ -39,18 +41,21 @@ type SessionInfo struct {
 // The transcript's only writer is Append (the loop appends through it);
 // nothing rewrites history.
 type Session struct {
-	mu        sync.Mutex
-	info      SessionInfo
-	messages  []ai.Message
-	path      string
-	metaTitle string // title as last written to disk
-	cancel    context.CancelFunc
+	mu              sync.Mutex
+	info            SessionInfo
+	messages        []ai.Message
+	path            string
+	metaTitle       string // title as last written to disk
+	cancel          context.CancelFunc
+	permissions     *permission.Service // session-scoped rules die with it
+	compactFailures int
 
 	// wiring, installed by the manager
 	provider   func() ai.Provider
 	model      func() string
-	buildTools func(workspace string) []Tool
+	buildTools func(workspace, sessionID string) []Tool
 	system     func(workspace string) string
+	ask        func(AskRequest) AskResponse
 }
 
 // Info returns the session's projection.
@@ -77,7 +82,7 @@ func (s *Session) Append(m ai.Message) error {
 	s.messages = append(s.messages, m)
 	s.info.UpdatedAt = time.Now()
 	if s.info.Title == "" && m.Role == ai.RoleUser {
-		s.info.Title = summarize(m.Text())
+		s.info.Title = titleFrom(m.Text())
 	}
 	if err := s.writeLine(m); err != nil {
 		return fmt.Errorf("persisting message: %w", err)
@@ -118,19 +123,24 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 		cancel()
 	}()
 
+	s.autoCompact(ctx, func(ev Event) { ev.SessionID = id; emit(ev) })
+
 	if err := s.Append(ai.Message{Role: ai.RoleUser,
 		Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}}); err != nil {
 		return err
 	}
 
 	loop := NewLoop(LoopConfig{
-		Provider:  s.provider(),
-		Model:     s.model(),
-		System:    s.system(workspace),
-		Tools:     s.buildTools(workspace),
-		MaxTokens: 16384,
-		MaxTurns:  DefaultMaxTurns,
-		History:   s.Messages,
+		Provider:    s.provider(),
+		Model:       s.model(),
+		System:      s.system(workspace),
+		Tools:       s.buildTools(workspace, id),
+		MaxTokens:   16384,
+		MaxTurns:    DefaultMaxTurns,
+		History:     s.Messages,
+		SessionID:   id,
+		Permissions: s.permissions,
+		Ask:         s.ask,
 	}, func(ev Event) {
 		ev.SessionID = id
 		emit(ev)
@@ -149,7 +159,7 @@ func (s *Session) Abort() {
 }
 
 // summarize makes a session title from the first user message.
-func summarize(text string) string {
+func titleFrom(text string) string {
 	text = strings.Join(strings.Fields(text), " ")
 	if utf8.RuneCountInString(text) > 40 {
 		return string([]rune(text)[:39]) + "…"
@@ -251,6 +261,16 @@ func loadSession(path string) (*Session, error) {
 			if json.Unmarshal([]byte(line), &rec) == nil {
 				s.messages = append(s.messages, rec.Message)
 			}
+		case "compaction":
+			var rec compactionRecord
+			if json.Unmarshal([]byte(line), &rec) == nil && rec.Summary != "" {
+				kept := rec.Kept
+				if kept > len(s.messages) {
+					kept = len(s.messages)
+				}
+				tail := append([]ai.Message(nil), s.messages[len(s.messages)-kept:]...)
+				s.messages = append([]ai.Message{compact.SummaryMessage(rec.Summary)}, tail...)
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -264,7 +284,7 @@ func loadSession(path string) (*Session, error) {
 	if s.info.Title == "" {
 		for _, m := range s.messages {
 			if m.Role == ai.RoleUser {
-				s.info.Title = summarize(m.Text())
+				s.info.Title = titleFrom(m.Text())
 				break
 			}
 		}
@@ -282,10 +302,23 @@ type Manager struct {
 	sessions map[string]*Session
 
 	// wiring, installed by the service layer before first use
-	provider   func() ai.Provider
-	model      func() string
-	buildTools func(workspace string) []Tool
-	system     func(workspace string) string
+	wiring Wiring
+}
+
+// Wiring carries the loop dependencies the service layer installs.
+type Wiring struct {
+	Provider func() ai.Provider
+	Model    func() string
+	// Tools builds a session's tool set; sessionID lets stateful tools
+	// (todo) keep their state across turns.
+	Tools  func(workspace, sessionID string) []Tool
+	System func(workspace string) string
+	// Ask resolves permission asks with the user; nil denials stay safe.
+	Ask func(AskRequest) AskResponse
+	// Question delivers the ask tool's questions to the user.
+	Question func(ctx context.Context, q Question) (string, error)
+	// ProjectRules seeds every session's permission service.
+	ProjectRules permission.Ruleset
 }
 
 // NewManager loads the sessions of dir, creating it when missing.
@@ -313,11 +346,10 @@ func NewManager(dir string) (*Manager, error) {
 
 // Wire installs the loop dependencies on every session, existing and new.
 // It must be called once, before the first Chat.
-func (m *Manager) Wire(provider func() ai.Provider, model func() string,
-	tools func(workspace string) []Tool, system func(workspace string) string) {
+func (m *Manager) Wire(w Wiring) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.provider, m.model, m.buildTools, m.system = provider, model, tools, system
+	m.wiring = w
 	for _, s := range m.sessions {
 		m.wire(s)
 	}
@@ -325,24 +357,28 @@ func (m *Manager) Wire(provider func() ai.Provider, model func() string,
 
 func (m *Manager) wire(s *Session) {
 	s.provider = func() ai.Provider {
-		if m.provider == nil {
+		if m.wiring.Provider == nil {
 			return failProvider{msg: "no provider configured"}
 		}
-		return m.provider()
+		return m.wiring.Provider()
 	}
 	s.model = func() string {
-		if m.model == nil {
+		if m.wiring.Model == nil {
 			return ""
 		}
-		return m.model()
+		return m.wiring.Model()
 	}
-	s.buildTools = m.buildTools
+	s.buildTools = m.wiring.Tools
 	if s.buildTools == nil {
-		s.buildTools = func(string) []Tool { return nil }
+		s.buildTools = func(string, string) []Tool { return nil }
 	}
-	s.system = m.system
+	s.system = m.wiring.System
 	if s.system == nil {
 		s.system = func(string) string { return "" }
+	}
+	s.ask = m.wiring.Ask
+	if s.permissions == nil {
+		s.permissions = permission.New(m.wiring.ProjectRules)
 	}
 }
 

@@ -1,0 +1,154 @@
+// Package compact is the context compaction system, translated from
+// ZCode's core/src/compact (policy.ts, manual.ts, prompt.ts): a token
+// budget with an output reserve and buffer, a decision function with a
+// circuit breaker, and the summary prompt that replaces old history.
+package compact
+
+import (
+	"strings"
+
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
+)
+
+// Policy constants from ZCode's compact/policy.ts. The provider's context
+// window is shared by input and output, so auto-compact can only spend the
+// input side: the threshold's denominator subtracts the output reserve
+// before the buffer.
+const (
+	DefaultContextWindow         = 200_000
+	PreflightOutputReserveTokens = 21_000
+	BufferTokens                 = 13_000
+	DefaultThresholdPercent      = 100
+	MaxConsecutiveFailures       = 3
+	DefaultKeepTail              = 6 // messages kept verbatim after a compaction
+)
+
+// Policy configures auto-compaction.
+type Policy struct {
+	Enabled                bool
+	ContextWindow          int
+	OutputReserveTokens    int
+	BufferTokens           int
+	ThresholdPercent       int
+	MaxConsecutiveFailures int
+}
+
+// DefaultPolicy is ZCode's default wiring.
+func DefaultPolicy() Policy {
+	return Policy{
+		Enabled:                true,
+		ContextWindow:          DefaultContextWindow,
+		OutputReserveTokens:    PreflightOutputReserveTokens,
+		BufferTokens:           BufferTokens,
+		ThresholdPercent:       DefaultThresholdPercent,
+		MaxConsecutiveFailures: MaxConsecutiveFailures,
+	}
+}
+
+// Threshold is the token count at which compaction triggers.
+func (p Policy) Threshold() int {
+	window := p.ContextWindow
+	if window <= 0 {
+		window = DefaultContextWindow
+	}
+	reserve := p.OutputReserveTokens
+	if reserve <= 0 || reserve > PreflightOutputReserveTokens {
+		reserve = PreflightOutputReserveTokens
+	}
+	buffer := p.BufferTokens
+	if buffer <= 0 {
+		buffer = BufferTokens
+	}
+	pct := p.ThresholdPercent
+	if pct <= 0 {
+		pct = DefaultThresholdPercent
+	}
+	effective := window - reserve - buffer
+	if effective < 0 {
+		effective = 0
+	}
+	return effective * pct / 100
+}
+
+// Reason a decision came to, from ZCode's AutoCompactDecision.reason.
+type Reason string
+
+// Decision reasons.
+const (
+	ReasonDisabled       Reason = "disabled"
+	ReasonNotEnough      Reason = "not_enough_messages"
+	ReasonCircuitBreaker Reason = "circuit_breaker"
+	ReasonBelowThreshold Reason = "below_threshold"
+	ReasonAboveThreshold Reason = "above_threshold"
+)
+
+// Decision is whether to compact now.
+type Decision struct {
+	ShouldCompact bool
+	TokenEstimate int
+	Threshold     int
+	Reason        Reason
+}
+
+// Decide applies the policy to the current state.
+func Decide(p Policy, tokenEstimate, messageCount, consecutiveFailures int) Decision {
+	threshold := p.Threshold()
+	switch {
+	case !p.Enabled:
+		return Decision{Reason: ReasonDisabled, Threshold: threshold}
+	case messageCount < 2:
+		return Decision{Reason: ReasonNotEnough, Threshold: threshold}
+	case consecutiveFailures >= maxFailures(p):
+		return Decision{Reason: ReasonCircuitBreaker, Threshold: threshold}
+	case tokenEstimate >= threshold:
+		return Decision{ShouldCompact: true, TokenEstimate: tokenEstimate,
+			Threshold: threshold, Reason: ReasonAboveThreshold}
+	default:
+		return Decision{TokenEstimate: tokenEstimate,
+			Threshold: threshold, Reason: ReasonBelowThreshold}
+	}
+}
+
+func maxFailures(p Policy) int {
+	if p.MaxConsecutiveFailures > 0 {
+		return p.MaxConsecutiveFailures
+	}
+	return MaxConsecutiveFailures
+}
+
+// EstimateTokens sizes a transcript. ZCode estimates from message content;
+// this uses runes over a 2.5 rune-per-token ratio (conservative for both
+// English and Chinese) plus per-message overhead.
+func EstimateTokens(messages []ai.Message) int {
+	tokens := 0
+	for _, m := range messages {
+		for _, b := range m.Blocks {
+			tokens += len([]rune(b.Text)) * 10 / 25
+			tokens += len([]rune(b.Arguments)) * 10 / 25
+		}
+		tokens += 16 // role and framing overhead
+	}
+	return tokens
+}
+
+// SummaryUserPrompt asks the model for the structured summary that
+// replaces old history (ZCode's compact prompt: goals, decisions, state,
+// next steps — with tool results compressed to their conclusions).
+func SummaryUserPrompt() string {
+	return "请把以上对话压缩成一份结构化摘要，供继续同一任务使用。用第二人称保留可执行的状态，包含以下小节：\n" +
+		"1. 任务目标：用户要什么（原话要点）\n" +
+		"2. 已完成：做过什么、改过哪些文件（路径 + 一句话）\n" +
+		"3. 关键决策与约束：用户确认过的偏好、路径、技术选型\n" +
+		"4. 当前状态：进行到哪一步、正在等什么\n" +
+		"5. 下一步：接下来该做的具体动作\n" +
+		"工具调用的细节压缩成结论（成功/失败与关键输出），不要复述完整输出。直接输出摘要正文。"
+}
+
+// SummaryMessage wraps a summary as the user message that re-opens the
+// context after compaction.
+func SummaryMessage(summary string) ai.Message {
+	return ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{
+		Kind: ai.BlockText,
+		Text: "（会话已压缩；以下是此前对话的摘要）\n\n" + strings.TrimSpace(summary),
+	}}}
+}

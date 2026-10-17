@@ -23,6 +23,8 @@ func (a *App) View(c *ui.Context) {
 		})
 	})
 
+	a.askModal(c, t)
+	a.questionModal(c, t)
 	a.settingsModal(c, t)
 }
 
@@ -127,6 +129,10 @@ func (a *App) itemView(c *ui.Context, t *ui.Theme, item *chatItem) {
 
 	case itemTool:
 		a.toolView(c, t, item)
+
+	case itemNotice:
+		ui.Text(c, item.text).TextColor(t.TextMuted).FontSize(12).
+			Padding(4, 10).Radius(8).Background(t.Surface).Margin(ui.Auto)
 	}
 }
 

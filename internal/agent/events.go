@@ -20,6 +20,7 @@ const (
 	EvToolExecutionEnd   EventKind = "tool_execution_end"
 	EvTurnEnd            EventKind = "turn_end"
 	EvAgentEnd           EventKind = "agent_end"
+	EvCompaction         EventKind = "compaction"
 )
 
 // Event is one streamed agent event, JSON-friendly for the mygo channel.
@@ -40,5 +41,6 @@ type Event struct {
 	IsError       bool     `json:"isError,omitempty"`       // EvToolExecutionEnd
 	ResultContent string   `json:"resultContent,omitempty"` // EvToolExecutionEnd
 	Usage         ai.Usage `json:"usage,omitempty"`         // EvMessageEnd / EvAgentEnd (totals)
+	KeptMessages  int      `json:"keptMessages,omitempty"`  // EvCompaction
 	TurnIndex     int      `json:"turnIndex"`
 }

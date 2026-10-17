@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // Read shows a file with 1-based line numbers, the format the edit tool's
@@ -117,4 +118,9 @@ func (r *Read) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 			line-(offset+shown-1), offset+shown)
 	}
 	return agent.ToolResult{Content: out}
+}
+
+// Capability implements agent.Capabler: reading is safe to auto-allow.
+func (r *Read) Capability() permission.Capability {
+	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
 }

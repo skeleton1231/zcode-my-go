@@ -1,0 +1,138 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
+)
+
+// compactPolicy is the auto-compaction wiring every session runs.
+var compactPolicy = compact.DefaultPolicy()
+
+// compactionRecord is the JSONL record a compaction appends; loading it
+// replays the same truncation, keeping the file append-only.
+type compactionRecord struct {
+	Type    string `json:"type"`
+	Summary string `json:"summary"`
+	Kept    int    `json:"kept"`
+}
+
+// Compact summarizes the transcript through the provider and replaces old
+// history with the summary plus the kept tail (ZCode's manual compact).
+// It fails when a run is in progress.
+func (s *Session) Compact(ctx context.Context) error {
+	s.mu.Lock()
+	if s.cancel != nil {
+		s.mu.Unlock()
+		return errors.New("a run is already in progress")
+	}
+	history := append([]ai.Message(nil), s.messages...)
+	provider, model := s.provider(), s.model()
+	s.mu.Unlock()
+
+	summary, err := summarize(ctx, provider, model, history)
+	if err != nil {
+		return err
+	}
+	kept := compact.DefaultKeepTail
+	if kept > len(history) {
+		kept = len(history)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keptMessages := append([]ai.Message(nil), s.messages[len(s.messages)-kept:]...)
+	s.messages = append([]ai.Message{compact.SummaryMessage(summary)}, keptMessages...)
+	s.info.UpdatedAt = time.Now()
+	rec, err := json.Marshal(compactionRecord{
+		Type: "compaction", Summary: summary, Kept: kept})
+	if err != nil {
+		return err
+	}
+	return appendLine(s.path, rec)
+}
+
+// autoCompact runs at Chat entry when the policy decides so (ZCode's
+// preflight). Failures count toward the circuit breaker and never block
+// the chat itself.
+func (s *Session) autoCompact(ctx context.Context, emit func(Event)) {
+	s.mu.Lock()
+	history := s.messages
+	failures := s.compactFailures
+	s.mu.Unlock()
+
+	d := compact.Decide(compactPolicy, compact.EstimateTokens(history), len(history), failures)
+	if !d.ShouldCompact {
+		return
+	}
+	if err := s.Compact(ctx); err != nil {
+		s.mu.Lock()
+		s.compactFailures++
+		s.mu.Unlock()
+		emit(Event{Kind: EvCompaction, SessionID: s.info.ID,
+			Text: fmt.Sprintf("自动压缩失败（第 %d 次）：%v", failures+1, err)})
+		return
+	}
+	s.mu.Lock()
+	s.compactFailures = 0
+	s.mu.Unlock()
+	emit(Event{Kind: EvCompaction, SessionID: s.info.ID,
+		Text: "会话已压缩：旧消息汇总为摘要，保留最近对话", KeptMessages: compact.DefaultKeepTail})
+}
+
+// summarize asks the provider for the structured summary of a transcript.
+func summarize(ctx context.Context, provider ai.Provider, model string, messages []ai.Message) (string, error) {
+	if len(messages) == 0 {
+		return "", errors.New("nothing to compact")
+	}
+	req := append(append([]ai.Message(nil), messages...),
+		ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{
+			{Kind: ai.BlockText, Text: compact.SummaryUserPrompt()}}})
+	var b strings.Builder
+	var ended bool
+	for ev := range provider.Stream(ctx, ai.Request{
+		Model:     model,
+		System:    "You are a conversation compactor. Summarize faithfully in Chinese.",
+		Messages:  req,
+		MaxTokens: 8192,
+	}) {
+		switch ev.Kind {
+		case ai.EvTextDelta:
+			b.WriteString(ev.TextDelta)
+		case ai.EvMessageEnd:
+			ended = true
+			if ev.StopReason == ai.StopError {
+				return "", fmt.Errorf("summary request failed: %s", ev.ErrorMessage)
+			}
+			if ev.StopReason == ai.StopAborted {
+				return "", errors.New("summary request aborted")
+			}
+		}
+	}
+	if !ended {
+		return "", errors.New("summary stream ended without a stop reason")
+	}
+	summary := strings.TrimSpace(b.String())
+	if summary == "" {
+		return "", errors.New("summary came back empty")
+	}
+	return summary, nil
+}
+
+// appendLine appends one raw JSONL line (used by compaction records).
+func appendLine(path string, rec []byte) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(rec, '\n'))
+	return err
+}

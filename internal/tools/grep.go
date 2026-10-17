@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // skipDirs are never searched: version control state, dependencies, builds.
@@ -185,4 +186,9 @@ func globToRegex(glob string) (*regexp.Regexp, error) {
 	}
 	b.WriteString("$")
 	return regexp.Compile(b.String())
+}
+
+// Capability implements agent.Capabler: searching is safe to auto-allow.
+func (g *Grep) Capability() permission.Capability {
+	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
 }

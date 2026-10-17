@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // Edit replaces an exact, unique string in a file — the safest small-change
@@ -106,4 +107,9 @@ func snippet(content, needle string) string {
 		end = endRel + end + 1
 	}
 	return fmt.Sprintf("---\n%s---", content[start:end])
+}
+
+// Capability implements agent.Capabler: editing changes one file at a time.
+func (e *Edit) Capability() permission.Capability {
+	return permission.Capability{Risk: permission.RiskMedium}
 }

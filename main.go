@@ -34,6 +34,7 @@ func main() {
 			{Role: mygo.RoleAppMenu},
 			{Label: "会话", Submenu: []*mygo.MenuItem{
 				{Label: "新建会话…", Accelerator: "CmdOrCtrl+N", Click: func(*mygo.MenuItem, *mygo.Window) { a.NewSession() }},
+				{Label: "压缩会话", Accelerator: "CmdOrCtrl+K", Click: func(*mygo.MenuItem, *mygo.Window) { a.Compact() }},
 				{Label: "删除会话", Accelerator: "CmdOrCtrl+D", Click: func(*mygo.MenuItem, *mygo.Window) { a.DeleteActive() }},
 				mygo.Separator(),
 				{Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {
@@ -56,6 +57,7 @@ func main() {
 			Content:   ui.View(a.View),
 		})
 		a.AttachWindow(win)
+		a.InstallUserChannels()
 	})
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

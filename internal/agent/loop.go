@@ -9,6 +9,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 )
 
@@ -27,6 +28,17 @@ type LoopConfig struct {
 	// History returns the transcript to send; called once per turn so
 	// steering messages queued between turns are picked up.
 	History func() []ai.Message
+	// SessionID labels AskRequests with the run's session.
+	SessionID string
+
+	// Permissions gates tool execution (ZCode's permission service). Nil
+	// bypasses checking entirely — the v0.2 behavior — for callers that
+	// have not adopted the system yet.
+	Permissions *permission.Service
+	// Ask resolves an "ask" decision with the user; it blocks the loop
+	// until answered. Required when Permissions yields Ask; without it an
+	// ask is a denial on the safe side.
+	Ask func(AskRequest) AskResponse
 }
 
 // Loop runs agent turns over a transcript sink.
@@ -112,20 +124,23 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 	}
 }
 
-// execute runs one tool call and reports its outcome through events.
+// execute runs one tool call and reports its outcome through events. The
+// permission gate runs first: a denial never reaches the tool.
 func (l *Loop) execute(ctx context.Context, turn int, call ai.Block) ToolResult {
 	l.emit(Event{Kind: EvToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name,
 		Args: call.Arguments, TurnIndex: turn})
 
-	args := strings.TrimSpace(call.Arguments)
-	if args == "" {
-		args = "{}"
-	}
 	var result ToolResult
 	tool, ok := l.tool(call.Name)
 	if !ok {
 		result = ToolResult{IsError: true, Content: "error: unknown tool " + call.Name}
+	} else if blocked := l.gate(call, tool); blocked != nil {
+		result = *blocked
 	} else {
+		args := strings.TrimSpace(call.Arguments)
+		if args == "" {
+			args = "{}"
+		}
 		result = tool.Execute(ctx, []byte(args))
 		if result.Content == "" && !result.IsError {
 			result.Content = "(no output)"
@@ -135,6 +150,57 @@ func (l *Loop) execute(ctx context.Context, turn int, call ai.Block) ToolResult 
 	l.emit(Event{Kind: EvToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name,
 		IsError: result.IsError, ResultContent: result.Content, TurnIndex: turn})
 	return result
+}
+
+// gate checks the permission system for a call. A nil result means the call
+// may run; a non-nil one is the blocked outcome to report.
+func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
+	if l.cfg.Permissions == nil {
+		return nil // 未启用权限系统：完全旁路（v0.2 行为）
+	}
+	argsLine := SummarizeArgs(nilIfEmpty(call.Arguments))
+	decision := l.cfg.Permissions.Check(
+		permission.Context{Tool: call.Name, Args: argsLine},
+		capabilityOf(tool))
+	switch decision.Behavior {
+	case permission.Allow:
+		return nil
+	case permission.Deny:
+		return blocked("denied by rule "+decision.RuleID+"（"+decision.Reason+"）",
+			"换一种做法，或请用户调整权限规则")
+	case permission.Ask:
+		if l.cfg.Ask == nil {
+			return blocked("no approval channel", "当前没有确认通道，保守起见拒绝执行")
+		}
+		resp := l.cfg.Ask(AskRequest{
+			SessionID: l.cfg.SessionID, Tool: call.Name, Args: argsLine,
+			Reason: decision.Reason, Risk: decision.Risk})
+		if !resp.Deny {
+			if resp.Always {
+				l.cfg.Permissions.GrantSession(
+					permission.RuleForTool(call.Name, argsLine))
+			}
+			return nil
+		}
+		note := resp.Note
+		if note == "" {
+			note = "请换一种做法，或说明你需要这次操作的理由"
+		}
+		return blocked("用户拒绝了这次调用", note)
+	}
+	return nil
+}
+
+func blocked(reason, guidance string) *ToolResult {
+	return &ToolResult{IsError: true, Content: "error: permission " + reason +
+		"；" + guidance}
+}
+
+func nilIfEmpty(args string) []byte {
+	if strings.TrimSpace(args) == "" {
+		return nil
+	}
+	return []byte(args)
 }
 
 func (l *Loop) tool(name string) (Tool, bool) {

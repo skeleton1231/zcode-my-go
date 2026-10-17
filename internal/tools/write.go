@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // Write creates or overwrites a file wholesale.
@@ -59,4 +60,9 @@ func (w *Write) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 		lines++
 	}
 	return okResult("wrote %s (%d lines, %d bytes)", a.Path, lines, len(a.Content))
+}
+
+// Capability implements agent.Capabler: writing files changes the workspace.
+func (w *Write) Capability() permission.Capability {
+	return permission.Capability{Risk: permission.RiskMedium}
 }

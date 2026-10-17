@@ -1,10 +1,13 @@
 package uiapp
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/skeleton1231/zcode-my-go/internal/agent"
 
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
@@ -103,5 +106,77 @@ func TestSettingsModal(t *testing.T) {
 	}
 	if !tt.HasText("glm-5.2") {
 		t.Fatalf("model not shown in the status bar: %q", tt.Texts())
+	}
+}
+
+// TestAskModalRoundTrip verifies the permission modal resolves a blocked
+// asker without a window: the answerAsk path feeds the waiting channel.
+func TestAskModalRoundTrip(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.InstallUserChannels()
+	tt.Frame()
+
+	res := make(chan agent.AskResponse, 1)
+	go func() {
+		res <- a.asker(agent.AskRequest{Tool: "write", Args: "path: a.go", Reason: "no matching rule"})
+	}()
+	// 等待 modal 打开后点击允许。
+	for range 200 {
+		if a.askOpen {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	tt.Frame()
+	if !tt.HasText("确认工具调用") {
+		t.Fatalf("ask modal missing: %q", tt.Texts())
+	}
+	if err := tt.Click("允许一次"); err != nil {
+		t.Fatalf("clicking allow: %v", err)
+	}
+	got := <-res
+	if got.Deny || got.Always {
+		t.Fatalf("answer = %+v", got)
+	}
+}
+
+// TestQuestionModalRoundTrip verifies the ask tool's delivery.
+func TestQuestionModalRoundTrip(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.InstallUserChannels()
+	tt.Frame()
+
+	res := make(chan string, 1)
+	go func() {
+		answer, err := a.deliverQuestion(context.Background(), agent.Question{
+			Text: "用哪个方案？", Options: []string{"A", "B"}})
+		if err != nil {
+			res <- "err:" + err.Error()
+			return
+		}
+		res <- answer
+	}()
+	for range 200 {
+		if a.qOpen {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	tt.Frame()
+	if err := tt.Click("B"); err != nil {
+		t.Fatalf("clicking option: %v", err)
+	}
+	if got := <-res; got != "B" {
+		t.Fatalf("answer = %q", got)
 	}
 }

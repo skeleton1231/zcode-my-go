@@ -35,6 +35,14 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   （`https://open.bigmodel.cn/api/anthropic`）、Kimi 等。
 - **中止安全**：随时停止，LLM 流与运行中工具一并取消，会话可继续。
 - **即时启动**：无 webview 进程，窗口秒开、内存占用小。
+- **权限系统**（译自 ZCode permission/）：allow/ask/deny 三态、会话级
+  「总是允许」规则、只读工具自动放行；桌面弹窗或终端 stdin 确认。
+- **上下文压缩**（译自 ZCode compact/）：token 预算阈值自动摘要 + 尾部
+  保留，连续失败熔断，也可 `Ctrl+K` 手动压缩。
+- **任务清单与提问**：todo 工具跟踪计划（会话级状态）；ask 工具把只有
+  用户能答的问题送达界面。
+- **终端模式**：`zgo -p "任务"` 在工作区直接跑（ZCode zcode-cli print
+  模式的 Go 等价）。
 
 ## 快速开始
 
@@ -44,6 +52,7 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
 go tool mygo dev      # 开发模式（热重载）
 go test ./...         # 全部测试（含无窗口视图测试）
 go tool mygo build    # 打包（.exe 安装器 / .dmg / .deb）
+go run ./cmd/zgo -p "解释这个仓库"   # 终端模式
 ```
 
 首次启动后在设置弹窗填入：
@@ -65,6 +74,7 @@ go tool mygo build    # 打包（.exe 安装器 / .dmg / .deb）
 - [`CONTEXT.md`](CONTEXT.md) — 领域词汇表
 - [`DESIGN.md`](DESIGN.md) — UI 设计规范
 - [`docs/architecture.md`](docs/architecture.md) — 架构说明
+- [`docs/zcode-port-map.md`](docs/zcode-port-map.md) — ZCode 全模块移植地图
 
 ## License
 

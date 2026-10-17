@@ -32,13 +32,18 @@ Zgo 是开源桌面 coding agent：mygo **native UI**（package `ui`，纯 Go �
 
 ```
 main.go               桌面壳入口：窗口、菜单、ui.View
+cmd/zgo               终端模式（print + stdin 确认/提问）
 internal/ai           LLM provider 抽象（Anthropic 兼容流式）
 internal/agent        agent loop、事件、会话与 JSONL 持久化
-internal/tools        内置工具：read/write/edit/bash/grep/glob/ls
-internal/service      AgentService：UI 唯一入口（设置、会话、Chat 回调）
-internal/uiapp        native UI：chatState 折叠 + App 视图
+internal/agent/permission  权限系统（ZCode permission/ 翻译）
+internal/agent/compact    上下文压缩（ZCode compact/ 翻译）
+internal/tools        内置工具：read/write/edit/bash/grep/glob/ls/todo/ask
+internal/prompt       系统提示（环境、git、项目上下文文件）
+internal/service      AgentService：UI 唯一入口（设置、会话、Chat 回调、
+                      权限/提问通道、压缩入口）
+internal/uiapp        native UI：chatState 折叠 + App 视图 + 弹窗
 specs/                行为规格（先于代码）
-docs/                 架构文档
+docs/                 架构文档 + ZCode 移植地图（zcode-port-map.md）
 mygo.json             打包配置（name/identifier/version/out）
 ```
 

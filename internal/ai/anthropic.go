@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -71,6 +72,9 @@ func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEv
 		return
 	}
 
+	if os.Getenv("ZGO_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "[zgo-debug] request: %s\n", body)
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		a.BaseURL+"/v1/messages", bytes.NewReader(body))
 	if err != nil {
@@ -309,9 +313,11 @@ type wireBlock struct {
 	ID    string          `json:"id,omitempty"`
 	Name  string          `json:"name,omitempty"`
 	Input json.RawMessage `json:"input,omitempty"`
-	// tool_result
-	ToolUseID string `json:"tool_use_id,omitempty"`
-	IsError   bool   `json:"is_error,omitempty"`
+	// tool_result: its payload is the standard content array, never a
+	// private field — compatible endpoints drop anything else.
+	ToolUseID     string      `json:"tool_use_id,omitempty"`
+	ResultContent []wireBlock `json:"content,omitempty"`
+	IsError       bool        `json:"is_error,omitempty"`
 }
 
 // toWire translates the transcript to the wire format.
@@ -343,7 +349,8 @@ func toWire(messages []Message) []wireMessage {
 			for _, b := range m.Blocks {
 				wm.Content = append(wm.Content, wireBlock{
 					Type: "tool_result", ToolUseID: b.ToolCallID, IsError: b.IsError,
-					Text: b.Text})
+					ResultContent: []wireBlock{{Type: "text", Text: b.Text}},
+				})
 			}
 		}
 		wire = append(wire, wm)

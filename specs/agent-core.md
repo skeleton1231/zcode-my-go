@@ -38,7 +38,7 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
 ```go
 // internal/ai
 type Provider interface {
-    Stream(ctx context.Context, req Request) StreamResult // 流式事件通道
+    Stream(ctx context.Context, req Request) <-chan StreamEvent
 }
 
 // internal/agent
@@ -48,10 +48,22 @@ type Tool interface {
     Parameters() map[string]any
     Execute(ctx context.Context, args json.RawMessage) ToolResult
 }
+// 可选：声明权限姿态（只读自动放行；alwaysAsk 每次确认）
+type Capabler interface{ Capability() permission.Capability }
 
-// internal/service（前端唯一入口）
-Chat(sessionID, text string, out *mygo.Channel[agent.Event]) error
+// 权限（ZCode permission/ 翻译）：allow/ask/deny 三态，
+// 会话级与项目级规则 + 工具能力声明；ask 经阻塞回调问用户。
+Permissions *permission.Service
+Ask func(AskRequest) AskResponse
+
+// 压缩（ZCode compact/ 翻译）：window−reserve−buffer 阈值触发，
+// 摘要 + 尾部保留替换历史；连续失败 3 次熔断。
+Session.Compact(ctx) / autoCompact at Chat entry
+
+// internal/service（UI 唯一入口）
+Chat(sessionID, text string, emit func(agent.Event)) error
 Abort(sessionID string)
+CompactSession(id string) error
 ```
 
 ## 事件序列（验收基线）

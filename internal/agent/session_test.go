@@ -11,12 +11,11 @@ import (
 
 // wire installs minimal fake dependencies.
 func wire(m *Manager) {
-	m.Wire(
-		func() ai.Provider { return failProvider{msg: "no provider in tests"} },
-		func() string { return "fake-model" },
-		func(string) []Tool { return nil },
-		func(string) string { return "system prompt" },
-	)
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return failProvider{msg: "no provider in tests"} },
+		Model:    func() string { return "fake-model" },
+		System:   func(string) string { return "system prompt" },
+	})
 }
 
 // TestSessionPersistsAcrossReload verifies the JSONL round trip.
@@ -79,12 +78,11 @@ func TestChatGuardsDoubleRun(t *testing.T) {
 	s, _ := m.New("ws")
 
 	blocking := make(chan struct{})
-	m.Wire(
-		func() ai.Provider { return blockProvider{until: blocking} },
-		func() string { return "m" },
-		nil,
-		func(string) string { return "s" },
-	)
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return blockProvider{until: blocking} },
+		Model:    func() string { return "m" },
+		System:   func(string) string { return "s" },
+	})
 
 	done := make(chan error, 1)
 	go func() { done <- s.Chat("hello", func(Event) {}) }()
@@ -110,11 +108,11 @@ func TestAbortEndsRun(t *testing.T) {
 	s, _ := m.New("ws")
 
 	blocking := make(chan struct{})
-	m.Wire(
-		func() ai.Provider { return blockProvider{until: blocking} },
-		func() string { return "m" }, nil,
-		func(string) string { return "s" },
-	)
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return blockProvider{until: blocking} },
+		Model:    func() string { return "m" },
+		System:   func(string) string { return "s" },
+	})
 
 	var events []Event
 	done := make(chan error, 1)

@@ -1,6 +1,8 @@
 package uiapp
 
 import (
+	"context"
+	"errors"
 	"log"
 	"strings"
 
@@ -27,6 +29,17 @@ type App struct {
 	input    string
 	sending  bool
 	lastSent string
+
+	// permission ask modal state (driven from the agent's goroutine)
+	askOpen bool
+	askReq  agent.AskRequest
+	askCh   chan agent.AskResponse
+
+	// question modal state (the ask tool)
+	qOpen   bool
+	qText   agent.Question
+	qAnswer string
+	qCh     chan string
 
 	// settings modal state
 	settings      *service.SettingsView
@@ -193,3 +206,81 @@ func (a *App) Stop() {
 
 // Running reports whether a run is in progress.
 func (a *App) Running() bool { return a.chat.running }
+
+// InstallUserChannels wires the permission asker and the question
+// delivery into the service; call once after the window exists (tests call
+// it too: without a window the update path is direct).
+func (a *App) InstallUserChannels() {
+	a.svc.SetAsker(a.asker)
+	a.svc.SetQuestion(a.deliverQuestion)
+}
+
+// asker shows the permission modal and blocks the loop until answered.
+func (a *App) asker(req agent.AskRequest) agent.AskResponse {
+	ch := make(chan agent.AskResponse, 1)
+	a.update(func() {
+		a.askReq = req
+		a.askCh = ch
+		a.askOpen = true
+	})
+	return <-ch
+}
+
+// answerAsk resolves a pending permission ask.
+func (a *App) answerAsk(resp agent.AskResponse) {
+	a.askOpen = false
+	if a.askCh != nil {
+		a.askCh <- resp
+		a.askCh = nil
+	}
+}
+
+// deliverQuestion shows the ask tool's modal and blocks for the answer.
+func (a *App) deliverQuestion(_ context.Context, q agent.Question) (string, error) {
+	ch := make(chan string, 1)
+	a.update(func() {
+		a.qText = q
+		a.qAnswer = ""
+		a.qCh = ch
+		a.qOpen = true
+	})
+	select {
+	case answer := <-ch:
+		if answer == "" {
+			return "", errors.New("用户没有回答")
+		}
+		return answer, nil
+	}
+}
+
+// answerQuestion resolves a pending question.
+func (a *App) answerQuestion(answer string) {
+	a.qOpen = false
+	if a.qCh != nil {
+		a.qCh <- answer
+		a.qCh = nil
+	}
+}
+
+// Compact summarizes the open session's old history.
+func (a *App) Compact() {
+	if a.activeID == "" {
+		return
+	}
+	id := a.activeID
+	go func() {
+		err := a.svc.CompactSession(id)
+		a.update(func() {
+			if err != nil {
+				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+					text: "压缩失败：" + err.Error()})
+				return
+			}
+			messages, merr := a.svc.Messages(id)
+			if merr == nil {
+				a.chat = restoreChat(messages)
+			}
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice, text: "会话已手动压缩"})
+		})
+	}()
+}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // Ls lists a directory's entries.
@@ -96,4 +97,9 @@ func humanSize(n int64) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+// Capability implements agent.Capabler: listing entries is safe to auto-allow.
+func (l *Ls) Capability() permission.Capability {
+	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
 }

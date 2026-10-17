@@ -5,6 +5,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -44,11 +45,17 @@ type AgentService struct {
 	settings settings
 	path     string
 	mgr      *agent.Manager
+	ask      func(agent.AskRequest) agent.AskResponse
+	question func(ctx context.Context, q agent.Question) (string, error)
+	states   map[string]*tools.States // session-scoped tool state
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
 func New(dataDir string) (*AgentService, error) {
-	s := &AgentService{path: filepath.Join(dataDir, "settings.json")}
+	s := &AgentService{
+		path:   filepath.Join(dataDir, "settings.json"),
+		states: map[string]*tools.States{},
+	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
@@ -64,12 +71,23 @@ func New(dataDir string) (*AgentService, error) {
 // rewire installs the current settings into the manager. Callers hold s.mu.
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
-	s.mgr.Wire(
-		func() ai.Provider { return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey) },
-		func() string { return cfg.Model },
-		tools.All,
-		prompt.System,
-	)
+	s.mgr.Wire(agent.Wiring{
+		Provider: func() ai.Provider { return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey) },
+		Model:    func() string { return cfg.Model },
+		Tools: func(workspace, sessionID string) []agent.Tool {
+			s.mu.Lock()
+			state, ok := s.states[sessionID]
+			if !ok {
+				state = tools.NewStates()
+				s.states[sessionID] = state
+			}
+			s.mu.Unlock()
+			return tools.All(workspace, state, s.question)
+		},
+		System:   prompt.System,
+		Ask:      s.ask,
+		Question: s.question,
+	})
 }
 
 // resolve applies env overrides to the stored settings.
@@ -149,6 +167,24 @@ func (s *AgentService) SaveSettings(baseURL, apiKey, model string) (SettingsView
 	return s.view(), nil
 }
 
+// SetAsker installs the callback that resolves permission asks with the
+// user (a modal in the desktop UI, a prompt on the CLI).
+func (s *AgentService) SetAsker(ask func(agent.AskRequest) agent.AskResponse) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ask = ask
+	s.rewire()
+}
+
+// SetQuestion installs the callback that delivers the ask tool's
+// questions to the user.
+func (s *AgentService) SetQuestion(fn func(ctx context.Context, q agent.Question) (string, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.question = fn
+	s.rewire()
+}
+
 // PickWorkspace asks the user for a workspace directory. parent may be nil.
 func (s *AgentService) PickWorkspace(parent *mygo.Window) (string, error) {
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
@@ -188,6 +224,9 @@ func (s *AgentService) ListSessions() []agent.SessionInfo {
 
 // DeleteSession removes a session.
 func (s *AgentService) DeleteSession(id string) error {
+	s.mu.Lock()
+	delete(s.states, id)
+	s.mu.Unlock()
 	return s.mgr.Delete(id)
 }
 
@@ -209,6 +248,15 @@ func (s *AgentService) Chat(sessionID, text string, emit func(agent.Event)) erro
 		return fmt.Errorf("no session %s", sessionID)
 	}
 	return sess.Chat(text, emit)
+}
+
+// CompactSession summarizes a session's old history (the 压缩会话 menu).
+func (s *AgentService) CompactSession(id string) error {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	return sess.Compact(context.Background())
 }
 
 // Abort cancels a session's running loop.

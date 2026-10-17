@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // Bash timeouts.
@@ -114,4 +115,9 @@ func (b *Bash) command(ctx context.Context, line string) (*exec.Cmd, error) {
 		return exec.CommandContext(ctx, "sh", "-c", line), nil
 	}
 	return nil, fmt.Errorf("no shell found")
+}
+
+// Capability implements agent.Capabler: shell commands run anything.
+func (b *Bash) Capability() permission.Capability {
+	return permission.Capability{Risk: permission.RiskMedium}
 }

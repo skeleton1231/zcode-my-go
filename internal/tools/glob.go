@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // Glob expands a path pattern, including ** for any depth.
@@ -137,4 +138,9 @@ func pathGlobToRegex(glob string) (*regexp.Regexp, error) {
 		expr += "(?:/|$)"
 	}
 	return regexp.Compile(expr)
+}
+
+// Capability implements agent.Capabler: listing paths is safe to auto-allow.
+func (g *Glob) Capability() permission.Capability {
+	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
 }

@@ -219,7 +219,9 @@ func TestToWire(t *testing.T) {
 	}
 	tr := wire[2]
 	if tr.Role != "user" || tr.Content[0].Type != "tool_result" ||
-		tr.Content[0].ToolUseID != "c1" || tr.Content[0].Text != "contents" {
+		tr.Content[0].ToolUseID != "c1" ||
+		len(tr.Content[0].ResultContent) != 1 ||
+		tr.Content[0].ResultContent[0].Text != "contents" {
 		t.Fatalf("tool result = %+v", tr)
 	}
 }

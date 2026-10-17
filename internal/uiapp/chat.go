@@ -17,6 +17,7 @@ const (
 	itemUser itemKind = iota
 	itemAssistant
 	itemTool
+	itemNotice
 )
 
 // chatItem is one row of the chat view: a user or assistant message, or a
@@ -54,6 +55,9 @@ func (s *chatState) apply(ev agent.Event) {
 	case agent.EvAgentStart:
 		s.running = true
 		s.endErr = ""
+
+	case agent.EvCompaction:
+		s.items = append(s.items, chatItem{kind: itemNotice, text: ev.Text})
 
 	case agent.EvMessageStart:
 		s.items = append(s.items, chatItem{kind: itemAssistant, streaming: true})
