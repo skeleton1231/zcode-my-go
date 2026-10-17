@@ -6,8 +6,11 @@
 // 本脚本定义完整的内存 FS，必须排在 wasm_exec.js 之前加载——它的
 // `if (!globalThis.fs)` 会保留页面上已有的实现。
 //
-// 数据只活在页面内存：刷新即清空（localStorage/IndexedDB 持久化桥接是
-// wasm 路线的后续部分）。由 cmd/webfs 在 mygo build -platform web 后注入。
+// 持久化：每个文件的改动（去抖合并）逐条写入 IndexedDB 的 files 存储库，
+// 启动时在 wasm 实例化之前恢复进内存树（包装 WebAssembly.instantiateStreaming
+// 实现先恢复后启动），刷新不再清空。目录不单独记录，恢复按路径前缀重建
+//（空目录丢失无害）。API key 等设置随文件一起存在本源 IndexedDB，仅本地。
+// 由 cmd/webfs 在 mygo build -platform web 后注入。
 (() => {
 	"use strict";
 	if (globalThis.fs && globalThis.fs.__zgo) return; // 幂等
@@ -208,4 +211,141 @@
 		lchown(path, uid, gid, cb) { cb(null, undefined); },
 		utimes(path, atime, mtime, cb) { cb(null, undefined); },
 	};
+
+	// ---- 持久化：IndexedDB 逐文件存档 ----
+	// 恢复在 wasm 实例化前完成：包装 instantiateStreaming，先 zgoFsReady
+	// 再放行（页面自身的启动脚本无需改动）。
+	const DB_NAME = "zgo-fs", STORE = "files";
+	const openDB = () => new Promise((resolve, reject) => {
+		const req = indexedDB.open(DB_NAME, 1);
+		req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+		req.onsuccess = () => resolve(req.result);
+		req.onerror = () => reject(req.error);
+	});
+	const store = (mode) => db.transaction(STORE, mode).objectStore(STORE);
+	const pathOf = ps => "/" + ps.join("/");
+	// 子树全部路径（rmdir/rename 需要把后代记录一并处理，否则孤儿记录
+	// 会在恢复时把已删目录重新建出来）。
+	const subtree = (path, node) => {
+		const out = [path];
+		if (node.dir) {
+			for (const [name, child] of node.entries) out.push(...subtree(path + "/" + name, child));
+		}
+		return out;
+	};
+
+	let db = null;
+	const pending = new Map(); // path -> true 待写 / null 待删
+	let flushTimer = 0;
+	const flush = () => {
+		flushTimer = 0;
+		if (!db || pending.size === 0) return;
+		const batch = [...pending.entries()];
+		pending.clear();
+		try {
+			const st = store("readwrite");
+			for (const [path, save] of batch) {
+				// 落盘取当前树的状态：调度时点之后缓冲可能还在增长。
+				const n = save ? lookup(parts(path)) : null;
+				if (!n || n.dir) st.delete(path);
+				else st.put(new Uint8Array(n.data).buffer, path); // 拷贝，脱离树内缓冲
+			}
+		} catch (e) {
+			console.warn("zgo-fs: persist flush failed", e);
+		}
+	};
+	const markDirty = (path, deleted) => {
+		pending.set(path, deleted ? null : true);
+		// 去抖：会话 JSONL 追加是高频小写，合并成一次存档。
+		if (flushTimer) clearTimeout(flushTimer);
+		flushTimer = setTimeout(flush, 800);
+	};
+
+	globalThis.zgoFsReady = (async () => {
+		try {
+			db = await openDB();
+		} catch (e) {
+			console.warn("zgo-fs: IndexedDB unavailable, data stays in page memory", e);
+			return;
+		}
+		await new Promise((resolve) => {
+			const req = store("readonly").openCursor();
+			req.onsuccess = () => {
+				const cur = req.result;
+				if (!cur) { resolve(); return; }
+				const ps = parts(cur.key);
+				// 目录不单独存档：按路径前缀逐级补建（mkdirp），再放文件。
+				mkdirp(ps.slice(0, -1));
+				const par = parent(ps);
+				if (par && par.dir && !par.entries.has(name(ps))) {
+					par.entries.set(name(ps), { dir: false, data: new Uint8Array(cur.value), mtime: nowMs(), ctime: nowMs() });
+				}
+				cur.continue();
+			};
+			req.onerror = () => resolve(); // 读不出的记录直接跳过
+		});
+	})();
+
+	// 变更登记：写/截断/新建/删除/改名都标记，flush 时统一入档。
+	const fsObj = globalThis.fs;
+	const origWrite = fsObj.write;
+	fsObj.write = function (fd, buf, offset, length, position, cb) {
+		origWrite.call(fsObj, fd, buf, offset, length, position, (err, n) => {
+			if (!err) {
+				const e = fds.get(fd); // 0-2 不在表里：stdout 无需存档
+				if (e) markDirty(e.path);
+			}
+			cb(err, n);
+		});
+	};
+	const origTruncate = fsObj.ftruncate;
+	fsObj.ftruncate = function (fd, size, cb) {
+		origTruncate.call(fsObj, fd, size, (err) => {
+			if (!err) {
+				const e = fds.get(fd);
+				if (e) markDirty(e.path);
+			}
+			cb(err);
+		});
+	};
+	const origOpen = fsObj.open;
+	fsObj.open = function (path, flags, mode, cb) {
+		const creating = (flags & O.O_CREAT) !== 0 || (flags & O.O_TRUNC) !== 0;
+		origOpen.call(fsObj, path, flags, mode, (err, fd) => {
+			if (!err && creating) markDirty(path);
+			cb(err, fd);
+		});
+	};
+	const origUnlink = fsObj.unlink;
+	fsObj.unlink = function (path, cb) {
+		origUnlink.call(fsObj, path, (err) => {
+			if (!err) markDirty(path, true);
+			cb(err);
+		});
+	};
+	const origRmdir = fsObj.rmdir;
+	fsObj.rmdir = function (path, cb) {
+		const n = lookup(parts(path));
+		origRmdir.call(fsObj, path, (err) => {
+			if (!err && n) for (const p of subtree(path, n)) markDirty(p, true);
+			cb(err);
+		});
+	};
+	const origRename = fsObj.rename;
+	fsObj.rename = function (from, to, cb) {
+		const n = lookup(parts(from));
+		const moved = n ? subtree(pathOf(parts(from)), n) : [];
+		origRename.call(fsObj, from, to, (err) => {
+			if (!err && n) {
+				for (const p of moved) markDirty(p, true);
+				for (const p of subtree(pathOf(parts(to)), n)) markDirty(p);
+			}
+			cb(err);
+		});
+	};
+
+	// 启动门：恢复完成后才允许实例化 wasm（页面脚本调用的就是这个包装）。
+	const origInstantiate = WebAssembly.instantiateStreaming.bind(WebAssembly);
+	WebAssembly.instantiateStreaming = (source, imports) =>
+		globalThis.zgoFsReady.then(() => origInstantiate(source, imports));
 })();
