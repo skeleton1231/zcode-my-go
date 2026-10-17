@@ -658,3 +658,56 @@ func (p failProvider) Stream(context.Context, ai.Request) <-chan ai.StreamEvent 
 	close(out)
 	return out
 }
+
+// ForkAtUserTurn branches a session (ZCode's session fork): the new
+// session copies everything before the nth (1-based) user message — the
+// fork point stays intact in the source.
+func (m *Manager) ForkAtUserTurn(src *Session, userTurn int) (*Session, error) {
+	if src == nil || userTurn < 1 {
+		return nil, fmt.Errorf("fork needs a user turn >= 1")
+	}
+	messages := src.Messages()
+	cut := -1
+	seen := 0
+	for i, msg := range messages {
+		if msg.Role == ai.RoleUser {
+			seen++
+			if seen == userTurn {
+				cut = i
+				break
+			}
+		}
+	}
+	if cut < 0 {
+		return nil, fmt.Errorf("session has no user turn %d", userTurn)
+	}
+	fork, err := m.New(src.Info().Workspace)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	wiring := m.wiring
+	m.mu.Unlock()
+	fork.provider, fork.model = src.provider, src.model
+	fork.buildTools, fork.system, fork.ask = src.buildTools, src.system, src.ask
+	fork.thinking = src.thinking
+	fork.permissions = permission.New(func() permission.Ruleset {
+		if wiring.ProjectRules == nil {
+			return permission.Ruleset{}
+		}
+		return wiring.ProjectRules(src.Info().Workspace)
+	}())
+	for _, msg := range messages[:cut] {
+		if err := fork.Append(msg); err != nil {
+			return fork, err
+		}
+	}
+	title := src.Info().Title
+	if title != "" {
+		fork.mu.Lock()
+		fork.info.Title = title + "（分叉）"
+		fork.metaTitle = fork.info.Title
+		fork.mu.Unlock()
+	}
+	return fork, nil
+}
