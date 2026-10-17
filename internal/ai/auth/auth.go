@@ -41,8 +41,8 @@ type Token struct {
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
-// Expired reports whether the token needs a refresh (a five-minute skew,
-// as pi's exchange applies).
+// Expired reports whether the token needs a refresh（注释曾称带五分钟
+// skew，实现从未有过——文档腐化，如实改写，issue #136 顺带）。
 func (t Token) Expired() bool {
 	return time.Now().After(t.ExpiresAt)
 }
