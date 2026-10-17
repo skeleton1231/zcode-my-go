@@ -269,6 +269,39 @@ func (s *Session) rewindAndSend(userIndex int, text string, emit func(Event)) er
 }
 
 // SetPlanMode switches the session's collaboration mode.
+// Rewind truncates the transcript before the given user message and
+// persists the truncation like rewindAndSend does, without starting a new
+// turn — the conversation half of the workspace rollback (the service
+// restores the checkpoint before calling this).
+func (s *Session) Rewind(userIndex int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancel != nil {
+		return errors.New("a run is already in progress")
+	}
+	if userIndex < 0 || userIndex >= len(s.messages) ||
+		s.messages[userIndex].Role != ai.RoleUser {
+		return fmt.Errorf("message %d is not a user turn", userIndex)
+	}
+	s.messages = s.messages[:userIndex]
+	rec, err := json.Marshal(regenerateRecord{Type: "regenerate", Kept: userIndex})
+	if err != nil {
+		return err
+	}
+	return appendLine(s.path, rec)
+}
+
+// LastUserIndex is the transcript index of the last user message, or -1.
+func LastUserIndex(msgs []ai.Message) int {
+	last := -1
+	for i, m := range msgs {
+		if m.Role == ai.RoleUser {
+			last = i
+		}
+	}
+	return last
+}
+
 func (s *Session) SetPlanMode(on bool) {
 	mode := permission.ModeNormal
 	if on {

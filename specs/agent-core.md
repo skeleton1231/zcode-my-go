@@ -23,6 +23,14 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    不做重定向。
 7. 所有工具输出必须截断到上限（bash 30KB、read/grep 每文件 60KB），超限提示
    截断发生。
+9. 工作区检查点（ZCode conversation-branch-rewind 的 file rewind 半边）：
+   每个用户回合开始前，若工作区是本地 git 仓库，则以临时索引捕获全树
+   （tracked 改动 + 未跟踪文件，不含 ignored）为 refs/zgo-checkpoints/
+   <session>/<seq>，不触碰工作区与真实索引；每会话保留最近 20 个。
+   回退类操作（回滚最近一回合 / 编辑重发 / 重试）先把工作区恢复到对应
+   回合的检查点（read-tree -u --reset + clean -fd，不移动分支、不改历史；
+   ignored 文件永不被清除），再截断转录。非 git 工作区与 SSH 远程工作区
+   降级为仅回退转录，不报错。
 8. 工作流（workflow 工具）：步骤串行执行，每步看到完整计划与此前结果；任一步
    失败即停止，报告已完成部分。步骤声明 `after` 依赖（按 `name` 引用）时按 DAG
    调度：无依赖关系的步骤并行（上限 4），每步只看到其直接上游的结果；首个
@@ -98,3 +106,6 @@ agent_end(stop_reason)
 6. 持久化：Chat 后进程重启，LoadSession 恢复完整历史。
 7. DAG 工作流：三步 A、B（无依赖）、C after A,B —— A、B 并行启动，C 等两者
    完成后启动且其提示携带 A、B 的结果；A 失败时 C 不启动，报告 A 失败与 C 跳过。
+8. 检查点回滚：git 工作区中一回合改了文件后「回滚最近一回合」，转录截断到
+   该回合前且工作区文件（含该回合新建/删除的）回到回合前状态；分支与提交
+   历史不变；ignored 文件保留。

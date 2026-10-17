@@ -638,6 +638,27 @@ func (a *App) runSlash(line string) {
 	}
 }
 
+// RewindLatest rolls the session back before its last turn: the workspace
+// restores to that turn's checkpoint (git workspaces) and the transcript
+// drops the whole exchange.
+func (a *App) RewindLatest() {
+	if a.activeID == "" || a.chat.running {
+		return
+	}
+	id := a.activeID
+	// 回退视图：移除最后的 user 与其后的 assistant/tool 项（与 agent 截断一致）。
+	a.chat.items = a.chat.items[:lastUserIndex(a.chat.items)]
+	go func() {
+		err := a.svc.RewindLatest(id)
+		a.update(func() {
+			if err != nil {
+				a.chat.endErr = err.Error()
+			}
+			a.refreshSessions()
+		})
+	}()
+}
+
 // Retry regenerates the last answer.
 func (a *App) Retry() {
 	if a.activeID == "" || a.chat.running {
