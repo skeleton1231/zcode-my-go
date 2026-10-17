@@ -2,9 +2,12 @@ package uiapp
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -15,6 +18,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 	"github.com/skeleton1231/zcode-my-go/internal/slash"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
+	"os"
 )
 
 // App is the window's state. Its View builds the interface from it, on the
@@ -33,6 +37,10 @@ type App struct {
 	sending  bool
 	lastSent string
 	planMode bool
+
+	// composer attachments: image blocks sent with the next message
+	//（多模态输入，附件体验）.
+	attach []attachment
 
 	// edit-in-progress state: the item index being edited and its draft.
 	editingIndex int
@@ -365,9 +373,14 @@ func (a *App) Send() {
 	a.input = ""
 	a.chat.appendUser(text)
 	id := a.activeID
+	media := make([]ai.Block, len(a.attach))
+	for i, at := range a.attach {
+		media[i] = at.Block
+	}
+	a.attach = nil
 	a.sending = true
 	go func() {
-		err := a.svc.Chat(id, text, func(ev agent.Event) {
+		err := a.svc.ChatMedia(id, text, media, func(ev agent.Event) {
 			a.update(func() {
 				a.chat.apply(ev)
 				if ev.Kind == agent.EvToolExecutionEnd && ev.ToolName == "todo" {
@@ -385,6 +398,76 @@ func (a *App) Send() {
 			a.RefreshBudget() // 运行结束即刷新：否则仪表停在运行前的旧值
 		})
 	}()
+}
+
+// attachmentCapBytes bounds one image（超限拒绝：编码后直接进请求体）.
+const attachmentCapBytes = 5 << 20
+
+// attachment is one composer image: display name plus its message block.
+type attachment struct {
+	Name  string
+	Block ai.Block
+}
+
+// mediaTypeOf maps an image extension to its MIME type.
+func mediaTypeOf(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	default:
+		return ""
+	}
+}
+
+// Attach opens the image picker and adds the chosen files（多模态输入）.
+// Oversized or non-image files are rejected with a notice.
+func (a *App) Attach() {
+	if a.activeID == "" || a.chat.running {
+		return
+	}
+	paths, err := a.svc.PickImages(a.win)
+	if err != nil || len(paths) == 0 {
+		if err != nil {
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: "附件选择失败：" + err.Error()})
+		}
+		return
+	}
+	for _, path := range paths {
+		mt := mediaTypeOf(filepath.Ext(path))
+		if mt == "" {
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: "不支持的附件类型：" + filepath.Base(path)})
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: "读取附件失败：" + err.Error()})
+			continue
+		}
+		if len(data) > attachmentCapBytes {
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: fmt.Sprintf("附件超过 %dMB 上限：%s", attachmentCapBytes>>20, filepath.Base(path))})
+			continue
+		}
+		a.attach = append(a.attach, attachment{Name: filepath.Base(path),
+			Block: ai.Block{Kind: ai.BlockImage, Media: mt,
+				Data: base64.StdEncoding.EncodeToString(data)}})
+	}
+}
+
+// RemoveAttachment drops the composer's nth attachment.
+func (a *App) RemoveAttachment(i int) {
+	if i >= 0 && i < len(a.attach) {
+		a.attach = append(a.attach[:i], a.attach[i+1:]...)
+	}
 }
 
 // Stop aborts the running agent loop.

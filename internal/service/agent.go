@@ -528,6 +528,16 @@ func (s *AgentService) PickWorkspace(parent *mygo.Window) (string, error) {
 	return paths[0], nil
 }
 
+// PickImages opens a multi-select image picker.
+func (s *AgentService) PickImages(parent *mygo.Window) ([]string, error) {
+	return mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Parent:   parent,
+		Title:    "添加图片",
+		Filters:  []mygo.FileFilter{{Name: "图片", Extensions: []string{"png", "jpg", "jpeg", "gif", "webp"}}},
+		Multiple: true,
+	})
+}
+
 // NewSession creates a session for a workspace and returns its projection.
 func (s *AgentService) NewSession(workspace string) (agent.SessionInfo, error) {
 	if workspace == "" {
@@ -578,6 +588,11 @@ func (s *AgentService) Messages(id string) ([]ai.Message, error) {
 // the caller's goroutine. The UI wraps emit in Window.Update and calls Chat
 // off the main thread.
 func (s *AgentService) Chat(sessionID, text string, emit func(agent.Event)) error {
+	return s.ChatMedia(sessionID, text, nil, emit)
+}
+
+// ChatMedia is Chat carrying image attachments（composer 的 📎）。
+func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit func(agent.Event)) error {
 	sess, ok := s.mgr.Get(sessionID)
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
@@ -585,7 +600,7 @@ func (s *AgentService) Chat(sessionID, text string, emit func(agent.Event)) erro
 	// 回合开始前快照工作区（本地 git 仓库时）：seq = 新用户消息的序号
 	//（现有用户消息数），回滚按序号定位。
 	s.captureCheckpoint(sess, userTurnCount(sess.Messages()))
-	return sess.Chat(text, emit)
+	return sess.ChatMedia(text, media, emit)
 }
 
 // captureCheckpoint snapshots the workspace before a turn. Non-repo and

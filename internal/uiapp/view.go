@@ -335,6 +335,7 @@ func (a *App) planView(c *ui.Context, t *ui.Theme) {
 // the button stops a run in progress.
 func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 	a.slashHintsView(c, t)
+	a.attachmentsView(c, t)
 	ui.Row(c).Gap(8).Padding(10, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
 		AlignItems(ui.End).Children(func() {
 		area := ui.TextArea(c, &a.input).Placeholder("描述任务…（Shift+Enter 换行）").Grow(1).Lines(1, 8)
@@ -352,6 +353,11 @@ func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 			}
 			return false
 		})
+		if !a.chat.running {
+			if ui.Button(c, "📎").Clicked() {
+				a.Attach()
+			}
+		}
 		if a.chat.running {
 			if ui.Button(c, "停止").Clicked() {
 				a.Stop()
@@ -359,6 +365,26 @@ func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 		} else if ui.PrimaryButton(c, "发送").
 			Disabled(a.activeID == "" || strings.TrimSpace(a.input) == "").Clicked() {
 			a.Send()
+		}
+	})
+}
+
+// attachmentsView shows the composer's pending images as removable chips
+// （附件体验：文件名 + ✕，随下一条消息发送）.
+func (a *App) attachmentsView(c *ui.Context, t *ui.Theme) {
+	if len(a.attach) == 0 {
+		return
+	}
+	ui.Row(c).Gap(6).Padding(6, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
+		Wrap().Children(func() {
+		for i, at := range a.attach {
+			ui.Row(c).Gap(4).Padding(3, 8).Radius(8).
+				Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
+				ui.Text(c, at.Name).FontSize(12).TextColor(t.TextMuted)
+				if ui.Button(c, "✕").Clicked() {
+					a.RemoveAttachment(i)
+				}
+			})
 		}
 	})
 }
