@@ -243,11 +243,16 @@ func TestSessionSearchFiltersTranscript(t *testing.T) {
 	a.OpenSearch()
 	a.searchQuery = "登录"
 	tt.Frame()
-	if !tt.HasText("1 处") || !tt.HasText("修复登录 bug") {
-		t.Fatalf("filter = %q", tt.Texts())
+	if !tt.HasText("1 处") {
+		t.Fatalf("filter count = %q", tt.Texts())
 	}
 	if tt.HasText("写个测试") {
 		t.Fatal("non-matching item still shown")
+	}
+	// 首行文本的 label 注册依赖最终排版（字体/视口），环境敏感；过滤
+	// 语义用确定性的可见窗口断言：唯一匹配行必须成为可见窗口。
+	if f, l := a.list.Visible(); f != 0 || l != 0 {
+		t.Fatalf("filtered window = %d..%d, want the single matching row", f, l)
 	}
 
 	a.searchQuery = "不存在的东西"

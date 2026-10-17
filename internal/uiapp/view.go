@@ -77,6 +77,13 @@ func (a *App) chatView(c *ui.Context, t *ui.Theme) {
 	a.list.Key = func(i int) any { return i } // append-only rows
 	a.list.FollowEnd = !a.searching()
 	a.list.FollowAnimation = &ui.Smooth
+	// 过滤切换或查询变化时显式滚到过滤列表末尾：FollowEnd 的 following
+	// 会因滚动离开而停摆，行数骤减后不重置滚动会让匹配行停在视口外
+	// （表现为"1 处"计数正确但列表空白——PR #29 自带测试失败即此因）。
+	if key := a.searchKey(); key != a.lastSearchKey {
+		a.list.ScrollToEnd()
+		a.lastSearchKey = key
+	}
 	// 搜索时过滤为匹配项；正常视图渲染全部。
 	matches := a.SearchMatches()
 	rows := a.chat.items
@@ -109,6 +116,15 @@ func (a *App) chatView(c *ui.Context, t *ui.Theme) {
 // searching reports whether the transcript is filtered by a query.
 func (a *App) searching() bool {
 	return a.searchOpen && strings.TrimSpace(a.searchQuery) != ""
+}
+
+// searchKey 是过滤视图的标识：非搜索为空串，搜索时为查询本身。用于
+// 检测过滤状态变化并重置列表滚动。
+func (a *App) searchKey() string {
+	if !a.searching() {
+		return ""
+	}
+	return a.searchQuery
 }
 
 // searchBarView filters the transcript (ZCode's in-conversation search).

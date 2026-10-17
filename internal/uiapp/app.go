@@ -37,8 +37,9 @@ type App struct {
 	editDraft    string
 
 	// in-session search: filter the transcript to matching items.
-	searchOpen  bool
-	searchQuery string
+	searchOpen    bool
+	searchQuery   string
+	lastSearchKey string // 上帧的过滤标识，变化时重置列表滚动
 
 	// plan is the session's live todo snapshot (nil/empty hides the panel).
 	plan     []tools.TodoTask
