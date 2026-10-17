@@ -46,6 +46,10 @@ func (g *Gemini) stream(ctx context.Context, req Request, out chan<- StreamEvent
 	end := func(reason StopReason, message string) {
 		out <- StreamEvent{Kind: EvMessageEnd, StopReason: reason, ErrorMessage: message}
 	}
+	endRetryable := func(reason StopReason, message string, retryable bool, afterMS int) {
+		out <- StreamEvent{Kind: EvMessageEnd, StopReason: reason, ErrorMessage: message,
+			Retryable: retryable, RetryAfterMS: afterMS}
+	}
 	if g.APIKey == "" {
 		end(StopError, "missing API key: set it in Settings or GEMINI_API_KEY")
 		return
@@ -90,7 +94,8 @@ func (g *Gemini) stream(ctx context.Context, req Request, out chan<- StreamEvent
 		resp.Body.Close()
 	}()
 	if resp.StatusCode != http.StatusOK {
-		end(StopError, httpError(resp))
+		msg, status := httpErrorStatus(resp)
+		endRetryable(StopError, msg, retryableStatus(status), retryAfterMS(resp.Header))
 		return
 	}
 

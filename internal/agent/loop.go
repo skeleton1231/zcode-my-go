@@ -7,7 +7,9 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -16,6 +18,16 @@ import (
 // DefaultMaxTurns caps tool-calling turns per user message, so a looping
 // model cannot run forever.
 const DefaultMaxTurns = 50
+
+// retry limits for transient provider failures (ZCode's adapter retry):
+// at most DefaultMaxRetries backs-off turns, the provider's Retry-After
+// overriding the exponential fallback, capped so a rude header cannot
+// stall the run.
+const (
+	DefaultMaxRetries = 3
+	retryBackoffBase  = 500 * time.Millisecond
+	retryBackoffCap   = 30 * time.Second
+)
 
 // LoopConfig wires one run of the loop.
 type LoopConfig struct {
@@ -30,6 +42,9 @@ type LoopConfig struct {
 	History func() []ai.Message
 	// SessionID labels AskRequests with the run's session.
 	SessionID string
+	// RetryBackoff overrides the exponential base for transient-failure
+	// retries (tests inject a millisecond; 0 uses the default).
+	RetryBackoff time.Duration
 
 	// Permissions gates tool execution (ZCode's permission service). Nil
 	// bypasses checking entirely — the v0.2 behavior — for callers that
@@ -82,7 +97,7 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 		}
 		l.emit(Event{Kind: EvTurnStart, TurnIndex: turn})
 
-		msg, end := l.streamAssistant(ctx, turn)
+		msg, end := l.streamAssistantWithRetry(ctx, turn)
 		if err := appendMessage(msg); err != nil {
 			return stopInfo{stop: ai.StopError, usage: total, err: err.Error()}
 		}
@@ -122,6 +137,35 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 		}
 		l.emit(Event{Kind: EvTurnEnd, TurnIndex: turn})
 	}
+}
+
+// streamAssistantWithRetry retries transient provider failures (429, 5xx,
+// overloaded): the failed turn never enters the transcript; each retry is
+// announced as EvTurnRetry so the UI can drop the partial output.
+func (l *Loop) streamAssistantWithRetry(ctx context.Context, turn int) (ai.Message, endInfo) {
+	msg, end := l.streamAssistant(ctx, turn)
+	for retries := 1; end.stop == ai.StopError && end.retryable && retries <= DefaultMaxRetries; retries++ {
+		base := l.cfg.RetryBackoff
+		if base <= 0 {
+			base = retryBackoffBase
+		}
+		wait := time.Duration(end.retryAfterMS) * time.Millisecond
+		if fallback := base << retries; wait < fallback {
+			wait = fallback
+		}
+		if wait > retryBackoffCap {
+			wait = retryBackoffCap
+		}
+		l.emit(Event{Kind: EvTurnRetry, TurnIndex: turn,
+			Text: fmt.Sprintf("第 %d 次重试（%s）：%s", retries, wait.Round(time.Millisecond), end.err)})
+		select {
+		case <-ctx.Done():
+			return msg, endInfo{stop: ai.StopAborted}
+		case <-time.After(wait):
+		}
+		msg, end = l.streamAssistant(ctx, turn)
+	}
+	return msg, end
 }
 
 // execute runs one tool call and reports its outcome through events. The
@@ -247,7 +291,8 @@ func (l *Loop) streamAssistant(ctx context.Context, turn int) (ai.Message, endIn
 					ArgsDelta: ev.ToolCallArgs, TurnIndex: turn})
 			}
 		case ai.EvMessageEnd:
-			end = endInfo{stop: ev.StopReason, usage: ev.Usage, err: ev.ErrorMessage}
+			end = endInfo{stop: ev.StopReason, usage: ev.Usage, err: ev.ErrorMessage,
+				retryable: ev.Retryable, retryAfterMS: ev.RetryAfterMS}
 		}
 	}
 	if end.stop == "" {
@@ -272,7 +317,9 @@ func (l *Loop) streamAssistant(ctx context.Context, turn int) (ai.Message, endIn
 
 // endInfo carries how a provider turn ended.
 type endInfo struct {
-	stop  ai.StopReason
-	usage ai.Usage
-	err   string
+	stop         ai.StopReason
+	usage        ai.Usage
+	err          string
+	retryable    bool
+	retryAfterMS int
 }

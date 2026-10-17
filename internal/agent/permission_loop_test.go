@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -185,5 +186,104 @@ func TestSummarizeArgs(t *testing.T) {
 		if got := SummarizeArgs(raw); got != c.want {
 			t.Errorf("SummarizeArgs(%s) = %q, want %q", c.args, got, c.want)
 		}
+	}
+}
+
+// retryingProvider fails N turns with a retryable error, then succeeds.
+type retryingProvider struct {
+	failures int
+	replies  []fakeTurn
+	calls    int
+}
+
+func (p *retryingProvider) Stream(_ context.Context, _ ai.Request) <-chan ai.StreamEvent {
+	p.calls++
+	out := make(chan ai.StreamEvent, 3)
+	if p.calls <= p.failures {
+		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopError,
+			ErrorMessage: "429 Too Many Requests", Retryable: true, RetryAfterMS: 1}
+		close(out)
+		return out
+	}
+	for _, ev := range p.replies[0].events {
+		out <- ev
+	}
+	close(out)
+	return out
+}
+
+// TestLoopRetriesTransientFailures verifies a retryable turn is retried
+// without entering the transcript, and the good answer lands.
+func TestLoopRetriesTransientFailures(t *testing.T) {
+	provider := &retryingProvider{failures: 2, replies: []fakeTurn{
+		textTurn("recovered", ai.Usage{}),
+	}}
+	c := &collector{}
+	var retries int
+	emit := func(ev Event) {
+		if ev.Kind == EvTurnRetry {
+			retries++
+		}
+		c.emit(ev)
+	}
+	loop := NewLoop(LoopConfig{
+		Provider:     provider,
+		Tools:        nil,
+		History:      func() []ai.Message { return c.messages },
+		RetryBackoff: time.Millisecond,
+	}, emit)
+	loop.Run(context.Background(), c.append)
+
+	if retries != 2 {
+		t.Fatalf("retries = %d, want 2", retries)
+	}
+	if len(c.messages) != 1 || c.messages[0].Text() != "recovered" {
+		t.Fatalf("messages = %+v", c.messages)
+	}
+	end := c.events[len(c.events)-1]
+	if end.StopReason != ai.StopEndTurn {
+		t.Fatalf("agent_end = %+v", end)
+	}
+}
+
+// TestLoopStopsAfterRetryBudget verifies the budget caps the retries.
+func TestLoopStopsAfterRetryBudget(t *testing.T) {
+	provider := &retryingProvider{failures: 99, replies: nil}
+	c := &collector{}
+	loop := NewLoop(LoopConfig{
+		Provider:     provider,
+		History:      func() []ai.Message { return c.messages },
+		RetryBackoff: time.Millisecond,
+	}, c.emit)
+	stop := loop.Run(context.Background(), c.append)
+	if stop != ai.StopError {
+		t.Fatalf("stop = %v", stop)
+	}
+	if provider.calls != DefaultMaxRetries+1 {
+		t.Fatalf("calls = %d, want %d", provider.calls, DefaultMaxRetries+1)
+	}
+}
+
+// TestLoopDoesNotRetryPermanentErrors verifies non-retryable failures end
+// the run immediately.
+func TestLoopDoesNotRetryPermanentErrors(t *testing.T) {
+	provider := &fakeProvider{turns: []fakeTurn{{
+		events: []ai.StreamEvent{
+			{Kind: ai.EvMessageEnd, StopReason: ai.StopError, ErrorMessage: "401 unauthorized"},
+		},
+	}}}
+	// fakeProvider pops per call; a second call would panic — retries would
+	// fail the test loudly, which is the assertion.
+	c := &collector{}
+	loop := NewLoop(LoopConfig{
+		Provider: provider,
+		History:  func() []ai.Message { return c.messages },
+	}, c.emit)
+	stop := loop.Run(context.Background(), c.append)
+	if stop != ai.StopError {
+		t.Fatalf("stop = %v", stop)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("calls = %d, want 1", provider.calls)
 	}
 }
