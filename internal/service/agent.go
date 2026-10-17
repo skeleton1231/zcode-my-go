@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
+	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
@@ -580,7 +582,65 @@ func (s *AgentService) Chat(sessionID, text string, emit func(agent.Event)) erro
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
 	}
+	// 回合开始前快照工作区（本地 git 仓库时）：seq = 新用户消息的序号
+	//（现有用户消息数），回滚按序号定位。
+	s.captureCheckpoint(sess, userTurnCount(sess.Messages()))
 	return sess.Chat(text, emit)
+}
+
+// captureCheckpoint snapshots the workspace before a turn. Non-repo and
+// SSH-remote workspaces degrade silently to conversation-only rewind.
+func (s *AgentService) captureCheckpoint(sess *agent.Session, seq int) {
+	info := sess.Info()
+	if strings.HasPrefix(info.Workspace, "ssh://") {
+		return
+	}
+	if err := checkpoint.Capture(info.Workspace, info.ID, seq); err != nil &&
+		!errors.Is(err, checkpoint.ErrNotARepo) {
+		log.Printf("checkpoint capture: %v", err)
+	}
+}
+
+// restoreCheckpoint rolls the workspace back to a turn's start; a missing
+// checkpoint (or non-repo) leaves files untouched.
+func (s *AgentService) restoreCheckpoint(sess *agent.Session, seq int) {
+	info := sess.Info()
+	if strings.HasPrefix(info.Workspace, "ssh://") {
+		return
+	}
+	if err := checkpoint.Restore(info.Workspace, info.ID, seq); err != nil &&
+		!errors.Is(err, checkpoint.ErrNotARepo) &&
+		!errors.Is(err, checkpoint.ErrNoCheckpoint) {
+		log.Printf("checkpoint restore: %v", err)
+	}
+}
+
+// userTurnCount is the number of user turns in a transcript — the ordinal
+// of the next user message, and (minus one) of the last.
+func userTurnCount(msgs []ai.Message) int {
+	n := 0
+	for _, m := range msgs {
+		if m.Role == ai.RoleUser {
+			n++
+		}
+	}
+	return n
+}
+
+// RewindLatest undoes the last whole turn: the workspace restores to the
+// checkpoint taken before it and the transcript drops the exchange (the
+// 会话 menu's 回滚最近一回合).
+func (s *AgentService) RewindLatest(sessionID string) error {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("no session %s", sessionID)
+	}
+	msgs := sess.Messages()
+	if userTurnCount(msgs) == 0 {
+		return fmt.Errorf("no turn to rewind")
+	}
+	s.restoreCheckpoint(sess, userTurnCount(msgs)-1)
+	return sess.Rewind(agent.LastUserIndex(msgs))
 }
 
 // CompactSession summarizes a session's old history (the 压缩会话 menu).
@@ -684,6 +744,8 @@ func (s *AgentService) EditAndResend(sessionID, text string, emit func(agent.Eve
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
 	}
+	// 编辑重发即回退重跑：工作区一并恢复到该回合前。
+	s.restoreCheckpoint(sess, userTurnCount(sess.Messages())-1)
 	return sess.EditAndResend(text, emit)
 }
 
@@ -761,6 +823,8 @@ func (s *AgentService) Retry(sessionID string, emit func(agent.Event)) error {
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
 	}
+	// 重生成前把工作区恢复到该回合开始前：被重试回合的文件改动撤销。
+	s.restoreCheckpoint(sess, userTurnCount(sess.Messages())-1)
 	return sess.Retry(emit)
 }
 

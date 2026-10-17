@@ -52,6 +52,11 @@ func main() {
 						win.Update(func() { a.OpenRename() })
 					}
 				}},
+				{Label: "回滚最近一回合（含工作区）", Click: func(*mygo.MenuItem, *mygo.Window) {
+					if win := a.Window(); win != nil {
+						win.Update(func() { a.RewindLatest() })
+					}
+				}},
 				{Label: "删除会话", Accelerator: "CmdOrCtrl+D", Click: func(*mygo.MenuItem, *mygo.Window) { a.DeleteActive() }},
 				mygo.Separator(),
 				{Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {

@@ -67,6 +67,12 @@ E2E 测试体系（internal/e2e 脚本化全栈回放）、会话导出（HTML/M
 注入的内存 FS 垫片，完整 agent（UI/设置/会话/权限门/文件工具/流式
 provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedDB、启动前
 恢复——刷新不清空设置/会话/工作区。
+**工作区检查点与文件回滚**（ZCode conversation-branch-rewind 的
+   file rewind 半边，internal/checkpoint）：每回合前以临时索引快照 git
+   工作区全树（不触碰工作区与真实索引、禁用换行转换保证字节保真），
+   回滚最近一回合/编辑重发/重试先恢复检查点（read-tree -u --reset +
+   clean -fd，不动分支历史）再截断转录；非 git/SSH 工作区降级为仅回退
+   转录。fork/编辑重试/重试即 conversation 半边，此前已备。
 待做：会话分享。
 
 ## 翻译轮次记录
