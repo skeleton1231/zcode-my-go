@@ -73,14 +73,29 @@ func (a *App) chatView(c *ui.Context, t *ui.Theme) {
 		a.welcomeView(c, t)
 		return
 	}
+	a.searchBarView(c, t)
 	a.list.Key = func(i int) any { return i } // append-only rows
-	a.list.FollowEnd = true
+	a.list.FollowEnd = !a.searching()
 	a.list.FollowAnimation = &ui.Smooth
-	ui.List(c, &a.list, len(a.chat.items), func(i int) {
-		a.itemView(c, t, i, &a.chat.items[i])
+	// 搜索时过滤为匹配项；正常视图渲染全部。
+	matches := a.SearchMatches()
+	rows := a.chat.items
+	indexOf := func(row int) int { return row }
+	if a.searching() {
+		rows = nil
+		for _, idx := range matches {
+			rows = append(rows, a.chat.items[idx])
+		}
+		indexOf = func(row int) int { return matches[row] }
+	}
+	ui.List(c, &a.list, len(rows), func(i int) {
+		a.itemView(c, t, indexOf(i), &a.chat.items[indexOf(i)])
 	}).Grow(1).Padding(16, 24).Gap(14).Justify(ui.End).Children(func() {
 		if len(a.chat.items) == 0 {
 			ui.Text(c, "把任务交给 agent：读代码、改文件、跑命令。").TextColor(t.TextMuted).Margin(ui.Auto)
+		}
+		if a.searching() && len(matches) == 0 {
+			ui.Text(c, "没有匹配 \""+a.searchQuery+"\" 的消息").TextColor(t.TextMuted).Margin(ui.Auto)
 		}
 	})
 	if a.chat.endErr != "" {
@@ -89,6 +104,37 @@ func (a *App) chatView(c *ui.Context, t *ui.Theme) {
 			ui.Text(c, a.chat.endErr).TextColor(t.Danger).FontSize(12)
 		})
 	}
+}
+
+// searching reports whether the transcript is filtered by a query.
+func (a *App) searching() bool {
+	return a.searchOpen && strings.TrimSpace(a.searchQuery) != ""
+}
+
+// searchBarView filters the transcript (ZCode's in-conversation search).
+func (a *App) searchBarView(c *ui.Context, t *ui.Theme) {
+	if !a.searchOpen {
+		return
+	}
+	ui.Row(c).Gap(8).Padding(6, 24).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).
+		AlignItems(ui.Center).Children(func() {
+		in := ui.TextInput(c, &a.searchQuery).Placeholder("搜索会话…").Grow(1)
+		in.OnTextKey(func(k ui.TextKey) bool {
+			if k.Key == ui.KeyEscape {
+				a.searchOpen = false
+				a.searchQuery = ""
+				return true
+			}
+			return false
+		})
+		if n := len(a.SearchMatches()); a.searching() {
+			ui.Text(c, fmt.Sprintf("%d 处", n)).TextColor(t.TextMuted).FontSize(12)
+		}
+		if ui.Button(c, "✕").Clicked() {
+			a.searchOpen = false
+			a.searchQuery = ""
+		}
+	})
 }
 
 // welcomeView is the empty state before any session is chosen.
@@ -137,7 +183,7 @@ func (a *App) userItemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 		ui.Spacer(c)
 		ui.Text(c, item.text).Selectable().Padding(8, 12).Radius(12).
 			Background(t.Surface).MaxWidth(520)
-		if i == lastUserIndex(a.chat.items) && !a.chat.running && a.activeID != "" {
+		if i == lastUserIndex(a.chat.items) && !a.chat.running && a.activeID != "" && !a.searching() {
 			if ui.Button(c, "✎ 编辑").Clicked() {
 				a.StartEdit()
 			}

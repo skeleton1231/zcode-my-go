@@ -36,6 +36,10 @@ type App struct {
 	editingIndex int
 	editDraft    string
 
+	// in-session search: filter the transcript to matching items.
+	searchOpen  bool
+	searchQuery string
+
 	// plan is the session's live todo snapshot (nil/empty hides the panel).
 	plan     []tools.TodoTask
 	planOpen bool
@@ -142,6 +146,32 @@ func (a *App) open(id string) {
 	a.chat = restoreChat(messages)
 	a.list = ui.ListState{} // a restored chat starts at its end
 	a.RefreshPlan()
+}
+
+// OpenSearch toggles the in-session search bar.
+func (a *App) OpenSearch() {
+	a.searchOpen = !a.searchOpen
+	if !a.searchOpen {
+		a.searchQuery = ""
+	}
+}
+
+// SearchMatches returns the item indexes matching the query (every field
+// the transcript shows), case-insensitive; nil query matches everything.
+func (a *App) SearchMatches() []int {
+	q := strings.ToLower(strings.TrimSpace(a.searchQuery))
+	if q == "" {
+		return nil
+	}
+	var out []int
+	for i, item := range a.chat.items {
+		hay := strings.ToLower(item.text + " " + item.think + " " +
+			item.name + " " + item.result)
+		if strings.Contains(hay, q) {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // RefreshPlan reloads the session's todo plan for the panel.

@@ -220,3 +220,45 @@ func TestPlanPanelShowsLivePlan(t *testing.T) {
 		t.Fatalf("panel tasks missing: %q", tt.Texts())
 	}
 }
+
+// TestSessionSearchFiltersTranscript verifies the search bar filters the
+// list to matches, counts them, and clears on close.
+func TestSessionSearchFiltersTranscript(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(info.ID)
+	a.chat.items = []chatItem{
+		{kind: itemUser, text: "修复登录 bug"},
+		{kind: itemAssistant, text: "已修复 login.go"},
+		{kind: itemUser, text: "写个测试"},
+	}
+	tt.Frame()
+
+	a.OpenSearch()
+	a.searchQuery = "登录"
+	tt.Frame()
+	if !tt.HasText("1 处") || !tt.HasText("修复登录 bug") {
+		t.Fatalf("filter = %q", tt.Texts())
+	}
+	if tt.HasText("写个测试") {
+		t.Fatal("non-matching item still shown")
+	}
+
+	a.searchQuery = "不存在的东西"
+	tt.Frame()
+	if !tt.HasText("没有匹配") {
+		t.Fatalf("empty state = %q", tt.Texts())
+	}
+
+	a.OpenSearch() // 关闭并清空
+	tt.Frame()
+	if !tt.HasText("写个测试") {
+		t.Fatal("transcript not restored after closing search")
+	}
+}
