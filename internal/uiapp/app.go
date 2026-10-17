@@ -307,6 +307,7 @@ func (a *App) Send() {
 			}
 			a.refreshSessions()
 			a.RefreshPlan()
+			a.RefreshBudget() // 运行结束即刷新：否则仪表停在运行前的旧值
 		})
 	}()
 }
