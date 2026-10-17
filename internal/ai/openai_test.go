@@ -120,3 +120,59 @@ func TestToOpenAI(t *testing.T) {
 		t.Fatalf("tool = %+v", msgs[3])
 	}
 }
+
+// TestOpenAIParallelToolCallInterleaved 验证交错分片的并行工具调用按
+// index 路由：delta 事件必须携带正确的 ToolCallID（issue #28：参数曾
+// 互相污染，call_A 全丢、call_B 拿到交错垃圾 JSON）。
+func TestOpenAIParallelToolCallInterleaved(t *testing.T) {
+	srv := openAIServer(t, 200, []string{
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_A","function":{"name":"read","arguments":""}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_B","function":{"name":"write","arguments":""}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"pa"}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"pa"}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\":\"a.txt\"}"}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"th\":\"b.txt\"}"}}]}}]}`,
+		`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+	})
+	p := NewOpenAI(srv.URL, "sk-test")
+	args := map[string]string{}
+	var endReason StopReason
+	for ev := range p.Stream(context.Background(), Request{Model: "gpt"}) {
+		switch ev.Kind {
+		case EvToolCallDelta:
+			if ev.ToolCallID == "" {
+				t.Fatal("delta without ToolCallID")
+			}
+			args[ev.ToolCallID] += ev.ToolCallArgs
+		case EvMessageEnd:
+			endReason = ev.StopReason
+		}
+	}
+	if args["call_A"] != `{"path":"a.txt"}` || args["call_B"] != `{"path":"b.txt"}` {
+		t.Fatalf("assembled = %v", args)
+	}
+	if endReason != StopToolUse {
+		t.Fatalf("finish = %q", endReason)
+	}
+}
+
+// TestOpenAITrailingUsageAfterFinish 验证 finish_reason 后的 usage 尾块
+// 被捕获（issue #28 附带发现：include_usage 的标准行为，曾被提前 return
+// 丢弃，usage 全零）。
+func TestOpenAITrailingUsageAfterFinish(t *testing.T) {
+	srv := openAIServer(t, 200, []string{
+		`{"choices":[{"delta":{"content":"hi"}}]}`,
+		`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`{"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7}}`,
+	})
+	p := NewOpenAI(srv.URL, "sk-test")
+	var end StreamEvent
+	for ev := range p.Stream(context.Background(), Request{Model: "gpt"}) {
+		if ev.Kind == EvMessageEnd {
+			end = ev
+		}
+	}
+	if end.Usage.InputTokens != 11 || end.Usage.OutputTokens != 7 {
+		t.Fatalf("usage = %+v", end.Usage)
+	}
+}
