@@ -497,10 +497,6 @@ func TestSteeringKeepsLoopPastEndTurn(t *testing.T) {
 		},
 	}, c.emit)
 	loop.Run(context.Background(), c.append)
-	if len(c.messages) != 3 { // user + 答1 + 插话 + 答2 = 4？user 由测试外无 —— Chat 语义这里直接跑 loop，无初始 user
-		// 消息序：答1、插话(user)、答2 → 3 条。
-		_ = c.messages
-	}
 	var answers int
 	for _, m := range c.messages {
 		if m.Role == ai.RoleAssistant {
@@ -536,9 +532,31 @@ func TestSessionSteerGuards(t *testing.T) {
 	}
 	close(blocking)
 	<-done
-	// Chat 运行时 drain 由 loop 驱动；结束后队列应已消费或至少可再次排空。
+}
+
+// TestSteeringClearedOnRunEnd 验证运行结束（含 abort）清空插话队列：
+// abort 残留的插话不得静默泄入下一次运行的首个回合。
+func TestSteeringClearedOnRunEnd(t *testing.T) {
+	m, _ := NewManager(t.TempDir())
+	blocking := make(chan struct{})
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return blockProvider{until: blocking} },
+		Model:    func() string { return "m" },
+		System:   func(string) string { return "" },
+	})
+	s, _ := m.New("ws")
+	done := make(chan error, 1)
+	go func() { done <- s.Chat("start", func(Event) {}) }()
+	waitForRunning(t, s)
+	if err := s.Steer("插话"); err != nil {
+		t.Fatalf("steer: %v", err)
+	}
+	s.Abort()
+	<-done
 	s.mu.Lock()
 	left := len(s.steering)
 	s.mu.Unlock()
-	_ = left // blockProvider 立即 end_turn，插话在 turn0 前已注入或留在队列——不断言细节
+	if left != 0 {
+		t.Fatalf("aborted steering leaked into next run: %d queued", left)
+	}
 }

@@ -125,6 +125,9 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 	defer func() {
 		s.mu.Lock()
 		s.cancel = nil
+		// 运行结束即清空插话队列：abort 残留的插话不得静默泄入下一次
+		// 运行的首个回合（abort 语义 = 取消一切排队内容）。
+		s.steering = nil
 		s.mu.Unlock()
 		cancel()
 	}()
