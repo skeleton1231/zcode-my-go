@@ -82,6 +82,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "doctor" {
 		os.Exit(runDoctor())
 	}
+	if len(os.Args) > 1 && os.Args[1] == "sessions" {
+		os.Exit(runSessions(os.Args[2:]))
+	}
 	prompt, workspace, fullscreen, images, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)

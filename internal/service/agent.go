@@ -556,6 +556,35 @@ func (s *AgentService) NewSession(workspace string) (agent.SessionInfo, error) {
 	return sess.Info(), nil
 }
 
+// HasSession reports whether the id (or its unique prefix) names a
+// session; ResolveSession maps a unique prefix to the full id.
+func (s *AgentService) HasSession(idOrPrefix string) bool {
+	_, ok := s.ResolveSession(idOrPrefix)
+	return ok
+}
+
+// ResolveSession maps a unique id prefix to the full session id — CLI
+// ergonomics（时间戳前缀早早唯一，敲 15 位足够）.
+func (s *AgentService) ResolveSession(idOrPrefix string) (string, bool) {
+	if idOrPrefix == "" {
+		return "", false
+	}
+	sessions := s.ListSessions()
+	var match string
+	for _, info := range sessions {
+		if info.ID == idOrPrefix {
+			return info.ID, true
+		}
+		if strings.HasPrefix(info.ID, idOrPrefix) {
+			if match != "" {
+				return "", false // 前缀歧义
+			}
+			match = info.ID
+		}
+	}
+	return match, match != ""
+}
+
 // ListSessions returns the session index, newest first.
 func (s *AgentService) ListSessions() []agent.SessionInfo {
 	return s.mgr.List()
@@ -930,6 +959,16 @@ func (s *AgentService) ExportSessionMarkdown(id, dest string) error {
 	info := sess.Info()
 	doc := exporthtml.Markdown(sess.Messages(), info.Title, s.resolve().Model, info.Workspace)
 	return os.WriteFile(dest, []byte(doc), 0o644)
+}
+
+// AppendForTesting appends a raw message to a session's transcript
+//（sessions-CLI 等 e2e 的数据铺垫；生产路径一律经 Chat 家族）。
+func (s *AgentService) AppendForTesting(sessionID string, m ai.Message) error {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("no session %s", sessionID)
+	}
+	return sess.Append(m)
 }
 
 // Steer queues a message into a running session (pi's steering).
