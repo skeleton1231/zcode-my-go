@@ -3,7 +3,6 @@ package service
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,13 +141,3 @@ func matchSnippet(m ai.Message, query string) (string, bool) {
 
 // dir returns the sessions directory（manager 的落盘处）.
 func (s *AgentService) dir() string { return filepath.Dir(s.path) }
-
-// AppendForTesting writes one message into a session's transcript
-// without running the loop（搜索测试播种）.
-func (s *AgentService) AppendForTesting(sessionID string, m ai.Message) error {
-	sess, ok := s.mgr.Get(sessionID)
-	if !ok {
-		return fmt.Errorf("no session %s", sessionID)
-	}
-	return sess.Append(m)
-}
