@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -382,5 +383,21 @@ func TestRunWorkflowDAGEditStepsPassGate(t *testing.T) {
 	}
 	if editable.runs != 0 {
 		t.Fatal("denied step executed")
+	}
+}
+
+// TestTruncateRuneSafe 验证步骤结果截断按 rune（issue #99：字节截断
+// 让中文尾部乱码进子代理 prompt）。
+func TestTruncateRuneSafe(t *testing.T) {
+	s := strings.Repeat("项", 300) // 900 字节
+	got := truncate(s, 100)
+	if !utf8.ValidString(got) {
+		t.Fatalf("invalid UTF-8: %q", got[len(got)-12:])
+	}
+	if n := len([]rune(got)); n != 101 { // 100 rune + 省略号
+		t.Fatalf("runes = %d", n)
+	}
+	if truncate("短", 10) != "短" {
+		t.Fatal("short string mangled")
 	}
 }

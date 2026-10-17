@@ -360,10 +360,13 @@ func workflowPrompt(steps []WorkflowStep, done []StepResult, i int) string {
 	return b.String()
 }
 
+// truncate 按 rune 截断（issue #99：按字节切会把中文切成非法 UTF-8
+// 直进子代理 prompt——#12/#40 同类第三例）。
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return string(r[:n]) + "…"
 }
 
