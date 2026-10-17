@@ -568,7 +568,9 @@ func (s *AgentService) RenameSession(id, title string) error {
 	if !ok {
 		return fmt.Errorf("no session %s", id)
 	}
-	sess.Rename(title)
+	if err := sess.Rename(title); err != nil {
+		return fmt.Errorf("renaming %s: %w", id, err)
+	}
 	return nil
 }
 

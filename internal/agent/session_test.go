@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -387,5 +388,32 @@ func TestRenamePersists(t *testing.T) {
 	reloaded, _ := NewManager(dir)
 	if got := reloaded.List()[0].Title; got != "手动 标题" {
 		t.Fatalf("reloaded title = %q", got)
+	}
+}
+
+// TestRenameWriteFailureRollsBack 验证磁盘写失败不吞错：Rename 报错且
+// 内存标题回滚（issue #52：曾静默失败，重启后标题回退无任何提示）。
+func TestRenameWriteFailureRollsBack(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	wire(m)
+	s, _ := m.New("ws")
+	s.Append(userMsg("原标题"))
+	// 占位成目录：writeMetaLocked 与 appendLine 的写必败（跨平台注入）。
+	os.Remove(s.path)
+	if err := os.Mkdir(s.path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(s.path) })
+	if err := s.Rename("新标题"); err == nil {
+		t.Fatal("rename swallowed the write failure")
+	}
+	if got := s.Info().Title; got != "原标题" {
+		t.Fatalf("memory not rolled back: %q", got)
+	}
+	// addUsage 写失败同样不崩、内存累计仍前进（记日志，见实现）。
+	s.addUsage(ai.Usage{InputTokens: 5, OutputTokens: 1})
+	if got := s.UsageTotal(); got.InputTokens != 5 {
+		t.Fatalf("usage total = %+v", got)
 	}
 }

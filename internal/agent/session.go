@@ -271,8 +271,9 @@ func (s *Session) SetPlanMode(on bool) {
 }
 
 // Rename sets the session's title (ZCode's rename), rewriting the meta
-// line like Append's first-title write does.
-func (s *Session) Rename(title string) {
+// line like Append's first-title write does. 磁盘写失败时报错并回滚内存
+// 标题（issue #52：不吞错，内存与磁盘不得静默分裂）。
+func (s *Session) Rename(title string) error {
 	title = strings.Join(strings.Fields(title), " ")
 	if len([]rune(title)) > 80 {
 		title = string([]rune(title)[:79]) + "…"
@@ -280,10 +281,15 @@ func (s *Session) Rename(title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if title == "" || title == s.info.Title {
-		return
+		return nil
 	}
+	old := s.info.Title
 	s.info.Title = title
-	_ = s.writeMetaLocked()
+	if err := s.writeMetaLocked(); err != nil {
+		s.info.Title = old
+		return fmt.Errorf("persisting rename: %w", err)
+	}
+	return nil
 }
 
 // UsageTotal returns the session's cumulative token usage.
@@ -303,7 +309,11 @@ func (s *Session) addUsage(u ai.Usage) {
 	if err != nil {
 		return
 	}
-	_ = appendLine(s.path, rec)
+	if err := appendLine(s.path, rec); err != nil {
+		// 不吞错（issue #52）：usage 记录落盘失败记日志，内存累计继续
+		// 前进（重放取磁盘末条，缺失一条只会少记，不会回退）。
+		log.Printf("session %s: persisting usage: %v", s.info.ID, err)
+	}
 }
 
 // PlanMode reports whether the session is in plan mode.
