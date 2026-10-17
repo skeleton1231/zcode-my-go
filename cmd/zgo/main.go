@@ -162,13 +162,19 @@ func render(ev agent.Event) {
 		}
 	case agent.EvCompaction:
 		fmt.Fprintf(os.Stderr, "[压缩] %s\n", ev.Text)
+	case agent.EvTurnRetry:
+		// 重试必须可见（issue #40）：否则半截文本与新文本之间没有任何
+		// 说明，用户毫无感知。
+		fmt.Fprintf(os.Stderr, "\n[重试] %s\n", ev.Text)
 	}
 }
 
 func oneLine(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 60 {
-		return s[:59] + "…"
+	// 按 rune 截断（issue #40）：按字节截断会把中文切开，非法 UTF-8
+	// 直出终端。
+	if runes := []rune(s); len(runes) > 60 {
+		return string(runes[:59]) + "…"
 	}
 	return s
 }
@@ -278,6 +284,15 @@ func repl(workspace string) int {
 	for {
 		fmt.Fprint(os.Stderr, "zgo> ")
 		if !sc.Scan() {
+			// 超过 1MB 的行曾与 EOF 同路径静默退出 REPL（issue #39）：
+			// 丢弃该行并重建 scanner 继续读（ErrTooLong 后 scanner 不可
+			// 恢复；重建后继续消费该行剩余部分直到换行）。
+			if e := sc.Err(); e != nil {
+				fmt.Fprintln(os.Stderr, "\n[输入] 行超过 1MB，已丢弃；请分段粘贴")
+				sc = bufio.NewScanner(os.Stdin)
+				sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+				continue
+			}
 			fmt.Fprintln(os.Stderr)
 			return 0
 		}
@@ -295,20 +310,24 @@ func repl(workspace string) int {
 			}
 			continue
 		case "/plan":
-			on := true
-			if planState[info.ID] {
-				on = false
-			}
-			planState[info.ID] = on
+			// 服务先翻转、成功后才写本地 flag（issue #39：失败时本地
+			// flag 先翻会让下次 /plan 与服务状态反相）。
+			on := !planState[info.ID]
 			if err := svc.PlanMode(info.ID, on); err != nil {
 				fmt.Fprintln(os.Stderr, "[计划模式]", err)
-			} else if on {
+				continue
+			}
+			planState[info.ID] = on
+			if on {
 				fmt.Fprintln(os.Stderr, "[计划模式] 已开启（只读）")
 			} else {
 				fmt.Fprintln(os.Stderr, "[计划模式] 已关闭")
 			}
 			continue
 		case "/new":
+			// 旧 session 的 plan flag 随之清理（issue #39：全局 map 只增
+			// 不减，长 REPL 会话缓慢泄漏）。
+			delete(planState, info.ID)
 			var err error
 			info, err = svc.NewSession(workspace)
 			if err != nil {
