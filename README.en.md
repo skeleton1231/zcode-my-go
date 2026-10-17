@@ -64,6 +64,20 @@ settings file).
 
 MIT © 2026 skeleton1231
 
+## v0.5.0 highlights
+
+- SSH terminal: the terminal panel runs a remote interactive shell on
+  ssh:// workspaces (PTY + WindowChange).
+- Terminal attachments: `-i/--image` in print mode, `/attach` in the
+  REPL/TUI.
+- Cross-session search: one box over every transcript (text and tool
+  arguments), click-through to the session.
+- Lazy session loading: startup reads meta lines only (~9ms vs ~2s for
+  40 sessions of 320KB).
+- Anthropic prompt caching: three ephemeral breakpoints on stable
+  prefixes.
+- The CLI ops family: zgo cron / doctor / sessions / memory / models.
+
 ## v0.4.0 highlights
 
 - Workspace checkpoints & file rewind (git temp-index snapshots; edit-

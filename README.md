@@ -69,6 +69,13 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   右列文件树 + 只读预览（本地与 SSH 远程同源）。
 - **浏览器目标**：`go tool mygo build -platform web && go run ./cmd/webfs`——
   完整 agent 跑进浏览器（内存 FS 垫片 + IndexedDB 持久化，刷新不清空）。
+- **跨会话搜索**：`CmdOrCtrl+Shift+F` 一框检索全部会话（文本与工具参数，
+  点命中直达）。
+- **性能**：启动惰性装载会话（只读 meta 行）；Anthropic 前缀缓存三断点，
+  命中按缓存计价。
+- **CLI 运维家族**：`zgo cron`（定时任务）、`zgo doctor`（环境诊断）、
+  `zgo sessions`（列表/导出/删除）、`zgo memory`（工作区记忆）、
+  `zgo models`（模型目录与校验）。
 - **会话导出即分享**：HTML / Markdown 自包含导出（无上传服务——个人 agent
   的分享物就是导出文件本身）。
 
