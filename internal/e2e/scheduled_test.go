@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 )
@@ -63,4 +64,63 @@ func TestE2ERunJobNowMissingJob(t *testing.T) {
 	if _, err := h.Svc.RunJobNow(context.Background(), "nope"); err == nil {
 		t.Fatal("missing job swallowed")
 	}
+}
+
+// TestE2ESchedulerTickFiresThroughService: a due job fires through the
+// REAL minute-tick scheduler wired on the service (clock injected, one
+// manual tick) — the run goes through the scheduleRunner into a live
+// session; disabled jobs stay untouched; Stop joins cleanly.
+func TestE2ESchedulerTickFiresThroughService(t *testing.T) {
+	h := New(t, Turn{Text: "定时回答：完成"})
+	store := h.Svc.JobStore()
+	if err := store.Upsert(schedule.Job{
+		ID: "tick", Schedule: "* * * * *", Prompt: "跑一遍",
+		Workspace: h.Workspace, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Upsert(schedule.Job{
+		ID: "off", Schedule: "* * * * *", Prompt: "不该跑",
+		Workspace: h.Workspace, Enabled: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Svc.StartScheduler()
+	defer h.Svc.StopScheduler()
+	sched := h.Svc.Scheduler()
+	if sched == nil {
+		t.Fatal("scheduler not running")
+	}
+	fixed := time.Now().Truncate(time.Minute)
+	sched.SetClock(func() time.Time { return fixed })
+
+	sched.FireDue(context.Background())
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs, err := store.List()
+		if err == nil && len(jobs) == 2 {
+			tickOK, offIdle := false, false
+			for _, j := range jobs {
+				if j.ID == "tick" && j.LastStatus == "ok" && !j.LastRun.IsZero() {
+					tickOK = true
+				}
+				if j.ID == "off" && j.LastRun.IsZero() {
+					offIdle = true
+				}
+			}
+			if tickOK && offIdle {
+				// 任务产生了独立会话转录。
+				sessions := h.Svc.ListSessions()
+				if len(sessions) != 2 { // harness + job run
+					t.Fatalf("sessions = %d", len(sessions))
+				}
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	jobs, _ := store.List()
+	t.Fatalf("tick never fired cleanly: %+v", jobs)
 }

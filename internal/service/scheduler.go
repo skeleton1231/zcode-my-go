@@ -59,6 +59,14 @@ func (s *AgentService) StartScheduler() {
 	sched.Start()
 }
 
+// Scheduler returns the running scheduler, or nil before StartScheduler
+// （面板/测试拿到它可查下次到期、注入时钟）.
+func (s *AgentService) Scheduler() *schedule.Scheduler {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sched
+}
+
 // StopScheduler ends the scheduler and waits for the loop.
 func (s *AgentService) StopScheduler() {
 	s.mu.Lock()
