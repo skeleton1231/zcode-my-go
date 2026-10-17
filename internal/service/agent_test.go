@@ -80,7 +80,7 @@ func TestSaveSettingsRoundtrip(t *testing.T) {
 	}
 	srv := sseAnthropic()
 	t.Cleanup(srv.Close)
-	v, err := s.SaveSettings("anthropic", srv.URL, "sk-ant-1234567890abcd", "fake-model")
+	v, err := s.SaveSettings("anthropic", srv.URL, "sk-ant-1234567890abcd", "fake-model", "off")
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestSaveSettingsRoundtrip(t *testing.T) {
 		t.Fatalf("view = %+v", v)
 	}
 	// 空 key：保留已存 key。
-	v, err = s.SaveSettings("anthropic", srv.URL, "", "other-model")
+	v, err = s.SaveSettings("anthropic", srv.URL, "", "other-model", "low")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestSaveSettingsRoundtrip(t *testing.T) {
 		t.Fatal("empty apiKey dropped the stored key")
 	}
 	// 非法 api 值被忽略。
-	if _, err := s.SaveSettings("bogus", srv.URL, "", "m"); err != nil {
+	if _, err := s.SaveSettings("bogus", srv.URL, "", "m", "off"); err != nil {
 		t.Fatal(err)
 	}
 	if s.GetSettings().API != "anthropic" {
@@ -173,7 +173,7 @@ func TestChatStreamsAndPersists(t *testing.T) {
 	s := newService(t)
 	srv := sseAnthropic()
 	t.Cleanup(srv.Close)
-	if _, err := s.SaveSettings("anthropic", srv.URL, "sk-test", "fake-model"); err != nil {
+	if _, err := s.SaveSettings("anthropic", srv.URL, "sk-test", "fake-model", "off"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := s.NewSession(t.TempDir())

@@ -37,6 +37,8 @@ type LoopConfig struct {
 	Tools     []Tool
 	MaxTokens int
 	MaxTurns  int // <=0 means DefaultMaxTurns
+	// Thinking selects the reasoning effort handed to the provider.
+	Thinking ai.ThinkingLevel
 	// History returns the transcript to send; called once per turn so
 	// steering messages queued between turns are picked up.
 	History func() []ai.Message
@@ -260,6 +262,8 @@ func (l *Loop) tool(name string) (Tool, bool) {
 // message, forwarding deltas as events.
 func (l *Loop) streamAssistant(ctx context.Context, turn int) (ai.Message, endInfo) {
 	var text strings.Builder
+	var think strings.Builder
+	var signature string
 	type callBuilder struct {
 		id, name string
 		args     strings.Builder
@@ -274,11 +278,20 @@ func (l *Loop) streamAssistant(ctx context.Context, turn int) (ai.Message, endIn
 		Messages:  l.cfg.History(),
 		Tools:     declarations(l.cfg.Tools),
 		MaxTokens: l.cfg.MaxTokens,
+		Thinking:  l.cfg.Thinking,
 	}) {
 		switch ev.Kind {
 		case ai.EvTextDelta:
 			text.WriteString(ev.TextDelta)
 			l.emit(Event{Kind: EvTextDelta, Text: ev.TextDelta, TurnIndex: turn})
+		case ai.EvThinkingDelta:
+			if ev.ThinkingText != "" {
+				think.WriteString(ev.ThinkingText)
+				l.emit(Event{Kind: EvThinkingDelta, Text: ev.ThinkingText, TurnIndex: turn})
+			}
+			if ev.Signature != "" {
+				signature += ev.Signature
+			}
 		case ai.EvToolCallStart:
 			calls = append(calls, callBuilder{id: ev.ToolCallID, name: ev.ToolCallName})
 			l.emit(Event{Kind: EvToolCallStart, ToolCallID: ev.ToolCallID,
@@ -302,6 +315,10 @@ func (l *Loop) streamAssistant(ctx context.Context, turn int) (ai.Message, endIn
 	}
 
 	msg := ai.Message{Role: ai.RoleAssistant}
+	if th := think.String(); th != "" {
+		msg.Blocks = append(msg.Blocks, ai.Block{Kind: ai.BlockThinking,
+			Text: th, Signature: signature})
+	}
 	if t := text.String(); t != "" {
 		msg.Blocks = append(msg.Blocks, ai.Block{Kind: ai.BlockText, Text: t})
 	}

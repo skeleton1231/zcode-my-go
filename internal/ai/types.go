@@ -26,6 +26,7 @@ const (
 	BlockText       BlockKind = "text"
 	BlockToolCall   BlockKind = "toolCall"
 	BlockToolResult BlockKind = "toolResult"
+	BlockThinking   BlockKind = "thinking"
 )
 
 // Block is one content block of a message.
@@ -43,6 +44,11 @@ type Block struct {
 	// BlockToolResult: the call this answers, its output and error flag.
 	ToolCallID string `json:"toolCallId,omitempty"`
 	IsError    bool   `json:"isError,omitempty"`
+
+	// BlockThinking: the model's reasoning text and the provider's
+	// signature, which must be passed back verbatim on the next request
+	// (Anthropic extended thinking with tool use).
+	Signature string `json:"signature,omitempty"`
 }
 
 // Message is one entry of the transcript.
@@ -116,12 +122,27 @@ const (
 )
 
 // Request is a complete streaming completion request.
+// ThinkingLevel is the reasoning effort (ZCode's reasoningLevel): Off
+// disables extended thinking; Low/Medium/High map to per-provider budgets.
+type ThinkingLevel string
+
+// Thinking levels.
+const (
+	ThinkingOff    ThinkingLevel = "off"
+	ThinkingLow    ThinkingLevel = "low"
+	ThinkingMedium ThinkingLevel = "medium"
+	ThinkingHigh   ThinkingLevel = "high"
+)
+
 type Request struct {
 	Model     string
 	System    string
 	Messages  []Message
 	Tools     []ToolDeclaration
 	MaxTokens int
+	// Thinking selects the reasoning effort (ZCode's reasoningLevel);
+	// providers map it to their budget parameters. Empty means Off.
+	Thinking ThinkingLevel
 }
 
 // EventKind discriminates a provider stream event.
@@ -131,6 +152,7 @@ type EventKind string
 const (
 	EvMessageStart  EventKind = "message_start"
 	EvTextDelta     EventKind = "text_delta"
+	EvThinkingDelta EventKind = "thinking_delta"
 	EvToolCallStart EventKind = "tool_call_start"
 	EvToolCallDelta EventKind = "tool_call_delta"
 	EvMessageEnd    EventKind = "message_end"
@@ -141,6 +163,10 @@ type StreamEvent struct {
 	Kind EventKind `json:"type"`
 
 	TextDelta    string `json:"textDelta,omitempty"`    // EvTextDelta
+	ThinkingText string `json:"thinkingText,omitempty"` // EvThinkingDelta
+	// Signature arrives with the thinking stream's signature_delta and
+	// must ride back in the history's thinking block.
+	Signature    string `json:"signature,omitempty"`
 	ToolCallID   string `json:"toolCallId,omitempty"`   // EvToolCallStart/Delta
 	ToolCallName string `json:"toolCallName,omitempty"` // EvToolCallStart
 	ToolCallArgs string `json:"toolCallArgs,omitempty"` // EvToolCallDelta: partial JSON

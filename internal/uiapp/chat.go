@@ -27,8 +27,11 @@ type chatItem struct {
 
 	// message
 	text      string
+	think     string // the model's reasoning text (muted, collapsible)
 	streaming bool
 	errMsg    string
+
+	thinkOpen bool // the thinking collapsible's state
 
 	// tool
 	callID  string
@@ -68,6 +71,14 @@ func (s *chatState) apply(ev agent.Event) {
 
 	case agent.EvMessageStart:
 		s.items = append(s.items, chatItem{kind: itemAssistant, streaming: true})
+
+	case agent.EvThinkingDelta:
+		for i := len(s.items) - 1; i >= 0; i-- {
+			if s.items[i].kind == itemAssistant && s.items[i].streaming {
+				s.items[i].think += ev.Text
+				break
+			}
+		}
 
 	case agent.EvTextDelta:
 		for i := len(s.items) - 1; i >= 0; i-- {

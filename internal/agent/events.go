@@ -13,6 +13,7 @@ const (
 	EvTurnStart          EventKind = "turn_start"
 	EvMessageStart       EventKind = "message_start"
 	EvTextDelta          EventKind = "text_delta"
+	EvThinkingDelta      EventKind = "thinking_delta"
 	EvToolCallStart      EventKind = "tool_call_start"
 	EvToolCallDelta      EventKind = "tool_call_delta"
 	EvMessageEnd         EventKind = "message_end"
