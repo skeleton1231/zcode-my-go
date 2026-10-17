@@ -315,8 +315,9 @@ func (s *AgentService) GetSettings() SettingsView {
 // SaveSettings stores the configuration. An empty apiKey keeps the stored
 // key, so the UI never needs to echo it back.
 func (s *AgentService) SaveSettings(api, baseURL, apiKey, model, thinking string) (SettingsView, error) {
+	// 写盘与 rewire 在锁内；syncMCP 自带加锁且启动在锁外（握手最长
+	// 20s），必须在 SaveSettings 释放锁之后调用——否则自死锁。
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	cfg := s.settings
 	if api == "openai" || api == "anthropic" || api == "gemini" {
 		cfg.API = api
@@ -332,6 +333,16 @@ func (s *AgentService) SaveSettings(api, baseURL, apiKey, model, thinking string
 		cfg.APIKey = apiKey
 	}
 	cfg.Model = model
+	view, err := s.saveSettingsLocked(cfg)
+	s.mu.Unlock()
+	if err == nil {
+		s.syncMCP() // 配置变更热重载
+	}
+	return view, err
+}
+
+// saveSettingsLocked persists cfg and installs it; callers hold s.mu.
+func (s *AgentService) saveSettingsLocked(cfg settings) (SettingsView, error) {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return s.view(), err
@@ -344,7 +355,6 @@ func (s *AgentService) SaveSettings(api, baseURL, apiKey, model, thinking string
 	}
 	s.settings = cfg
 	s.rewire()
-	s.syncMCP() // 配置变更热重载（内部锁外启动）
 	return s.view(), nil
 }
 
