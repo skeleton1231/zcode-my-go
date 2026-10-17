@@ -152,6 +152,11 @@ func (a *App) itemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 
 	case itemAssistant:
 		ui.Column(c).MaxWidth(760).Grow(1).Children(func() {
+			if item.think != "" {
+				ui.Collapsible(c, "💭 思考过程", &item.thinkOpen, func() {
+					ui.Text(c, item.think).FontSize(12).TextColor(t.TextMuted).Selectable()
+				})
+			}
 			if item.streaming {
 				markdown.Stream(c, item.text, &a.md)
 			} else {

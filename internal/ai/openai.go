@@ -64,7 +64,8 @@ func (a *OpenAI) stream(ctx context.Context, req Request, out chan<- StreamEvent
 		StreamOptions: &openaiStreamOptions{
 			IncludeUsage: true,
 		},
-		MaxTokens: maxTokens,
+		MaxTokens:       maxTokens,
+		ReasoningEffort: openaiReasoningEffort(req.Thinking),
 	})
 	if err != nil {
 		end(StopError, fmt.Sprintf("encoding request: %v", err))
@@ -200,6 +201,22 @@ type openaiRequest struct {
 	Stream        bool                 `json:"stream"`
 	StreamOptions *openaiStreamOptions `json:"stream_options,omitempty"`
 	MaxTokens     int                  `json:"max_tokens"`
+	// ReasoningEffort 是 o 系列的思考力度（off 不发送，让模型用默认）。
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+}
+
+// openaiReasoningEffort maps thinking levels to the API's enum.
+func openaiReasoningEffort(level ThinkingLevel) string {
+	switch level {
+	case ThinkingLow:
+		return "low"
+	case ThinkingMedium:
+		return "medium"
+	case ThinkingHigh:
+		return "high"
+	default:
+		return ""
+	}
 }
 
 type openaiStreamOptions struct {

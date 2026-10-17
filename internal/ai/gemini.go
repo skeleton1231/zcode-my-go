@@ -62,7 +62,10 @@ func (g *Gemini) stream(ctx context.Context, req Request, out chan<- StreamEvent
 		SystemInstruction: geminiContent{Parts: []geminiPart{{Text: req.System}}},
 		Contents:          toGemini(req.Messages),
 		Tools:             toGeminiTools(req.Tools),
-		GenerationConfig:  geminiGeneration{MaxOutputTokens: maxTokens},
+		GenerationConfig: geminiGeneration{
+			MaxOutputTokens: maxTokens,
+			ThinkingConfig:  geminiThinkingBudget(req.Thinking),
+		},
 	})
 	if err != nil {
 		end(StopError, fmt.Sprintf("encoding request: %v", err))
@@ -191,6 +194,26 @@ type geminiRequest struct {
 
 type geminiGeneration struct {
 	MaxOutputTokens int `json:"maxOutputTokens"`
+	// ThinkingBudget：0 关闭思考，-1 动态；正值为固定预算（token）。
+	ThinkingConfig *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type geminiThinkingConfig struct {
+	ThinkingBudget int `json:"thinkingBudget"`
+}
+
+// geminiThinkingBudget maps levels; Off disables (budget 0).
+func geminiThinkingBudget(level ThinkingLevel) *geminiThinkingConfig {
+	switch level {
+	case ThinkingLow:
+		return &geminiThinkingConfig{ThinkingBudget: 2048}
+	case ThinkingMedium:
+		return &geminiThinkingConfig{ThinkingBudget: 8192}
+	case ThinkingHigh:
+		return &geminiThinkingConfig{ThinkingBudget: 24576}
+	default:
+		return &geminiThinkingConfig{ThinkingBudget: 0}
+	}
 }
 
 type geminiTools struct {

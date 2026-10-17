@@ -57,6 +57,7 @@ type App struct {
 	settings      *service.SettingsView
 	settingsOpen  bool
 	setAPI        int // 0 = anthropic, 1 = openai
+	setThinking   int // 0 = off, 1 = low, 2 = medium, 3 = high
 	setBaseURL    string
 	setKey        string
 	setModel      string
@@ -178,6 +179,16 @@ func (a *App) OpenSettings() {
 	default:
 		a.setAPI = 0
 	}
+	switch v.Thinking {
+	case "low":
+		a.setThinking = 1
+	case "medium":
+		a.setThinking = 2
+	case "high":
+		a.setThinking = 3
+	default:
+		a.setThinking = 0
+	}
 	a.setBaseURL = v.BaseURL
 	a.setModel = v.Model
 	a.setKey = ""
@@ -188,13 +199,25 @@ func (a *App) OpenSettings() {
 // saveSettings persists the modal's fields. Runs off the main thread.
 func (a *App) saveSettings() {
 	api := "anthropic"
-	if a.setAPI == 1 {
+	switch a.setAPI {
+	case 1:
 		api = "openai"
+	case 2:
+		api = "gemini"
+	}
+	thinking := "off"
+	switch a.setThinking {
+	case 1:
+		thinking = "low"
+	case 2:
+		thinking = "medium"
+	case 3:
+		thinking = "high"
 	}
 	baseURL, key, model := a.setBaseURL, a.setKey, a.setModel
 	a.saving = true
 	go func() {
-		v, err := a.svc.SaveSettings(api, strings.TrimSpace(baseURL), strings.TrimSpace(key), strings.TrimSpace(model))
+		v, err := a.svc.SaveSettings(api, strings.TrimSpace(baseURL), strings.TrimSpace(key), strings.TrimSpace(model), thinking)
 		a.update(func() {
 			a.saving = false
 			if err != nil {

@@ -63,6 +63,10 @@ func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEv
 	if maxTokens <= 0 {
 		maxTokens = 8192
 	}
+	budget := anthropicThinkingBudget(req.Thinking)
+	if budget > 0 && maxTokens <= budget+1024 {
+		maxTokens = budget + 4096 // API 要求 max_tokens 大于思考预算
+	}
 	body, err := json.Marshal(wireRequest{
 		Model:     req.Model,
 		MaxTokens: maxTokens,
@@ -70,6 +74,7 @@ func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEv
 		Messages:  toWire(req.Messages),
 		Tools:     req.Tools,
 		Stream:    true,
+		Thinking:  newWireThinking(budget),
 	})
 	if err != nil {
 		end(StopError, fmt.Sprintf("encoding request: %v", err))
@@ -215,6 +220,8 @@ func handleSSEData(data, event string, usage *Usage, out chan<- StreamEvent) (en
 			Delta struct {
 				Type        string `json:"type"`
 				Text        string `json:"text"`
+				Thinking    string `json:"thinking"`
+				Signature   string `json:"signature"`
 				PartialJSON string `json:"partial_json"`
 			} `json:"delta"`
 		}
@@ -225,6 +232,14 @@ func handleSSEData(data, event string, usage *Usage, out chan<- StreamEvent) (en
 		case "text_delta":
 			if ev.Delta.Text != "" {
 				out <- StreamEvent{Kind: EvTextDelta, TextDelta: ev.Delta.Text}
+			}
+		case "thinking_delta":
+			if ev.Delta.Thinking != "" {
+				out <- StreamEvent{Kind: EvThinkingDelta, ThinkingText: ev.Delta.Thinking}
+			}
+		case "signature_delta":
+			if ev.Delta.Signature != "" {
+				out <- StreamEvent{Kind: EvThinkingDelta, Signature: ev.Delta.Signature}
 			}
 		case "input_json_delta":
 			if ev.Delta.PartialJSON != "" {
@@ -309,6 +324,34 @@ type wireRequest struct {
 	Messages  []wireMessage     `json:"messages"`
 	Tools     []ToolDeclaration `json:"tools,omitempty"`
 	Stream    bool              `json:"stream"`
+	Thinking  *wireThinking     `json:"thinking,omitempty"`
+}
+
+// wireThinking enables extended thinking with a token budget.
+type wireThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
+}
+
+// anthropicThinkingBudget maps levels to budgets; Off disables (nil).
+func anthropicThinkingBudget(level ThinkingLevel) int {
+	switch level {
+	case ThinkingLow:
+		return 4096
+	case ThinkingMedium:
+		return 12288
+	case ThinkingHigh:
+		return 24576
+	default:
+		return 0
+	}
+}
+
+func newWireThinking(budget int) *wireThinking {
+	if budget <= 0 {
+		return nil
+	}
+	return &wireThinking{Type: "enabled", BudgetTokens: budget}
 }
 
 // wireMessage is one message on the wire. Tool results travel as user
@@ -323,6 +366,9 @@ type wireMessage struct {
 type wireBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+	// thinking: reasoning text plus the provider signature passed back
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
 	// tool_use
 	ID    string          `json:"id,omitempty"`
 	Name  string          `json:"name,omitempty"`
@@ -347,6 +393,9 @@ func toWire(messages []Message) []wireMessage {
 		case RoleAssistant:
 			for _, b := range m.Blocks {
 				switch b.Kind {
+				case BlockThinking:
+					wm.Content = append(wm.Content, wireBlock{
+						Type: "thinking", Thinking: b.Text, Signature: b.Signature})
 				case BlockText:
 					wm.Content = append(wm.Content, wireBlock{Type: "text", Text: b.Text})
 				case BlockToolCall:

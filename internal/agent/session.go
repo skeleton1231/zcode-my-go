@@ -53,6 +53,7 @@ type Session struct {
 	// wiring, installed by the manager
 	provider   func() ai.Provider
 	model      func() string
+	thinking   func() ai.ThinkingLevel
 	buildTools func(workspace, sessionID string) []Tool
 	system     func(workspace string) string
 	ask        func(AskRequest) AskResponse
@@ -143,6 +144,10 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 
 // run drives the loop for one turn sequence (Chat and Retry share it).
 func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.ModelInfo, emit func(Event)) {
+	thinking := ai.ThinkingOff
+	if s.thinking != nil {
+		thinking = s.thinking()
+	}
 	loop := NewLoop(LoopConfig{
 		Provider:    s.provider(),
 		Model:       s.model(),
@@ -150,6 +155,7 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		Tools:       s.buildTools(workspace, id),
 		MaxTokens:   modelInfo.MaxOutput,
 		MaxTurns:    DefaultMaxTurns,
+		Thinking:    thinking,
 		History:     s.Messages,
 		SessionID:   id,
 		Permissions: s.permissions,
@@ -441,6 +447,8 @@ type Wiring struct {
 	System func(workspace string) string
 	// Ask resolves permission asks with the user; nil denials stay safe.
 	Ask func(AskRequest) AskResponse
+	// Thinking returns the session's reasoning effort ("off" default).
+	Thinking func() ai.ThinkingLevel
 	// Question delivers the ask tool's questions to the user.
 	Question func(ctx context.Context, q Question) (string, error)
 	// ProjectRules seeds every session's permission service.
@@ -494,6 +502,7 @@ func (m *Manager) wire(s *Session) {
 		}
 		return m.wiring.Model()
 	}
+	s.thinking = m.wiring.Thinking
 	s.buildTools = m.wiring.Tools
 	if s.buildTools == nil {
 		s.buildTools = func(string, string) []Tool { return nil }

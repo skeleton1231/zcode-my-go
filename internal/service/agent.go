@@ -33,7 +33,8 @@ type settings struct {
 	BaseURL    string                `json:"baseUrl"`
 	APIKey     string                `json:"apiKey"`
 	Model      string                `json:"model"`
-	API        string                `json:"api"` // "anthropic" (default) or "openai"
+	API        string                `json:"api"`
+	Thinking   string                `json:"thinking"` // off|low|medium|high
 	MCPServers map[string]mcp.Config `json:"mcpServers"`
 }
 
@@ -42,6 +43,7 @@ type SettingsView struct {
 	BaseURL   string `json:"baseUrl"`
 	Model     string `json:"model"`
 	API       string `json:"api"`
+	Thinking  string `json:"thinking"`
 	HasAPIKey bool   `json:"hasApiKey"`
 	KeyHint   string `json:"keyHint"` // e.g. "sk-…abcd", for display only
 }
@@ -113,6 +115,7 @@ func (s *AgentService) rewire() {
 	s.mgr.Wire(agent.Wiring{
 		Provider: func() ai.Provider { return providerFor(cfg) },
 		Model:    func() string { return cfg.Model },
+		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
 		Tools: func(workspace, sessionID string) []agent.Tool {
 			s.mu.Lock()
 			state, ok := s.states[sessionID]
@@ -180,10 +183,23 @@ func (s *AgentService) resolve() settings {
 	if v := os.Getenv("ZGO_API"); v != "" {
 		cfg.API = v
 	}
+	if v := os.Getenv("ZGO_THINKING"); v != "" {
+		cfg.Thinking = v
+	}
 	if cfg.API == "" {
 		cfg.API = "anthropic"
 	}
 	return cfg
+}
+
+// thinkingLevelOf validates a configured level, defaulting to off.
+func thinkingLevelOf(v string) ai.ThinkingLevel {
+	switch ai.ThinkingLevel(v) {
+	case ai.ThinkingLow, ai.ThinkingMedium, ai.ThinkingHigh:
+		return ai.ThinkingLevel(v)
+	default:
+		return ai.ThinkingOff
+	}
 }
 
 // providerFor builds the provider matching the configured API dialect.
@@ -213,7 +229,8 @@ func (s *AgentService) loadSettings() error {
 // view projects the resolved settings for the UI.
 func (s *AgentService) view() SettingsView {
 	cfg := s.resolve()
-	v := SettingsView{BaseURL: cfg.BaseURL, Model: cfg.Model, API: cfg.API, HasAPIKey: cfg.APIKey != ""}
+	v := SettingsView{BaseURL: cfg.BaseURL, Model: cfg.Model, API: cfg.API,
+		Thinking: cfg.Thinking, HasAPIKey: cfg.APIKey != ""}
 	if n := len(cfg.APIKey); n > 8 {
 		v.KeyHint = cfg.APIKey[:3] + "…" + cfg.APIKey[n-4:]
 	} else if n > 0 {
@@ -231,12 +248,16 @@ func (s *AgentService) GetSettings() SettingsView {
 
 // SaveSettings stores the configuration. An empty apiKey keeps the stored
 // key, so the UI never needs to echo it back.
-func (s *AgentService) SaveSettings(api, baseURL, apiKey, model string) (SettingsView, error) {
+func (s *AgentService) SaveSettings(api, baseURL, apiKey, model, thinking string) (SettingsView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg := s.settings
 	if api == "openai" || api == "anthropic" || api == "gemini" {
 		cfg.API = api
+	}
+	switch thinking {
+	case "low", "medium", "high", "off":
+		cfg.Thinking = thinking
 	}
 	if baseURL != "" {
 		cfg.BaseURL = baseURL

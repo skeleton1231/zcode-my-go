@@ -287,3 +287,50 @@ func TestLoopDoesNotRetryPermanentErrors(t *testing.T) {
 		t.Fatalf("calls = %d, want 1", provider.calls)
 	}
 }
+
+// thinkingTurn emits thinking deltas then a final answer.
+func thinkingTurn(t *testing.T, think, answer string) fakeTurn {
+	t.Helper()
+	return fakeTurn{events: []ai.StreamEvent{
+		{Kind: ai.EvMessageStart},
+		{Kind: ai.EvThinkingDelta, ThinkingText: think, Signature: "sig-1"},
+		{Kind: ai.EvTextDelta, TextDelta: answer},
+		{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn},
+	}}
+}
+
+// TestLoopKeepsThinkingInHistory verifies thinking deltas become a
+// thinking block (with signature) on the assistant message and reach the
+// UI as events.
+func TestLoopKeepsThinkingInHistory(t *testing.T) {
+	provider := &fakeProvider{turns: []fakeTurn{
+		thinkingTurn(t, "推理过程", "答案"),
+	}}
+	c := &collector{}
+	var thinkingEvents int
+	emit := func(ev Event) {
+		if ev.Kind == EvThinkingDelta {
+			thinkingEvents++
+		}
+		c.emit(ev)
+	}
+	loop := NewLoop(LoopConfig{
+		Provider: provider,
+		History:  func() []ai.Message { return c.messages },
+	}, emit)
+	loop.Run(context.Background(), c.append)
+
+	msg := c.messages[0]
+	found := false
+	for _, b := range msg.Blocks {
+		if b.Kind == ai.BlockThinking {
+			found = b.Text == "推理过程" && b.Signature == "sig-1"
+		}
+	}
+	if !found {
+		t.Fatalf("thinking block missing: %+v", msg.Blocks)
+	}
+	if thinkingEvents != 1 {
+		t.Fatalf("thinking events = %d", thinkingEvents)
+	}
+}
