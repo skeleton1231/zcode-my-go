@@ -1,0 +1,17 @@
+{
+  "name": "zcode-my-go",
+  "private": true,
+  "workspaces": ["frontend"],
+  "scripts": {
+    "dev": "mygo dev",
+    "build": "mygo build",
+    "generate": "mygo generate",
+    "verify": "go build ./... && go vet ./... && go test ./... && bun run --cwd frontend typecheck && bun run --cwd frontend test",
+    "typecheck": "bun run --cwd frontend typecheck",
+    "test:go": "go test ./...",
+    "test:web": "bun run --cwd frontend test"
+  },
+  "devDependencies": {
+    "mygo-cli": "^0.5.5"
+  }
+}

@@ -1,0 +1,72 @@
+/* 设计 token（DESIGN.md）：全部视觉常量在此定义，组件只引用变量。 */
+:root {
+  color-scheme: light dark;
+
+  /* 表面与边界 */
+  --color-surface: #f6f6f7;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #ececee;
+  --color-border: #d9d9de;
+  --color-border-strong: #b9b9c0;
+
+  /* 文本 */
+  --color-text: #1c1c1f;
+  --color-text-muted: #6d6d74;
+  --color-text-faint: #9a9aa2;
+
+  /* 语义色 */
+  --color-accent: #3a6df0;
+  --color-accent-soft: rgba(58, 109, 240, 0.12);
+  --color-ok: #1d9a5a;
+  --color-warn: #c07f00;
+  --color-danger: #d4383d;
+
+  /* 代码块 */
+  --color-code-bg: #f0f0f2;
+
+  /* UI 字号（唯一体系，禁用 Tailwind 内建字号） */
+  --text-ui-lg: 1.0625rem;
+  --text-ui-base: 0.9375rem;
+  --text-ui-sm: 0.8438rem;
+  --text-ui-xs: 0.7813rem;
+
+  /* 间距（4px 基准） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* 圆角 / 阴影 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.04);
+
+  /* 动效 */
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-surface: #17171a;
+    --color-surface-raised: #202024;
+    --color-surface-sunken: #131316;
+    --color-border: #33333a;
+    --color-border-strong: #4a4a53;
+    --color-text: #e8e8ec;
+    --color-text-muted: #9d9da6;
+    --color-text-faint: #6d6d76;
+    --color-accent: #6b8ffb;
+    --color-accent-soft: rgba(107, 143, 251, 0.16);
+    --color-ok: #37b577;
+    --color-warn: #e0a33a;
+    --color-danger: #ef6b6f;
+    --color-code-bg: #26262b;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 10px rgba(0, 0, 0, 0.25);
+  }
+}

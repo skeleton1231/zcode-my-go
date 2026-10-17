@@ -226,6 +226,7 @@ func handleSSEData(data, event string, usage *Usage, out chan<- StreamEvent) (en
 				StopReason string `json:"stop_reason"`
 			} `json:"delta"`
 			Usage struct {
+				InputTokens  int `json:"input_tokens"`
 				OutputTokens int `json:"output_tokens"`
 			} `json:"usage"`
 		}
@@ -233,6 +234,11 @@ func handleSSEData(data, event string, usage *Usage, out chan<- StreamEvent) (en
 			return false, fmt.Errorf("parsing message_delta: %w", err)
 		}
 		usage.OutputTokens = ev.Usage.OutputTokens
+		// 兼容端点（如 GLM）不在 message_start 报 input_tokens，只在
+		// message_delta 补报；不覆盖已取得的非零值。
+		if usage.InputTokens == 0 && ev.Usage.InputTokens > 0 {
+			usage.InputTokens = ev.Usage.InputTokens
+		}
 		if ev.Delta.StopReason != "" {
 			out <- StreamEvent{Kind: EvMessageEnd,
 				StopReason: StopReason(ev.Delta.StopReason), Usage: *usage}
