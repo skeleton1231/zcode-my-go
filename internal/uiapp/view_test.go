@@ -268,6 +268,29 @@ func TestSessionSearchFiltersTranscript(t *testing.T) {
 	}
 }
 
+// TestSearchKeepsNoticesVisible 验证系统通知不参与过滤（issue #54：
+// 开着搜索时重命名/压缩失败的通知被过滤，错误对用户隐形）。
+func TestSearchKeepsNoticesVisible(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(info.ID)
+	a.chat.items = []chatItem{
+		{kind: itemUser, text: "hello"},
+		{kind: itemNotice, text: "重命名失败：磁盘满"},
+	}
+	a.OpenSearch()
+	a.searchQuery = "完全不匹配的查询"
+	got := a.SearchMatches()
+	if len(got) != 1 || got[0] != 1 {
+		t.Fatalf("notice filtered out: %v", got)
+	}
+}
+
 // TestSearchMatchesToolArgs 验证 args 参与匹配（issue #42：文件名/命令
 // 只在 args 里，渲染可见却搜索零匹配）。
 func TestSearchMatchesToolArgs(t *testing.T) {
