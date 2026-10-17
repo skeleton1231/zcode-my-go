@@ -33,7 +33,9 @@ func TestE2EParallelBatchOverlaps(t *testing.T) {
 		mu      sync.Mutex
 		readEnd bool
 	)
+	chatDone := make(chan struct{})
 	go func() {
+		defer close(chatDone)
 		_ = h.Svc.Chat(h.SessionID, "写一个并读一个", func(ev agent.Event) {
 			if ev.Kind == agent.EvToolExecutionEnd && ev.ToolName == "read" {
 				mu.Lock()
@@ -63,6 +65,7 @@ func TestE2EParallelBatchOverlaps(t *testing.T) {
 		t.Fatal("gated write landed before approval")
 	}
 	answers <- agent.AskResponse{Deny: true, Note: "测试拒绝"}
+	<-chatDone // 等运行收尾：TempDir 清理不得与在途会话竞态
 }
 
 // TestE2EAbortMidStream: a provider that streams text then hangs ends
