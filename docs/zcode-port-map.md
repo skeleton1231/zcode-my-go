@@ -150,6 +150,15 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    remote.Client.StartBackground 走不等待的 exec 通道（KillTree 即关
    会话通道，服务器随通道关闭终止远端进程），remotetest 服务器对齐
    真 SSH 的流式输出与断开即杀语义。
+**E2E 远程工作区套件**：internal/e2e 增 NewRemote——会话目标真走
+   ssh://（remotetest 进程内服务器 + ZGO_SSH_KEY 凭据，与服务真实拨号
+   路径一致），Probe 第二连接做根相对断言；四场景全栈覆盖（write/read
+   网线往返、路径 jail 越界拒绝、同步 bash 远端落盘、后台任务三段生命
+   周期——kill 独占回合，避开同批并行工具截杀）。配套：ParseTarget 还
+   原 Windows 盘符根（"/C:/…"→"C:/…"，服务层 ssh:// 目标在 Windows 主
+   机上此前必然拨号退化）；remotetest 断开即杀整棵进程树（taskkill /T，
+   对齐 OpenSSH 会话组语义——cmd.exe 的子进程此前会活过通道关闭并钉住
+   服务器临时目录）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
