@@ -477,8 +477,8 @@ func TestSlashHintsPanel(t *testing.T) {
 		t.Fatal("unrelated command shown for /mo")
 	}
 
-	// 点击填入命令名。
-	if err := tt.Click("/model"); err != nil {
+	// 点击填入命令名（按钮的可访问文本是 usage—help 全文）。
+	if err := tt.Click("/model <模型ID>　—　切换模型（无参显示当前）"); err != nil {
 		t.Fatalf("picking hint: %v", err)
 	}
 	if a.input != "/model " {
