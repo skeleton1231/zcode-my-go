@@ -60,6 +60,25 @@ func (e *Edit) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		return errResult("%v", err)
 	}
 
+	// 远程工作区：读、改、写全部经 RemoteFS（review #83：曾落回本地
+	// 文件系统操作，远程会话上写本地路径）。
+	if e.ws.IsRemote() {
+		rel := remoteRel(e.ws, abs)
+		data, rerr := e.ws.Remote.ReadFile(rel)
+		if rerr != nil {
+			return errResult("reading %s: %v", a.Path, rerr)
+		}
+		updated, count, merr := applyEdit(string(data), a.OldString, a.NewString, a.ReplaceAll)
+		if merr != "" {
+			return errResult("%s in %s", merr, a.Path)
+		}
+		if werr := e.ws.Remote.WriteFile(rel, []byte(updated), 0o644); werr != nil {
+			return errResult("writing %s: %v", a.Path, werr)
+		}
+		return okResult("replaced %d occurrence(s) in %s\n%s",
+			count, a.Path, snippet(updated, a.NewString))
+	}
+
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return errResult("reading %s: %v", a.Path, err)
@@ -82,6 +101,22 @@ func (e *Edit) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	}
 	return okResult("replaced %d occurrence(s) in %s\n%s",
 		count, a.Path, snippet(updated, a.NewString))
+}
+
+// applyEdit 在 content 上执行精确替换，返回更新后内容、命中次数与
+// 失败原因（空串为成功）。本地与远程路径共用。
+func applyEdit(content, old, new string, replaceAll bool) (string, int, string) {
+	count := strings.Count(content, old)
+	switch {
+	case count == 0:
+		return "", 0, "old_string not found; read the file and copy the text exactly"
+	case count > 1 && !replaceAll:
+		return "", count, "old_string appears multiple times; add surrounding lines to make it unique or set replace_all"
+	}
+	if replaceAll {
+		return strings.ReplaceAll(content, old, new), count, ""
+	}
+	return strings.Replace(content, old, new, 1), count, ""
 }
 
 // snippet shows the replacement with one line of context around it.

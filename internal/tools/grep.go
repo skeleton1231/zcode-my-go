@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -75,6 +76,13 @@ func (g *Grep) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		if include, err = globToRegex(a.Include); err != nil {
 			return errResult("invalid include: %v", err)
 		}
+	}
+
+	// 远程工作区：文件枚举经 Remote.Glob、内容经 Remote.ReadFile，
+	// 匹配在本地执行，输出与本地路径同格式、同上限（review #83：曾落
+	// 回本地 WalkDir，远程会话上永远零匹配）。
+	if g.ws.IsRemote() {
+		return g.grepRemote(re, include)
 	}
 
 	var b strings.Builder
@@ -191,4 +199,54 @@ func globToRegex(glob string) (*regexp.Regexp, error) {
 // Capability implements agent.Capabler: searching is safe to auto-allow.
 func (g *Grep) Capability() permission.Capability {
 	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
+}
+
+// grepRemote 在远程工作区上搜索：Glob 枚举 + ReadFile 逐行匹配，
+// 二进制跳过与上限语义与本地 grepFile 一致。
+func (g *Grep) grepRemote(re *regexp.Regexp, include *regexp.Regexp) agent.ToolResult {
+	// ** 只列目录，**/* 才含文件（remote.Glob 的语义），目录经 Stat 剔除。
+	names, err := g.ws.Remote.Glob("**/*")
+	if err != nil {
+		return errResult("enumerating remote files: %v", err)
+	}
+	var b strings.Builder
+	matches, files := 0, 0
+	for _, name := range names {
+		if matches >= grepCapResults || b.Len() >= grepCapBytes {
+			break
+		}
+		if _, isDir, serr := g.ws.Remote.Stat(name); serr == nil && isDir {
+			continue
+		}
+		base := path.Base(name)
+		if include != nil && !include.MatchString(base) {
+			continue
+		}
+		data, err := g.ws.Remote.ReadFile(name)
+		if err != nil || bytes.IndexByte(data, 0) >= 0 {
+			continue // 读失败与二进制跳过，与本地语义一致
+		}
+		found := false
+		line := 0
+		for _, text := range strings.Split(string(data), "\n") {
+			line++
+			if re.MatchString(text) {
+				fmt.Fprintf(&b, "%s:%d:%s\n", name, line, text)
+				matches++
+				found = true
+				if matches >= grepCapResults || b.Len() >= grepCapBytes {
+					break
+				}
+			}
+		}
+		if found {
+			files++
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return okResult("no matches")
+	}
+	return agent.ToolResult{Content: fmt.Sprintf("匹配 %d 处（%d 个文件）\n%s",
+		matches, files, truncateBytes([]byte(out), grepCapBytes, 0))}
 }

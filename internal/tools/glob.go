@@ -62,6 +62,35 @@ func (g *Glob) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		return errResult("%v", err)
 	}
 
+	// 远程工作区：模式交给服务端 glob（支持 **），结果按根相对化
+	// 输出（review #83：曾落回本地 WalkDir，远程会话上永远零匹配）。
+	if g.ws.IsRemote() {
+		pattern := filepath.ToSlash(a.Pattern)
+		if rel := remoteRel(g.ws, root); rel != "" {
+			pattern = rel + "/" + pattern
+		}
+		names, gerr := g.ws.Remote.Glob(pattern)
+		if gerr != nil {
+			return errResult("%v", gerr)
+		}
+		prefix := remoteRel(g.ws, root)
+		var out []string
+		for _, n := range names {
+			rel := n
+			if prefix != "" {
+				rel = strings.TrimPrefix(strings.TrimPrefix(n, prefix), "/")
+			}
+			out = append(out, rel)
+			if len(out) >= globCapResults {
+				break
+			}
+		}
+		if len(out) == 0 {
+			return okResult("no files match %q", a.Pattern)
+		}
+		return agent.ToolResult{Content: strings.Join(out, "\n")}
+	}
+
 	var matches []string
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
