@@ -602,6 +602,7 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	// 回合开始前快照工作区（本地 git 仓库时）：seq = 新用户消息的序号
 	//（现有用户消息数），回滚按序号定位。
 	s.captureCheckpoint(sess, userTurnCount(sess.Messages()))
+	text, media = s.expandMentions(sessionID, text, media)
 	return sess.ChatMedia(text, media, emit)
 }
 
