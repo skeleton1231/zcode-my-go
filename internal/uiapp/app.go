@@ -39,6 +39,14 @@ type App struct {
 	lastSent string
 	planMode bool
 
+	// file tree panel state（browser-workbench file-tree）.
+	filesOpen    bool
+	treeExpanded map[string]bool
+	treeEntries  map[string][]tools.DirEntry
+	previewOpen  bool
+	previewName  string
+	previewText  string
+
 	// automation panel state（specs/automation.md 的管理面）.
 	jobsOpen                                       bool
 	jobs                                           []schedule.Job
@@ -170,6 +178,9 @@ func (a *App) open(id string) {
 	// "没有匹配"；搜索词跨会话泄漏。
 	a.searchOpen = false
 	a.searchQuery = ""
+	// 文件树缓存不跨会话：换工作区即换树。
+	a.treeEntries = map[string][]tools.DirEntry{}
+	a.treeExpanded = map[string]bool{}
 	messages, err := a.svc.Messages(id)
 	if err != nil {
 		log.Printf("loading session %s: %v", id, err)
@@ -413,7 +424,7 @@ func (a *App) Send() {
 const attachmentCapBytes = 5 << 20
 
 // attachmentTotalCapBytes bounds one message's total encoded images
-//（issue #105：多选附件拼一条消息曾让 JSONL 行超读取上限，重载时整条
+// （issue #105：多选附件拼一条消息曾让 JSONL 行超读取上限，重载时整条
 // 连图静默消失——session 层还有兜底预算，这里提前拒绝并提示分条发送）.
 const attachmentTotalCapBytes = 6 << 20
 

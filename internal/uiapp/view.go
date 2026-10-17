@@ -26,6 +26,7 @@ func (a *App) View(c *ui.Context) {
 			a.composerView(c, t)
 			a.statusView(c, t)
 		})
+		a.filesPanelView(c, t)
 	})
 
 	a.renameModal(c, t)
@@ -33,6 +34,7 @@ func (a *App) View(c *ui.Context) {
 	a.questionModal(c, t)
 	a.settingsModal(c, t)
 	a.jobsModal(c, t)
+	a.previewModal(c, t)
 }
 
 // sidebarView lists sessions under the brand, with the actions below.
@@ -41,6 +43,9 @@ func (a *App) sidebarView(c *ui.Context, t *ui.Theme) {
 		ui.Row(c).Padding(14, 16).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "Zgo").Bold().FontSize(15)
 			ui.Spacer(c)
+			if ui.Button(c, "文件").Clicked() {
+				a.ToggleFiles()
+			}
 			if ui.Button(c, "设置…").Clicked() {
 				a.OpenSettings()
 			}
@@ -362,6 +367,7 @@ func (a *App) planView(c *ui.Context, t *ui.Theme) {
 // the button stops a run in progress.
 func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 	a.slashHintsView(c, t)
+	a.mentionHintsView(c, t)
 	a.attachmentsView(c, t)
 	ui.Row(c).Gap(8).Padding(10, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
 		AlignItems(ui.End).Children(func() {
@@ -414,6 +420,44 @@ func (a *App) attachmentsView(c *ui.Context, t *ui.Theme) {
 			})
 		}
 	})
+}
+
+// mentionHintsView floats workspace files matching the trailing @token
+// （@ 引用提示，slashHints 同款交互）：每帧即时计算，零额外状态；点选
+// 把尾部 token 替换为完整路径。
+func (a *App) mentionHintsView(c *ui.Context, t *ui.Theme) {
+	if a.activeID == "" || a.chat.running || strings.HasPrefix(a.input, "/") {
+		return
+	}
+	prefix := trailingMention(a.input)
+	if prefix == "" {
+		return
+	}
+	hints := a.svc.WorkspaceFiles(a.activeID, strings.TrimPrefix(prefix, "@"))
+	if len(hints) == 0 || (len(hints) == 1 && hints[0] == prefix) {
+		return
+	}
+	ui.Column(c).Padding(4, 24).Children(func() {
+		ui.Column(c).Gap(2).Padding(6, 8).Radius(8).
+			Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
+			for _, h := range hints {
+				path := h
+				if ui.Button(c, "@"+path).Grow(1).Clicked() {
+					a.input = strings.TrimSuffix(a.input, prefix) + path + " "
+				}
+			}
+		})
+	})
+}
+
+// trailingMention returns the trailing @token being typed, or "".
+func trailingMention(input string) string {
+	i := strings.LastIndexAny(input, " 	\n")
+	tail := input[i+1:]
+	if strings.HasPrefix(tail, "@") && len(tail) > 1 && !strings.Contains(tail[1:], "@") {
+		return tail
+	}
+	return ""
 }
 
 // slashHintsView floats matching commands above the composer while the
