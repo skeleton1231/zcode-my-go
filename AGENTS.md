@@ -18,6 +18,22 @@ Zgo 是开源桌面 coding agent：mygo **native UI**（package `ui`，纯 Go �
 - 定位问题时先调查原因再改代码；修复 bug 时用中文注释说明原因和依据。
 - 有行为改动时先补测试（`go test ./...` 必须过），报告真实结果。
 
+## Git 工作流
+
+每个功能一次提交与一次 PR（不在 main 上直接开发）：
+
+```bash
+git checkout -b feat/<功能名>        # 或 fix/ chore/ docs/
+# …实现 + 测试…
+go build ./... && go vet ./... && go test ./...
+git add -A && git commit              # 约定式消息：<type>: <描述>
+git push -u origin HEAD
+gh pr create --fill-first             # PR 描述含变更摘要与测试计划
+```
+
+- commit 消息与 PR 描述如实写明验证结果；未跑过的检查不写成通过。
+- PR 粒度 = 一个功能；循环（/loop）产出的每轮迭代就是一个 PR。
+
 ## 命令与仓库结构
 
 纯 Go 工程，无 Node/Bun 依赖：
