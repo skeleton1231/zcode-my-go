@@ -191,7 +191,12 @@ func (s *AgentService) Close() {
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.mgr.Wire(agent.Wiring{
-		Provider: func() ai.Provider { return providerFor(cfg, s.persistOAuth) },
+		Provider: func() ai.Provider {
+			if providerOverride != nil {
+				return providerOverride()
+			}
+			return providerFor(cfg, s.persistOAuth)
+		},
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
 		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
@@ -799,6 +804,16 @@ func (s *AgentService) Steer(sessionID, text string) error {
 		return fmt.Errorf("no session %s", sessionID)
 	}
 	return sess.Steer(text)
+}
+
+// providerOverride, when set, replaces the configured provider (the e2e
+// harness injects its script through this).
+var providerOverride func() ai.Provider
+
+// UseProviderForTesting swaps the provider factory (e2e only).
+func (s *AgentService) UseProviderForTesting(fn func() ai.Provider) {
+	providerOverride = fn
+	s.rewire()
 }
 
 // Abort cancels a session's running loop.

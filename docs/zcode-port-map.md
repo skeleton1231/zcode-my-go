@@ -54,7 +54,7 @@
 | 架构治理 architecture-policy.yaml | `architecture-policy.yaml`（同构，11 模块） |
 | 领域词汇 CONTEXT.md | `CONTEXT.md`（同构） |
 | 设计系统 DESIGN.md | `DESIGN.md`（ui.Theme token 体系） |
-| 测试矩阵 | go test 单测 + `ui.NewTester` 视图测试 + 真实端点 smoke |
+| 测试矩阵 | go test 单测 + `ui.NewTester` 视图测试 + 真实端点 smoke + `internal/e2e` 脚本化全栈回放（provider 桩驱动真实 service/session/loop/tools） |
 
 ## Zgo 自身路线（非翻译欠账）
 
