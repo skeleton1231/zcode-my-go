@@ -66,6 +66,9 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
    用量；export 按唯一 ID 前缀导出 HTML（默认）或 Markdown（--md，-o 指定
    输出；旗标须在 id 之前）；rm 按前缀删除。前缀歧义或未知 ID 以退出码 1
    报错，不误伤其它会话。
+16. zgo memory（CLI 运维面）：list 按工作区列出记忆概况（最近写入/字
+   节，无记忆标注）；show/add/clear 以 --workspace 指定（接受路径或会话 ID
+   唯一前缀）；add 追加带时间戳条目；clear 幂等。
 ## 状态所有者
 
 | 状态     | 所有者           | 说明                              |
@@ -102,3 +105,5 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
     检索；无命中给出明确提示；关闭弹窗后旧扫描结果不再落地。
 13. sessions CLI：list/export/rm 全链路（前缀解析、-o 显式输出、删除后
     列表反映）；未知与歧义 ID 明确报错。
+14. memory CLI：list/show/add/clear 全链路（前缀解析工作区、追加可读回、
+    清空幂等）；缺 workspace 拒绝。
