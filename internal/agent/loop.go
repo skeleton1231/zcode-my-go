@@ -441,10 +441,14 @@ func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
 		if l.cfg.Ask == nil {
 			return blocked("no approval channel", "当前没有确认通道，保守起见拒绝执行")
 		}
+		preview := ""
+		if pd, ok := tool.(PreviewDiffer); ok {
+			preview = pd.PreviewDiff([]byte(call.Arguments)) // 不落盘：纯预览
+		}
 		l.askMu.Lock()
 		resp := l.cfg.Ask(AskRequest{
 			SessionID: l.cfg.SessionID, Tool: call.Name, Args: argsLine,
-			Reason: decision.Reason, Risk: decision.Risk})
+			Reason: decision.Reason, Risk: decision.Risk, Diff: preview})
 		l.askMu.Unlock()
 		if !resp.Deny {
 			if resp.Always {

@@ -90,6 +90,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **文件树面板与预览**（ZCode browser-workbench 的 file-tree 半边）：右列
    目录树（懒展开、目录优先、path jail 三端同源）+ 只读文件预览弹窗
    （60KB 截断、二进制拒绝）。
+**审批 diff 预览**：PreviewDiffer（edit/write）在权限询问时只读试算待执行
+   改动的统一 diff（不落盘），AskRequest.Diff 随桌面弹窗彩色渲染、终端
+   打印——批准前所见即所得。
+**patch 多文件 diff/预览**：apply_patch 的结果 Diff 与 PreviewDiff 按段
+   聚合（--- 文件名分隔、400 行上限），预览试算不落盘——diff 子系统对
+   edit/write/patch 全量闭环。
 待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录

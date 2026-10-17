@@ -147,6 +147,35 @@ func snippet(content, needle string) string {
 	return fmt.Sprintf("---\n%s---", content[start:end])
 }
 
+// PreviewDiff implements agent.PreviewDiffer: the change this call would
+// make, computed without touching the file（审批者所见即所得）.
+func (e *Edit) PreviewDiff(args json.RawMessage) string {
+	var a struct {
+		Path       string `json:"path"`
+		OldString  string `json:"old_string"`
+		NewString  string `json:"new_string"`
+		ReplaceAll bool   `json:"replace_all"`
+	}
+	if err := decodeArgs(args, &a); err != nil {
+		return ""
+	}
+	abs, err := e.ws.Resolve(a.Path)
+	if err != nil {
+		return ""
+	}
+	var old []byte
+	if e.ws.IsRemote() {
+		old, _ = e.ws.Remote.ReadFile(remoteRel(e.ws, abs))
+	} else {
+		old, _ = os.ReadFile(abs)
+	}
+	updated, _, merr := applyEdit(string(old), a.OldString, a.NewString, a.ReplaceAll)
+	if merr != "" {
+		return ""
+	}
+	return textdiff.Unified(old, []byte(updated))
+}
+
 // Capability implements agent.Capabler: editing changes one file at a time.
 func (e *Edit) Capability() permission.Capability {
 	return permission.Capability{Risk: permission.RiskMedium}
