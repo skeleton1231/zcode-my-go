@@ -70,15 +70,16 @@ func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEv
 	if budget > 0 && maxTokens <= budget+1024 {
 		maxTokens = budget + 4096 // API 要求 max_tokens 大于思考预算
 	}
-	body, err := json.Marshal(wireRequest{
+	wire := wireRequest{
 		Model:     req.Model,
 		MaxTokens: maxTokens,
-		System:    req.System,
 		Messages:  toWire(req.Messages),
-		Tools:     req.Tools,
 		Stream:    true,
 		Thinking:  newWireThinking(budget),
-	})
+	}
+	applyCacheBreakpoints(&wire, req)
+
+	body, err := json.Marshal(wire)
 	if err != nil {
 		end(StopError, fmt.Sprintf("encoding request: %v", err))
 		return
@@ -327,11 +328,34 @@ func httpError(resp *http.Response) string {
 type wireRequest struct {
 	Model     string            `json:"model"`
 	MaxTokens int               `json:"max_tokens"`
-	System    string            `json:"system,omitempty"`
+	System    *wireSystemBlocks `json:"system,omitempty"`
 	Messages  []wireMessage     `json:"messages"`
-	Tools     []ToolDeclaration `json:"tools,omitempty"`
+	Tools     []wireCachedTool  `json:"tools,omitempty"`
 	Stream    bool              `json:"stream"`
 	Thinking  *wireThinking     `json:"thinking,omitempty"`
+}
+
+// wireCacheControl marks a prompt-caching breakpoint（Anthropic ephemeral
+// cache）：打在稳定前缀的末尾，命中即按缓存计价。
+type wireCacheControl struct {
+	Type string `json:"type"`
+}
+
+// wireSystemBlocks carries the system prompt as blocks so the cache
+// breakpoint can sit at its end.
+type wireSystemBlocks struct {
+	Type         string            `json:"type"`
+	Text         string            `json:"text"`
+	CacheControl *wireCacheControl `json:"cache_control,omitempty"`
+}
+
+// wireCachedTool is a tool declaration with an optional trailing cache
+// breakpoint.
+type wireCachedTool struct {
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
+	InputSchema  map[string]any    `json:"input_schema"`
+	CacheControl *wireCacheControl `json:"cache_control,omitempty"`
 }
 
 // wireThinking enables extended thinking with a token budget.
@@ -382,10 +406,40 @@ type wireBlock struct {
 	Input json.RawMessage `json:"input,omitempty"`
 	// tool_result: its payload is the standard content array, never a
 	// private field — compatible endpoints drop anything else.
-	ToolUseID     string      `json:"tool_use_id,omitempty"`
-	ResultContent []wireBlock `json:"content,omitempty"`
-	IsError       bool        `json:"is_error,omitempty"`
-	Source        *wireSource `json:"source,omitempty"` // image
+	ToolUseID     string            `json:"tool_use_id,omitempty"`
+	ResultContent []wireBlock       `json:"content,omitempty"`
+	IsError       bool              `json:"is_error,omitempty"`
+	Source        *wireSource       `json:"source,omitempty"`        // image
+	CacheControl  *wireCacheControl `json:"cache_control,omitempty"` // 前缀缓存断点
+}
+
+// applyCacheBreakpoints places prompt-caching breakpoints on the stable
+// prefixes（Anthropic ephemeral cache，上限 4）：tools 的最后一项、system
+// 尾部、倒数第二条消息的最后一块。前两者跨轮几乎不变（工具表与系统提示），
+// 第三个随对话滚动——每轮命中前两个、部分命中第三个。兼容端点不认识
+// cache_control 时按未知字段忽略，安全。
+func applyCacheBreakpoints(w *wireRequest, req Request) {
+	mark := &wireCacheControl{Type: "ephemeral"}
+	if len(req.Tools) > 0 {
+		tools := make([]wireCachedTool, len(req.Tools))
+		for i, t := range req.Tools {
+			tools[i] = wireCachedTool{Name: t.Name, Description: t.Description,
+				InputSchema: t.InputSchema}
+		}
+		tools[len(tools)-1].CacheControl = mark
+		w.Tools = tools
+	}
+	if req.System != "" {
+		w.System = &wireSystemBlocks{Type: "text", Text: req.System, CacheControl: mark}
+	}
+	// 倒数第二条消息（最后一条通常是刚产生的 toolResult/user，恰是变动的
+	// 尾部；它前面才是可缓存的滚动前缀）。
+	if n := len(w.Messages); n >= 2 {
+		last := w.Messages[n-2]
+		if len(last.Content) > 0 {
+			last.Content[len(last.Content)-1].CacheControl = mark
+		}
+	}
 }
 
 // wireSource is the base64 image source of an image block.
