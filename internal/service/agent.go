@@ -384,6 +384,15 @@ func (s *AgentService) mcpServers() []*mcp.Server {
 	return s.mcp
 }
 
+// EditAndResend replaces the session's last user message and reruns.
+func (s *AgentService) EditAndResend(sessionID, text string, emit func(agent.Event)) error {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("no session %s", sessionID)
+	}
+	return sess.EditAndResend(text, emit)
+}
+
 // Retry regenerates a session's last answer.
 func (s *AgentService) Retry(sessionID string, emit func(agent.Event)) error {
 	sess, ok := s.mgr.Get(sessionID)
