@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 	"github.com/skeleton1231/zcode-my-go/internal/slash"
@@ -102,15 +103,17 @@ type App struct {
 	renameDraft string
 
 	// settings modal state
-	settings      *service.SettingsView
-	settingsOpen  bool
-	setAPI        int // 0 = anthropic, 1 = openai
-	setThinking   int // 0 = off, 1 = low, 2 = medium, 3 = high
-	setBaseURL    string
-	setKey        string
-	setModel      string
-	saving        bool
-	settingsError string
+	settings       *service.SettingsView
+	settingsOpen   bool
+	setAPI         int // 0 = anthropic, 1 = openai
+	mcpDiagReports []mcp.Report
+	mcpDiagRunning bool
+	setThinking    int // 0 = off, 1 = low, 2 = medium, 3 = high
+	setBaseURL     string
+	setKey         string
+	setModel       string
+	saving         bool
+	settingsError  string
 }
 
 // New builds the app over the service.
@@ -308,8 +311,23 @@ func (a *App) DeleteActive() {
 	a.refreshSessions()
 }
 
+// runMCPDiagnostics probes every configured MCP server off-thread and
+// brings the reports back onto the view thread.
+func (a *App) runMCPDiagnostics() {
+	a.mcpDiagRunning = true
+	a.mcpDiagReports = nil
+	go func() {
+		reports := a.svc.MCPDiagnostics()
+		a.update(func() {
+			a.mcpDiagReports = reports
+			a.mcpDiagRunning = false
+		})
+	}()
+}
+
 // OpenSettings shows the settings modal, seeded from the service.
 func (a *App) OpenSettings() {
+	a.mcpDiagReports, a.mcpDiagRunning = nil, false // 上次的诊断不跨开合
 	v := a.svc.GetSettings()
 	a.settings = &v
 	switch v.API {

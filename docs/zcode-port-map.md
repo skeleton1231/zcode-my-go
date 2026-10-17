@@ -102,6 +102,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **patch 多文件 diff/预览**：apply_patch 的结果 Diff 与 PreviewDiff 按段
    聚合（--- 文件名分隔、400 行上限），预览试算不落盘——diff 子系统对
    edit/write/patch 全量闭环。
+**MCP 设置诊断**（ZCode mcp-settings-diagnostics）：mcp.Diagnose 新实例
+   探测（握手 + tools/list + 15s 上限）+ 服务并行编排 + 设置弹窗「诊断
+   MCP」结果展示（✓ 工具清单/✕ 错误）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
