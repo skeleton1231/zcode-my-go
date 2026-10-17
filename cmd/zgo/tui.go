@@ -86,8 +86,10 @@ func runTUI(svc *service.AgentService, workspace string) int {
 	}()
 	s.requestRedraw()
 
-	// 输入循环：raw 键盘。
+	// 输入循环：raw 键盘。keyStream 处理多字节与转义序列的跨 Read
+	// 拼接（issue #70：逐字节 rune 化曾让中文与方向键全坏）。
 	buf := make([]byte, 32)
+	keys := &keyStream{}
 	inputErr := error(nil)
 	for inputErr == nil {
 		n, err := os.Stdin.Read(buf)
@@ -95,44 +97,20 @@ func runTUI(svc *service.AgentService, workspace string) int {
 			inputErr = err
 			break
 		}
-		for _, b := range buf[:n] {
-			switch {
-			case b == 3: // Ctrl+C
-				s.finish(os.Stdout)
-				return 0
-			case b == 4: // Ctrl+D
-				inputErr = fmt.Errorf("eof")
-			case b == '\r' || b == '\n':
-				line := strings.TrimSpace(string(s.input))
-				s.mu.Lock()
-				s.input = s.input[:0]
-				s.mu.Unlock()
-				if line == "" {
-					s.requestRedraw()
-					continue
-				}
-				s.push(ansi(ansiCyan, "你 > ") + line)
-				s.handleLine(line, svc, &info, workspace)
-			case b == 127 || b == 8: // 退格
-				s.mu.Lock()
-				if len(s.input) > 0 {
-					s.input = s.input[:len(s.input)-1]
-				}
-				s.mu.Unlock()
-				s.requestRedraw()
-			case b >= 0x20 && b < 0x7f:
-				s.mu.Lock()
-				s.input = append(s.input, rune(b))
-				s.mu.Unlock()
-				s.requestRedraw()
-			default:
-				// 方向键等转义序列与中文多字节：读整段字节再解码。
-				s.mu.Lock()
-				s.input = append(s.input, rune(b))
-				s.mu.Unlock()
-				s.requestRedraw()
+		switch keys.feedWith(s, buf[:n], func(line string) {
+			if line == "" {
+				return
 			}
+			s.push(ansi(ansiCyan, "你 > ") + line)
+			s.handleLine(line, svc, &info, workspace)
+		}) {
+		case keyQuit:
+			s.finish(os.Stdout)
+			return 0
+		case keyEOF:
+			inputErr = fmt.Errorf("eof")
 		}
+		s.requestRedraw()
 	}
 	_ = inputErr
 	s.finish(os.Stdout)
