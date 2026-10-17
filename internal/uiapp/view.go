@@ -249,17 +249,43 @@ func (a *App) itemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 }
 
 // toolView is a collapsible card: status mark · name · argument summary,
-// the full output below when open.
+// the full output below when open — a colored diff when the tool carried
+// one, else the plain output.
 func (a *App) toolView(c *ui.Context, t *ui.Theme, item *chatItem) {
 	label := fmt.Sprintf("%s %s · %s", statusMark(item), item.name, summarizeArgs(item.args))
 	ui.Column(c).MaxWidth(760).Grow(1).Children(func() {
 		ui.Collapsible(c, label, &item.open, func() {
 			ui.Scroll(c).MaxHeight(300).Children(func() {
+				if item.diff != "" {
+					diffView(c, t, item.diff)
+					if item.result != "" {
+						ui.Text(c, item.result).Font("monospace").FontSize(12).
+							TextColor(t.TextMuted).Selectable()
+					}
+					return
+				}
 				ui.Text(c, outputOf(item)).Font("monospace").FontSize(12).
 					TextColor(t.TextMuted).Selectable()
 			})
 		})
 	})
+}
+
+// diffView renders unified-diff lines colored: additions green,
+// deletions red, headers and context muted.
+func diffView(c *ui.Context, t *ui.Theme, diff string) {
+	for _, line := range strings.Split(strings.TrimSuffix(diff, "\n"), "\n") {
+		color := t.TextMuted
+		switch {
+		case strings.HasPrefix(line, "+"):
+			color = t.Success
+		case strings.HasPrefix(line, "-"):
+			color = t.Danger
+		case strings.HasPrefix(line, "@@"):
+			color = t.Accent
+		}
+		ui.Text(c, line).Font("monospace").FontSize(12).TextColor(color).Selectable()
+	}
 }
 
 func statusMark(item *chatItem) string {
@@ -335,6 +361,7 @@ func (a *App) planView(c *ui.Context, t *ui.Theme) {
 // the button stops a run in progress.
 func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 	a.slashHintsView(c, t)
+	a.attachmentsView(c, t)
 	ui.Row(c).Gap(8).Padding(10, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
 		AlignItems(ui.End).Children(func() {
 		area := ui.TextArea(c, &a.input).Placeholder("描述任务…（Shift+Enter 换行）").Grow(1).Lines(1, 8)
@@ -352,6 +379,11 @@ func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 			}
 			return false
 		})
+		if !a.chat.running {
+			if ui.Button(c, "📎").Clicked() {
+				a.Attach()
+			}
+		}
 		if a.chat.running {
 			if ui.Button(c, "停止").Clicked() {
 				a.Stop()
@@ -359,6 +391,26 @@ func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 		} else if ui.PrimaryButton(c, "发送").
 			Disabled(a.activeID == "" || strings.TrimSpace(a.input) == "").Clicked() {
 			a.Send()
+		}
+	})
+}
+
+// attachmentsView shows the composer's pending images as removable chips
+// （附件体验：文件名 + ✕，随下一条消息发送）.
+func (a *App) attachmentsView(c *ui.Context, t *ui.Theme) {
+	if len(a.attach) == 0 {
+		return
+	}
+	ui.Row(c).Gap(6).Padding(6, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
+		Wrap().Children(func() {
+		for i, at := range a.attach {
+			ui.Row(c).Gap(4).Padding(3, 8).Radius(8).
+				Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
+				ui.Text(c, at.Name).FontSize(12).TextColor(t.TextMuted)
+				if ui.Button(c, "✕").Clicked() {
+					a.RemoveAttachment(i)
+				}
+			})
 		}
 	})
 }

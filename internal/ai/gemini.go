@@ -227,8 +227,15 @@ type geminiContent struct {
 
 type geminiPart struct {
 	Text             string           `json:"text,omitempty"`
+	InlineData       *geminiInline    `json:"inlineData,omitempty"`
 	FunctionCall     geminiFunction   `json:"functionCall,omitempty"`
 	FunctionResponse geminiFnResponse `json:"functionResponse,omitempty"`
+}
+
+// geminiInline is an inline base64 image part.
+type geminiInline struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 type geminiFunction struct {
@@ -260,8 +267,22 @@ func toGemini(messages []Message) []geminiContent {
 	for _, m := range messages {
 		switch m.Role {
 		case RoleUser:
-			out = append(out, geminiContent{Role: "user",
-				Parts: []geminiPart{{Text: m.Text()}}})
+			parts := make([]geminiPart, 0, len(m.Blocks))
+			for _, b := range m.Blocks {
+				switch b.Kind {
+				case BlockImage:
+					parts = append(parts, geminiPart{
+						InlineData: &geminiInline{MimeType: b.Media, Data: b.Data}})
+				default:
+					if b.Text != "" {
+						parts = append(parts, geminiPart{Text: b.Text})
+					}
+				}
+			}
+			if len(parts) == 0 {
+				parts = []geminiPart{{Text: m.Text()}}
+			}
+			out = append(out, geminiContent{Role: "user", Parts: parts})
 		case RoleAssistant:
 			content := geminiContent{Role: "model"}
 			for _, b := range m.Blocks {

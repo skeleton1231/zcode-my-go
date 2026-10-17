@@ -177,6 +177,19 @@ func (s *tuiState) applyEvent(ev agent.Event, last *string) {
 		if ev.IsError {
 			s.lines = append(s.lines, ansi(ansiRed, "  ✕ "+firstLine(ev.ResultContent)))
 		}
+		for _, dl := range strings.Split(strings.TrimSuffix(ev.Diff, "\n"), "\n") {
+			if dl == "" {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(dl, "+"):
+				s.lines = append(s.lines, ansi(ansiGreen, "  "+dl))
+			case strings.HasPrefix(dl, "-"):
+				s.lines = append(s.lines, ansi(ansiRed, "  "+dl))
+			default:
+				s.lines = append(s.lines, ansi(ansiGray, "  "+dl))
+			}
+		}
 	case agent.EvCompaction:
 		s.lines = append(s.lines, ansi(ansiBlue, "[压缩] "+ev.Text))
 	}

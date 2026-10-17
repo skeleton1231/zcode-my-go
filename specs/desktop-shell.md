@@ -25,6 +25,9 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
    状态点，展开见完整输出）。
 6. 输入区：多行自动增高（`TextArea.Lines(1,8)`），Enter 发送 /
    Shift+Enter 换行；运行时按钮变为停止（触发 Abort）。
+8. 附件（多模态输入）：📎 打开图片选择（png/jpg/gif/webp，多选），以
+   chips 展示、发送前可移除；随下一条消息发送（文本必填）。单张上限
+   5MB，超限或类型不符以 notice 提示。终端形态不支持附件。
 7. 浏览器目标（wasm）：`go tool mygo build -platform web` 产出静态站点，
    `go run ./cmd/webfs` 注入内存文件系统垫片（wasm 的 syscall 层需要 Node
    形态的 fs 对象，wasm_exec.js 的回退只有 stdout）。浏览器上的语义：

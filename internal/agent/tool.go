@@ -15,6 +15,9 @@ import (
 type ToolResult struct {
 	Content string
 	IsError bool
+	// Diff 携带统一 diff（edit/write/patch 等改动类工具填写）；随事件
+	// 透传给 UI 做彩色渲染，不进模型上下文（Content 仍是给模型看的摘要）。
+	Diff string
 }
 
 // Tool is one capability the model may call. Implementations must honor the
