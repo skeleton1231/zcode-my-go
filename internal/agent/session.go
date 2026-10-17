@@ -281,6 +281,14 @@ func (s *Session) rewindAndSend(userIndex int, text string, emit func(Event)) er
 }
 
 // SetPlanMode switches the session's collaboration mode.
+// Running reports whether a run is in progress (service-level guards
+// check before touching files, issue #110).
+func (s *Session) Running() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cancel != nil
+}
+
 // Rewind truncates the transcript before the given user message and
 // persists the truncation like rewindAndSend does, without starting a new
 // turn — the conversation half of the workspace rollback (the service

@@ -618,18 +618,21 @@ func (s *AgentService) captureCheckpoint(sess *agent.Session, seq int) {
 	}
 }
 
-// restoreCheckpoint rolls the workspace back to a turn's start; a missing
-// checkpoint (or non-repo) leaves files untouched.
-func (s *AgentService) restoreCheckpoint(sess *agent.Session, seq int) {
+// restoreCheckpoint rolls the workspace back to a turn's start. 非仓库与
+// 无检查点按仅回退转录降级（返回 nil）；其余失败原样返回——调用方必须
+// 中止后续的转录回退（issue #110：restore 失败仍回退转录会造出
+// "对话说改没了、文件还在"的分裂态）。
+func (s *AgentService) restoreCheckpoint(sess *agent.Session, seq int) error {
 	info := sess.Info()
 	if strings.HasPrefix(info.Workspace, "ssh://") {
-		return
+		return nil
 	}
 	if err := checkpoint.Restore(info.Workspace, info.ID, seq); err != nil &&
 		!errors.Is(err, checkpoint.ErrNotARepo) &&
 		!errors.Is(err, checkpoint.ErrNoCheckpoint) {
-		log.Printf("checkpoint restore: %v", err)
+		return fmt.Errorf("restoring workspace checkpoint: %w", err)
 	}
+	return nil
 }
 
 // userTurnCount is the number of user turns in a transcript — the ordinal
@@ -652,12 +655,30 @@ func (s *AgentService) RewindLatest(sessionID string) error {
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
 	}
+	// 运行守卫必须先于文件恢复（issue #110）：活回合的工作树一旦被
+	// read-tree/clean 抽走，运行中的工具按旧假设继续读写，而转录回退
+	// 又在守卫处失败——文件动了、对话没回，最坏的不一致态。cron 对同
+	// 一 workspace 的后台会话可绕过 UI 守卫直达此处。
+	if sess.Running() {
+		return fmt.Errorf("a run is already in progress")
+	}
 	msgs := sess.Messages()
 	if userTurnCount(msgs) == 0 {
 		return fmt.Errorf("no turn to rewind")
 	}
-	s.restoreCheckpoint(sess, userTurnCount(msgs)-1)
+	if err := s.restoreCheckpoint(sess, userTurnCount(msgs)-1); err != nil {
+		return err
+	}
 	return sess.Rewind(agent.LastUserIndex(msgs))
+}
+
+// SessionRunning reports whether the session has a run in flight.
+func (s *AgentService) SessionRunning(id string) bool {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return false
+	}
+	return sess.Running()
 }
 
 // CompactSession summarizes a session's old history (the 压缩会话 menu).
@@ -761,8 +782,14 @@ func (s *AgentService) EditAndResend(sessionID, text string, emit func(agent.Eve
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
 	}
-	// 编辑重发即回退重跑：工作区一并恢复到该回合前。
-	s.restoreCheckpoint(sess, userTurnCount(sess.Messages())-1)
+	// 编辑重发即回退重跑：工作区一并恢复到该回合前（运行守卫先于文件
+	// 恢复，同 RewindLatest；EditAndResend 内部守卫此时必然通过）。
+	if sess.Running() {
+		return fmt.Errorf("a run is already in progress")
+	}
+	if err := s.restoreCheckpoint(sess, userTurnCount(sess.Messages())-1); err != nil {
+		return err
+	}
 	return sess.EditAndResend(text, emit)
 }
 
@@ -840,8 +867,14 @@ func (s *AgentService) Retry(sessionID string, emit func(agent.Event)) error {
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
 	}
-	// 重生成前把工作区恢复到该回合开始前：被重试回合的文件改动撤销。
-	s.restoreCheckpoint(sess, userTurnCount(sess.Messages())-1)
+	// 重生成前把工作区恢复到该回合开始前（运行守卫先于文件恢复，同
+	// RewindLatest；Retry 内部守卫此时必然通过）。
+	if sess.Running() {
+		return fmt.Errorf("a run is already in progress")
+	}
+	if err := s.restoreCheckpoint(sess, userTurnCount(sess.Messages())-1); err != nil {
+		return err
+	}
 	return sess.Retry(emit)
 }
 
