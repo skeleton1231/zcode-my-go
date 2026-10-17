@@ -182,6 +182,9 @@ func (s *AgentService) rewire() {
 		Provider: func() ai.Provider { return providerFor(cfg) },
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
+		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
+		// 随每个会话生效；配置为空时无钩子。
+		Hooks: agent.HooksFromCommands(s.settings.Hooks),
 		Tools: func(workspace, sessionID string) []agent.Tool {
 			s.mu.Lock()
 			state, ok := s.states[sessionID]

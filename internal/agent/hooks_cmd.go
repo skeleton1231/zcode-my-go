@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -68,7 +69,9 @@ func beforeFromCommands(hooks []CommandHook) func(BeforeToolCallContext) BeforeT
 			}
 			out, code, err := runHook(h.Command, payload)
 			if err != nil {
-				// 命令本身失败（找不到/超时）：观察并放行，不静默也不拦运行。
+				// 命令本身失败（找不到/超时）：观察并放行，不拦运行，
+				// 但不静默——记日志（AGENTS.md：不吞错）。
+				log.Printf("preToolUse hook %q: %v", h.Command, err)
 				continue
 			}
 			if code != 0 {
@@ -95,7 +98,11 @@ func afterFromCommands(hooks []CommandHook) func(AfterToolCallContext) AfterTool
 				continue
 			}
 			out, code, err := runHook(h.Command, payload)
-			if err != nil || code != 2 {
+			if err != nil {
+				log.Printf("postToolUse hook %q: %v", h.Command, err)
+				continue
+			}
+			if code != 2 {
 				continue
 			}
 			feedback := strings.TrimSpace(out)

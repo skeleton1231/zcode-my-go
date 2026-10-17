@@ -58,6 +58,7 @@ type Session struct {
 	provider   func() ai.Provider
 	model      func() string
 	thinking   func() ai.ThinkingLevel
+	hooks      Hooks
 	buildTools func(workspace, sessionID string) []Tool
 	system     func(workspace string) string
 	ask        func(AskRequest) AskResponse
@@ -168,6 +169,7 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		// todo）强制整批串行，权限确认经 askMu 串行化——安全前提下
 		// 让批处理真正提速。
 		ToolExecution: ParallelExecution,
+		Hooks:         s.hooks,
 		History:       s.Messages,
 		SessionID:     id,
 		Permissions:   s.permissions,
@@ -606,6 +608,9 @@ type Wiring struct {
 	Ask func(AskRequest) AskResponse
 	// Thinking returns the session's reasoning effort ("off" default).
 	Thinking func() ai.ThinkingLevel
+	// Hooks observe and shape every tool call (settings 配置的外部命令
+	// 钩子经 HooksFromCommands 装配)；nil 无钩子。
+	Hooks Hooks
 	// Question delivers the ask tool's questions to the user.
 	Question func(ctx context.Context, q Question) (string, error)
 	// ProjectRules loads the workspace's project rules (its .zgorules.json);
@@ -663,6 +668,7 @@ func (m *Manager) wire(s *Session) {
 		return m.wiring.Model()
 	}
 	s.thinking = m.wiring.Thinking
+	s.hooks = m.wiring.Hooks
 	s.buildTools = m.wiring.Tools
 	if s.buildTools == nil {
 		s.buildTools = func(string, string) []Tool { return nil }
