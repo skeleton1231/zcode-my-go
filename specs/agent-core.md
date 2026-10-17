@@ -31,6 +31,10 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    回合的检查点（read-tree -u --reset + clean -fd，不移动分支、不改历史；
    ignored 文件永不被清除），再截断转录。非 git 工作区与 SSH 远程工作区
    降级为仅回退转录，不报错。
+10. 多模态输入：用户消息可携带 BlockImage（Media 为 MIME 类型，Data 为
+   base64，位于文本块之后），随转录持久化；三家协议各自翻译（Anthropic
+   base64 source、OpenAI image_url data-URL、Gemini inlineData），纯文本
+   消息的 wire 格式不变。附件单张上限 5MB，超限拒绝。
 8. 工作流（workflow 工具）：步骤串行执行，每步看到完整计划与此前结果；任一步
    失败即停止，报告已完成部分。步骤声明 `after` 依赖（按 `name` 引用）时按 DAG
    调度：无依赖关系的步骤并行（上限 4），每步只看到其直接上游的结果；首个
@@ -104,6 +108,8 @@ agent_end(stop_reason)
 4. 中止：Chat 进行中调用 Abort → 事件流以 aborted 结束，Session 可再次 Chat。
 5. Path jail：read("../outside.txt")、read(绝对路径越界) → isError=true。
 6. 持久化：Chat 后进程重启，LoadSession 恢复完整历史。
+9. 附件：composer 添加的图片随消息发送 —— provider 请求中该用户消息含
+   image 块（文本在前），转录持久化后重读仍在。
 7. DAG 工作流：三步 A、B（无依赖）、C after A,B —— A、B 并行启动，C 等两者
    完成后启动且其提示携带 A、B 的结果；A 失败时 C 不启动，报告 A 失败与 C 跳过。
 8. 检查点回滚：git 工作区中一回合改了文件后「回滚最近一回合」，转录截断到

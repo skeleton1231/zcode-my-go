@@ -24,6 +24,7 @@ type BlockKind string
 // Content block kinds.
 const (
 	BlockText       BlockKind = "text"
+	BlockImage      BlockKind = "image"
 	BlockToolCall   BlockKind = "toolCall"
 	BlockToolResult BlockKind = "toolResult"
 	BlockThinking   BlockKind = "thinking"
@@ -44,6 +45,12 @@ type Block struct {
 	// BlockToolResult: the call this answers, its output and error flag.
 	ToolCallID string `json:"toolCallId,omitempty"`
 	IsError    bool   `json:"isError,omitempty"`
+
+	// BlockImage: the media type ("image/png"…) and the image bytes,
+	// base64-encoded (JSONL persistence and every wire dialect take the
+	// string form).
+	Media string `json:"media,omitempty"`
+	Data  string `json:"data,omitempty"`
 
 	// BlockThinking: the model's reasoning text and the provider's
 	// signature, which must be passed back verbatim on the next request

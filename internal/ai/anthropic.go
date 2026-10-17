@@ -385,6 +385,14 @@ type wireBlock struct {
 	ToolUseID     string      `json:"tool_use_id,omitempty"`
 	ResultContent []wireBlock `json:"content,omitempty"`
 	IsError       bool        `json:"is_error,omitempty"`
+	Source        *wireSource `json:"source,omitempty"` // image
+}
+
+// wireSource is the base64 image source of an image block.
+type wireSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 // toWire translates the transcript to the wire format.
@@ -395,7 +403,14 @@ func toWire(messages []Message) []wireMessage {
 		switch m.Role {
 		case RoleUser:
 			for _, b := range m.Blocks {
-				wm.Content = append(wm.Content, wireBlock{Type: "text", Text: b.Text})
+				switch b.Kind {
+				case BlockImage:
+					wm.Content = append(wm.Content, wireBlock{Type: "image",
+						Source: &wireSource{Type: "base64",
+							MediaType: b.Media, Data: b.Data}})
+				default:
+					wm.Content = append(wm.Content, wireBlock{Type: "text", Text: b.Text})
+				}
 			}
 		case RoleAssistant:
 			for _, b := range m.Blocks {

@@ -106,6 +106,19 @@ func (s *Session) Append(m ai.Message) error {
 // emit. It returns an error only for misuse (empty message, already
 // running); provider and tool failures arrive as events.
 func (s *Session) Chat(text string, emit func(Event)) error {
+	return s.ChatMedia(text, nil, emit)
+}
+
+// userMessage assembles the user turn: the text plus any image blocks
+//（多模态输入，顺序与附件一致）.
+func userMessage(text string, media []ai.Block) ai.Message {
+	blocks := []ai.Block{{Kind: ai.BlockText, Text: text}}
+	return ai.Message{Role: ai.RoleUser, Blocks: append(blocks, media...)}
+}
+
+// ChatMedia is Chat carrying image attachments (BlockImage blocks are
+// appended after the text and persist with the transcript).
+func (s *Session) ChatMedia(text string, media []ai.Block, emit func(Event)) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return errors.New("empty message")
@@ -143,8 +156,7 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 	modelInfo := ai.LookupModel(s.model())
 	s.autoCompact(ctx, func(ev Event) { ev.SessionID = id; emit(ev) }, modelInfo.ContextWindow)
 
-	if err := s.Append(ai.Message{Role: ai.RoleUser,
-		Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}}); err != nil {
+	if err := s.Append(userMessage(text, media)); err != nil {
 		return err
 	}
 	s.run(ctx, workspace, id, modelInfo, emit)

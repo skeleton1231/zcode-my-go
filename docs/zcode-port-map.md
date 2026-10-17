@@ -73,7 +73,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    回滚最近一回合/编辑重发/重试先恢复检查点（read-tree -u --reset +
    clean -fd，不动分支历史）再截断转录；非 git/SSH 工作区降级为仅回退
    转录。fork/编辑重试/重试即 conversation 半边，此前已备。
-待做：会话分享。
+**多模态输入（图片附件）**：ai.BlockImage + 三协议翻译（Anthropic
+   base64 source / OpenAI image_url / Gemini inlineData）+ composer 📎
+   附件 chips + ChatMedia 通道；对齐 ZCode attachment-ux 的输入侧。
+待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录
 

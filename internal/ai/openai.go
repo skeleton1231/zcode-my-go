@@ -241,7 +241,7 @@ type openaiStreamOptions struct {
 
 type openaiMessage struct {
 	Role       string           `json:"role"`
-	Content    string           `json:"content,omitempty"`
+	Content    any              `json:"content,omitempty"` // string 或多模态 parts
 	ToolCalls  []openaiToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
@@ -298,7 +298,7 @@ func toOpenAI(system string, messages []Message) []openaiMessage {
 	for _, m := range messages {
 		switch m.Role {
 		case RoleUser:
-			out = append(out, openaiMessage{Role: "user", Content: m.Text()})
+			out = append(out, openaiMessage{Role: "user", Content: openAIUserContent(m)})
 		case RoleAssistant:
 			om := openaiMessage{Role: "assistant", Content: m.Text()}
 			for _, b := range m.Blocks {
@@ -321,6 +321,36 @@ func toOpenAI(system string, messages []Message) []openaiMessage {
 		}
 	}
 	return out
+}
+
+// openAIUserContent renders a user message: plain text when no image,
+// else multimodal parts (text + data-URL image_url).
+func openAIUserContent(m Message) any {
+	images := false
+	for _, b := range m.Blocks {
+		if b.Kind == BlockImage {
+			images = true
+			break
+		}
+	}
+	if !images {
+		return m.Text()
+	}
+	parts := make([]any, 0, len(m.Blocks))
+	for _, b := range m.Blocks {
+		switch b.Kind {
+		case BlockImage:
+			parts = append(parts, map[string]any{
+				"type":      "image_url",
+				"image_url": map[string]any{"url": "data:" + b.Media + ";base64," + b.Data},
+			})
+		default:
+			if b.Text != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": b.Text})
+			}
+		}
+	}
+	return parts
 }
 
 func toOpenAITools(tools []ToolDeclaration) []openaiTool {
