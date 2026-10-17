@@ -80,6 +80,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    输出与规模双上限）+ ToolResult.Diff/Event.Diff 透传 + 桌面工具块与终端
    TUI 的彩色渲染；edit/write（本地与 SSH 远程）覆盖前后对照，对齐 ZCode
    git-diff-ui 的渲染半边。
+**定时自动化**（ZCode automation-experience 的调度核心，specs/automation.md）：
+   internal/schedule（五字段 cron 解析/Next、jobs.json 热重载、分钟调度器、
+   防重叠与结果记账）+ 服务调度接线（桌面随启动开、退出即停）+ zgo cron
+   CLI（list/add/rm/run/enable/disable）。桌面任务面板为后续。
 待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录
