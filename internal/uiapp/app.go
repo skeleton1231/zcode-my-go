@@ -73,6 +73,8 @@ type App struct {
 	editingIndex int
 	editDraft    string
 
+	cross crossSearchState
+
 	// in-session search: filter the transcript to matching items.
 	searchOpen    bool
 	searchQuery   string
