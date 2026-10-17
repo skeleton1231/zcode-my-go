@@ -652,6 +652,53 @@ func (a *App) ForkFrom(itemIndex int) {
 	}()
 }
 
+// RewindToTurn rolls the session back before the user turn ending at
+// itemIndex（每轮用户消息上的 ⟲）：转录与工作区（检查点）一并回退。
+func (a *App) RewindToTurn(itemIndex int) {
+	if a.activeID == "" || a.chat.running {
+		return
+	}
+	turn := 0
+	for i := 0; i <= itemIndex && i < len(a.chat.items); i++ {
+		if a.chat.items[i].kind == itemUser {
+			turn++
+		}
+	}
+	if turn == 0 {
+		return
+	}
+	id := a.activeID
+	a.chat.items = a.chat.items[:firstItemOfTurn(a.chat.items, turn)]
+	go func() {
+		err := a.svc.RewindTo(id, turn)
+		a.update(func() {
+			if err != nil {
+				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+					text: "回滚失败：" + err.Error()})
+				return
+			}
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: "已回滚到第 " + fmt.Sprintf("%d", turn) + " 轮之前（含工作区文件）"})
+			a.refreshSessions()
+		})
+	}()
+}
+
+// firstItemOfTurn is the transcript-item index where turn n's user bubble
+// starts（视图截断目标）.
+func firstItemOfTurn(items []chatItem, turn int) int {
+	seen := 0
+	for i, it := range items {
+		if it.kind == itemUser {
+			seen++
+			if seen == turn {
+				return i
+			}
+		}
+	}
+	return len(items)
+}
+
 // StartEdit begins editing the last user message (ZCode's edit-message).
 func (a *App) StartEdit() {
 	if a.activeID == "" || a.chat.running {
