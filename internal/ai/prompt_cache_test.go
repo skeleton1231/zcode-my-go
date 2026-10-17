@@ -89,3 +89,30 @@ func TestCacheBreakpointsSparse(t *testing.T) {
 		t.Fatalf("breakpoints = %d", n)
 	}
 }
+
+// TestSystemVolatileExcludedFromCachePrefix 验证易变块不进缓存前缀
+// （issue #139：git dirty 计数每轮变化，混在 system 前缀里整块失效）。
+func TestSystemVolatileExcludedFromCachePrefix(t *testing.T) {
+	req := Request{System: "stable-prefix", SystemVolatile: "git: dirty 3"}
+	w := &wireRequest{}
+	applyCacheBreakpoints(w, req)
+	if w.System == nil || w.System.Text != "stable-prefix" {
+		t.Fatalf("stable block = %+v", w.System)
+	}
+	if w.System.CacheControl == nil {
+		t.Fatal("stable block lacks breakpoint")
+	}
+	if len(w.System.Blocks) != 1 || w.System.Blocks[0].Text != "git: dirty 3" {
+		t.Fatalf("volatile blocks = %+v", w.System.Blocks)
+	}
+	if w.System.Blocks[0].CacheControl != nil {
+		t.Fatal("volatile block must not carry a breakpoint")
+	}
+	// 无易变块时保持单块形态。
+	req2 := Request{System: "stable-only"}
+	w2 := &wireRequest{}
+	applyCacheBreakpoints(w2, req2)
+	if w2.System == nil || len(w2.System.Blocks) != 0 {
+		t.Fatalf("no-volatile form = %+v", w2.System)
+	}
+}
