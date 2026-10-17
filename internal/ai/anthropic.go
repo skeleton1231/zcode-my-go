@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,6 +49,10 @@ func (a *Anthropic) Stream(ctx context.Context, req Request) <-chan StreamEvent 
 func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEvent) {
 	end := func(reason StopReason, message string) {
 		out <- StreamEvent{Kind: EvMessageEnd, StopReason: reason, ErrorMessage: message}
+	}
+	endRetryable := func(reason StopReason, message string, retryable bool, afterMS int) {
+		out <- StreamEvent{Kind: EvMessageEnd, StopReason: reason, ErrorMessage: message,
+			Retryable: retryable, RetryAfterMS: afterMS}
 	}
 	if a.APIKey == "" {
 		end(StopError, "missing API key: set it in Settings or ANTHROPIC_API_KEY")
@@ -101,7 +104,10 @@ func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEv
 		resp.Body.Close()
 	}()
 	if resp.StatusCode != http.StatusOK {
-		end(StopError, httpError(resp))
+		// 429/5xx 属瞬态故障：与 Gemini/OpenAI 一致地携带 Retryable 与
+		// Retry-After；否则 agent loop 对主 provider（Anthropic）永不重试。
+		msg, status := httpErrorStatus(resp)
+		endRetryable(StopError, msg, retryableStatus(status), retryAfterMS(resp.Header))
 		return
 	}
 
@@ -141,9 +147,8 @@ func (a *Anthropic) parseSSE(ctx context.Context, body io.Reader, out chan<- Str
 		ended, err := handleSSEData(strings.TrimPrefix(line, "data: "), event, &usage, out)
 		switch {
 		case err != nil:
-			var re *retryableError
 			out <- StreamEvent{Kind: EvMessageEnd, StopReason: StopError, ErrorMessage: err.Error(),
-				Retryable: errors.As(err, &re)}
+				Retryable: errRetryable(err)}
 			return
 		case ended:
 			return
@@ -264,7 +269,13 @@ func handleSSEData(data, event string, usage *Usage, out chan<- StreamEvent) (en
 			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(data), &ev); err == nil && ev.Error.Message != "" {
-			return false, fmt.Errorf("%s: %s", ev.Error.Type, ev.Error.Message)
+			wrapped := fmt.Errorf("%s: %s", ev.Error.Type, ev.Error.Message)
+			// overloaded_error 等瞬态错误必须包成 retryableError，
+			// 否则 parseSSE 的 errRetryable 恒为 false，重试链路断开。
+			if retryableKind(ev.Error.Type) {
+				return false, &retryableError{err: wrapped}
+			}
+			return false, wrapped
 		}
 		return false, fmt.Errorf("provider error: %s", data)
 	}

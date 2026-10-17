@@ -139,6 +139,34 @@ func TestStreamHTTPError(t *testing.T) {
 	if !strings.Contains(last.ErrorMessage, "invalid key") {
 		t.Fatalf("error message = %q", last.ErrorMessage)
 	}
+	// 401 是永久性错误：不可重试。
+	if last.Retryable {
+		t.Fatalf("401 should not be retryable: %+v", last)
+	}
+}
+
+// TestStreamHTTPRetryable verifies 429/5xx carry Retryable and the
+// Retry-After header so the agent loop can back off.
+func TestStreamHTTPRetryable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After-Ms", "1200")
+		w.WriteHeader(429)
+		_, _ = w.Write([]byte(`{"error":{"type":"rate_limit_error","message":"slow down"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	p := NewAnthropic(srv.URL, "sk-test")
+	events := collect(t, p.Stream(context.Background(), Request{Model: "m"}))
+
+	last := events[len(events)-1]
+	if last.StopReason != StopError {
+		t.Fatalf("end = %+v", last)
+	}
+	if !last.Retryable {
+		t.Fatalf("429 should be retryable: %+v", last)
+	}
+	if last.RetryAfterMS != 1200 {
+		t.Fatalf("retryAfterMS = %d, want 1200", last.RetryAfterMS)
+	}
 }
 
 // TestStreamSSEError verifies in-stream error events.
@@ -154,6 +182,11 @@ func TestStreamSSEError(t *testing.T) {
 	last := events[len(events)-1]
 	if last.StopReason != StopError || !strings.Contains(last.ErrorMessage, "overloaded") {
 		t.Fatalf("end = %+v", last)
+	}
+	// overloaded_error 是瞬态错误：必须标记可重试，否则 agent loop
+	// 对 Anthropic 的重试链路整体断开。
+	if !last.Retryable {
+		t.Fatalf("overloaded_error should be retryable: %+v", last)
 	}
 }
 
