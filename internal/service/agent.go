@@ -39,6 +39,7 @@ type settings struct {
 	API        string                `json:"api"`
 	Thinking   string                `json:"thinking"` // off|low|medium|high
 	MCPServers map[string]mcp.Config `json:"mcpServers"`
+	Hooks      agent.CommandHooks    `json:"hooks"`
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
