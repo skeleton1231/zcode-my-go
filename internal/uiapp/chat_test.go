@@ -144,7 +144,7 @@ func TestAppendUserAndUsage(t *testing.T) {
 	s.apply(ev(agent.EvAgentEnd, func(e *agent.Event) {
 		e.Usage = ai.Usage{InputTokens: 1500, OutputTokens: 700}
 	}))
-	if got := formatUsage(s); got != "↑1.5k ↓700" {
+	if got := formatUsage(s); got != "累计 ↑1.5k ↓700" {
 		t.Fatalf("usage = %q", got)
 	}
 }

@@ -45,11 +45,12 @@ type chatItem struct {
 
 // chatState is the fold of one session's event stream.
 type chatState struct {
-	items    []chatItem
-	running  bool
-	usage    ai.Usage
-	hasUsage bool
-	endErr   string
+	sessionTotal ai.Usage // persisted cumulative usage (survives reloads)
+	items        []chatItem
+	running      bool
+	usage        ai.Usage
+	hasUsage     bool
+	endErr       string
 }
 
 // apply folds one event into the state.
@@ -181,13 +182,18 @@ func restoreChat(messages []ai.Message) chatState {
 	return s
 }
 
-// formatUsage renders the status bar's token count.
+// formatUsage renders the status bar's token count: the session's
+// persisted total, falling back to this run's stream.
 func formatUsage(s chatState) string {
-	if !s.hasUsage {
+	base := s.sessionTotal
+	if base == (ai.Usage{}) && s.hasUsage {
+		base = s.usage
+	}
+	if base == (ai.Usage{}) {
 		return ""
 	}
-	in := s.usage.InputTokens + s.usage.CacheReadTokens + s.usage.CacheWriteTokens
-	return "↑" + formatTokens(in) + " ↓" + formatTokens(s.usage.OutputTokens)
+	in := base.InputTokens + base.CacheReadTokens + base.CacheWriteTokens
+	return "累计 ↑" + formatTokens(in) + " ↓" + formatTokens(base.OutputTokens)
 }
 
 func formatTokens(n int) string {

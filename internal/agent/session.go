@@ -51,6 +51,7 @@ type Session struct {
 	cancel          context.CancelFunc
 	permissions     *permission.Service // session-scoped rules die with it
 	compactFailures int
+	usageTotal      ai.Usage // cumulative tokens, persisted per run
 
 	// wiring, installed by the manager
 	provider   func() ai.Provider
@@ -165,6 +166,10 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		Ask:         s.ask,
 	}, func(ev Event) {
 		ev.SessionID = id
+		if ev.Kind == EvAgentEnd && ev.Usage != (ai.Usage{}) {
+			// agent_end 携带本次运行的累计值：落账。
+			go s.addUsage(ev.Usage)
+		}
 		emit(ev)
 	})
 	loop.Run(ctx, s.Append)
@@ -262,6 +267,26 @@ func (s *Session) SetPlanMode(on bool) {
 	}
 }
 
+// UsageTotal returns the session's cumulative token usage.
+func (s *Session) UsageTotal() ai.Usage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.usageTotal
+}
+
+// addUsage merges a run's totals and persists the cumulative value as one
+// usage record per run (ZCode's usage-totals).
+func (s *Session) addUsage(u ai.Usage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.usageTotal = s.usageTotal.Add(u)
+	rec, err := json.Marshal(usageRecord{Type: "usage", Usage: s.usageTotal})
+	if err != nil {
+		return
+	}
+	_ = appendLine(s.path, rec)
+}
+
 // PlanMode reports whether the session is in plan mode.
 func (s *Session) PlanMode() bool {
 	s.mu.Lock()
@@ -306,6 +331,12 @@ type metaRecord struct {
 type messageRecord struct {
 	Type    string     `json:"type"`
 	Message ai.Message `json:"message"`
+}
+
+// usageRecord persists the cumulative usage after each run.
+type usageRecord struct {
+	Type  string   `json:"type"`
+	Usage ai.Usage `json:"usage"`
 }
 
 // regenerateRecord marks a retry: messages beyond Kept were dropped.
@@ -429,6 +460,11 @@ func loadSession(path string) (*Session, error) {
 					var rec messageRecord
 					if json.Unmarshal([]byte(line), &rec) == nil {
 						s.messages = append(s.messages, rec.Message)
+					}
+				case "usage":
+					var rec usageRecord
+					if json.Unmarshal([]byte(line), &rec) == nil {
+						s.usageTotal = rec.Usage
 					}
 				case "regenerate":
 					var rec regenerateRecord

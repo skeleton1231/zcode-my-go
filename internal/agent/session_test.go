@@ -337,3 +337,29 @@ func TestForkAtUserTurn(t *testing.T) {
 func userMsg(text string) ai.Message {
 	return ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}}
 }
+
+// TestUsageTotalAccumulatesAndPersists verifies per-run accumulation and
+// the usage record's replay on load.
+func TestUsageTotalAccumulatesAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return failProvider{msg: "x"} },
+		Model:    func() string { return "m" },
+	})
+	s, _ := m.New("ws")
+
+	// 模拟两次运行落账。
+	s.addUsage(ai.Usage{InputTokens: 100, OutputTokens: 20})
+	s.addUsage(ai.Usage{InputTokens: 50, OutputTokens: 10})
+	total := s.UsageTotal()
+	if total.InputTokens != 150 || total.OutputTokens != 30 {
+		t.Fatalf("total = %+v", total)
+	}
+
+	reloaded, _ := NewManager(dir)
+	again, _ := reloaded.Get(s.Info().ID)
+	if got := again.UsageTotal(); got.InputTokens != 150 || got.OutputTokens != 30 {
+		t.Fatalf("reloaded total = %+v", got)
+	}
+}
