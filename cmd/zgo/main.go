@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,28 +20,61 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
-func main() {
-	prompt := ""
-	workspace := ""
-	fullscreen := false
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
+// usage 打印用法。任何解析失败、未知 flag、缺值都以 exit 2 结束
+// （issue #35：此前四类误行为全部静默——缺值进 REPL、-p 吞 flag、
+// 未知 flag 被跳过、-C 缺值吞掉）。
+func usage(w io.Writer) {
+	fmt.Fprintln(w, `用法：zgo [选项] [prompt]
+
+  -p, --print <prompt>   运行一个任务后退出（与位置参数二选一）
+  -t, --tui              全屏终端界面
+  -C <dir>               工作区目录（默认当前目录）
+
+不带 -p 时进入 REPL。`)
+}
+
+// parseArgs 严格解析 argv：取值型 flag 的值不得形似 flag（否则报错而非
+// 静默吞掉），未知 flag 与缺值一律报错。
+func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, err error) {
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		next := ""
+		if i+1 < len(argv) {
+			next = argv[i+1]
+		}
 		switch {
 		case arg == "-p" || arg == "--print":
-			if i+1 < len(os.Args) {
-				i++
-				prompt = os.Args[i]
+			if next == "" || strings.HasPrefix(next, "-") {
+				return "", "", false, fmt.Errorf("-p/--print 需要一个 prompt 值")
 			}
+			i++
+			prompt = argv[i]
 		case arg == "-t" || arg == "--tui":
 			fullscreen = true
-		case arg == "-C" && i+1 < len(os.Args):
-			i++
-			workspace = os.Args[i]
-		default:
-			if !strings.HasPrefix(arg, "-") && prompt == "" {
-				prompt = arg
+		case arg == "-C":
+			if next == "" || strings.HasPrefix(next, "-") {
+				return "", "", false, fmt.Errorf("-C 需要一个目录值")
 			}
+			i++
+			workspace = argv[i]
+		case strings.HasPrefix(arg, "-"):
+			return "", "", false, fmt.Errorf("未知参数 %q", arg)
+		default:
+			if prompt != "" {
+				return "", "", false, fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)
+			}
+			prompt = arg
 		}
+	}
+	return prompt, workspace, fullscreen, nil
+}
+
+func main() {
+	prompt, workspace, fullscreen, err := parseArgs(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)
+		usage(os.Stderr)
+		os.Exit(2)
 	}
 	if fullscreen {
 		if workspace == "" {
