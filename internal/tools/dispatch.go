@@ -71,7 +71,10 @@ func (d *Dispatch) Execute(ctx context.Context, args json.RawMessage) agent.Tool
 	results := d.Run(ctx, a.Prompts)
 	var b strings.Builder
 	for i, res := range results {
-		fmt.Fprintf(&b, "## 任务 %d\n%s\n\n", i+1, res.Text)
+		// 每份报告按 task 工具同型截断（issue #92：4 份无限长回答
+		// 直接拼接一次性进主对话上下文，比 #21 放大 4 倍）。
+		fmt.Fprintf(&b, "## 任务 %d\n%s\n\n", i+1,
+			truncateBytes([]byte(res.Text), taskHeadTail, taskHeadTail))
 	}
 	return agent.ToolResult{Content: strings.TrimRight(b.String(), "\n")}
 }

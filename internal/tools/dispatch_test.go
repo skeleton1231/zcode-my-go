@@ -50,3 +50,24 @@ func TestDispatchValidation(t *testing.T) {
 		t.Fatal("nil runner accepted")
 	}
 }
+
+// TestDispatchOutputCapped 验证每份子报告按 task 同型截断（issue #92：
+// 4 份无限长回答直接拼接，一次性进主对话上下文）。
+func TestDispatchOutputCapped(t *testing.T) {
+	big := strings.Repeat("报", 200*1024) // ~400KB/份
+	tool := NewDispatch(func(_ context.Context, prompts []string) []agent.SubtaskResult {
+		out := make([]agent.SubtaskResult, len(prompts))
+		for i := range prompts {
+			out[i] = agent.SubtaskResult{Text: big, Turns: 2}
+		}
+		return out
+	})
+	res := tool.Execute(context.Background(), json.RawMessage(
+		`{"prompts":["a","b","c","d"]}`))
+	if len(res.Content) > 4*(2*taskHeadTail+512) {
+		t.Fatalf("dispatch output = %d bytes, want capped per report", len(res.Content))
+	}
+	if !strings.Contains(res.Content, "bytes truncated") {
+		t.Fatal("truncation marker missing")
+	}
+}
