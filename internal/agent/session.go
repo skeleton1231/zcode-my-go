@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -79,6 +81,7 @@ func (s *Session) Messages() []ai.Message {
 func (s *Session) Append(m ai.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	m = truncateMessage(m) // 唯一写入路径：内存与磁盘一致（issue #10）
 	s.messages = append(s.messages, m)
 	s.info.UpdatedAt = time.Now()
 	if s.info.Title == "" && m.Role == ai.RoleUser {
@@ -305,6 +308,39 @@ type regenerateRecord struct {
 	Kept int    `json:"kept"`
 }
 
+// 会话持久化的大小上限（issue #10）：maxBlockText 是单个文本块的落盘
+// 上限——用户粘贴超大日志曾产生 >8MB 的 JSONL 行，超过读取上限后整个
+// 会话文件加载失败，会话从列表静默消失。maxLoadLine 是读取侧对单行的
+// 防御性上限，超限行按损坏跳过（兼容历史文件）。
+const (
+	maxBlockText = 1 << 20 // 1MB per text block
+	maxLoadLine  = 16 << 20
+)
+
+// truncateMessage 把超大文本块截断到 maxBlockText（退到 rune 边界）并
+// 追加标记。内存与磁盘共用同一份数据，重放保持一致。工具输出已在上游
+// 截断到 30KB，这里主要防用户粘贴。
+func truncateMessage(m ai.Message) ai.Message {
+	capped := false
+	blocks := make([]ai.Block, len(m.Blocks))
+	for i, b := range m.Blocks {
+		if b.Kind == ai.BlockText && len(b.Text) > maxBlockText {
+			cut := maxBlockText
+			for cut > 0 && !utf8.RuneStart(b.Text[cut]) {
+				cut--
+			}
+			b.Text = b.Text[:cut] + "…[已截断]"
+			capped = true
+		}
+		blocks[i] = b
+	}
+	if !capped {
+		return m
+	}
+	m.Blocks = blocks
+	return m
+}
+
 // writeLine appends one message record. Called with s.mu held.
 func (s *Session) writeLine(m ai.Message) error {
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -343,6 +379,18 @@ func (s *Session) writeMetaLocked() error {
 	return nil
 }
 
+// loadSessionSafe 兜底 loadSession 的 panic（issue #9：损坏的会话文件曾
+// 让启动 brick）。recover 后按加载失败处理，交给调用方跳过。
+func loadSessionSafe(path string) (s *Session, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("session %s: panic on load: %v", path, r)
+			err = fmt.Errorf("panic on load: %v", r)
+		}
+	}()
+	return loadSession(path)
+}
+
 // loadSession reads a session file. A missing meta record is fatal; damaged
 // message lines are skipped, not fatal.
 func loadSession(path string) (*Session, error) {
@@ -353,50 +401,55 @@ func loadSession(path string) (*Session, error) {
 	defer f.Close()
 
 	s := &Session{path: path}
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var kind struct{ Type string }
-		if err := json.Unmarshal([]byte(line), &kind); err != nil {
-			continue
-		}
-		switch kind.Type {
-		case recordMeta:
-			var rec metaRecord
-			if json.Unmarshal([]byte(line), &rec) == nil {
-				s.info.ID = rec.ID
-				s.info.Title = rec.Title
-				s.info.Workspace = rec.Workspace
-				s.metaTitle = rec.Title
-			}
-		case recordMessage:
-			var rec messageRecord
-			if json.Unmarshal([]byte(line), &rec) == nil {
-				s.messages = append(s.messages, rec.Message)
-			}
-		case "regenerate":
-			var rec regenerateRecord
-			if json.Unmarshal([]byte(line), &rec) == nil && rec.Kept >= 0 && rec.Kept <= len(s.messages) {
-				s.messages = s.messages[:rec.Kept]
-			}
-		case "compaction":
-			var rec compactionRecord
-			if json.Unmarshal([]byte(line), &rec) == nil && rec.Summary != "" {
-				kept := rec.Kept
-				if kept > len(s.messages) {
-					kept = len(s.messages)
+	// bufio.Scanner 的 token 上限会让超长行拖垮整个文件（issue #10）；
+	// 改用 Reader 逐行读，超限行按损坏跳过，其余行照常重放。
+	r := bufio.NewReader(f)
+	for {
+		raw, rerr := r.ReadString('\n')
+		line := strings.TrimSpace(raw)
+		if line != "" && len(line) <= maxLoadLine {
+			var kind struct{ Type string }
+			if err := json.Unmarshal([]byte(line), &kind); err == nil {
+				switch kind.Type {
+				case recordMeta:
+					var rec metaRecord
+					if json.Unmarshal([]byte(line), &rec) == nil {
+						s.info.ID = rec.ID
+						s.info.Title = rec.Title
+						s.info.Workspace = rec.Workspace
+						s.metaTitle = rec.Title
+					}
+				case recordMessage:
+					var rec messageRecord
+					if json.Unmarshal([]byte(line), &rec) == nil {
+						s.messages = append(s.messages, rec.Message)
+					}
+				case "regenerate":
+					var rec regenerateRecord
+					if json.Unmarshal([]byte(line), &rec) == nil && rec.Kept >= 0 && rec.Kept <= len(s.messages) {
+						s.messages = s.messages[:rec.Kept]
+					}
+				case "compaction":
+					var rec compactionRecord
+					// Kept 负值防护与 regenerate 对齐（issue #9）：负值属
+					// 损坏记录，跳过而非 panic。
+					if json.Unmarshal([]byte(line), &rec) == nil && rec.Summary != "" && rec.Kept >= 0 {
+						kept := rec.Kept
+						if kept > len(s.messages) {
+							kept = len(s.messages)
+						}
+						tail := append([]ai.Message(nil), s.messages[len(s.messages)-kept:]...)
+						s.messages = append([]ai.Message{compact.SummaryMessage(rec.Summary)}, tail...)
+					}
 				}
-				tail := append([]ai.Message(nil), s.messages[len(s.messages)-kept:]...)
-				s.messages = append([]ai.Message{compact.SummaryMessage(rec.Summary)}, tail...)
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading %s: %w", path, err)
+		if rerr != nil {
+			if !errors.Is(rerr, io.EOF) {
+				return nil, fmt.Errorf("reading %s: %w", path, rerr)
+			}
+			break
+		}
 	}
 	if s.info.ID == "" {
 		return nil, fmt.Errorf("%s has no meta record", path)
@@ -461,9 +514,11 @@ func NewManager(dir string) (*Manager, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".jsonl" {
 			continue
 		}
-		s, err := loadSession(filepath.Join(dir, e.Name()))
+		s, err := loadSessionSafe(filepath.Join(dir, e.Name()))
 		if err != nil {
-			continue // unreadable session files are skipped, not fatal
+			// 加载失败要可见（issue #10）：静默跳过曾让用户以为会话丢了。
+			log.Printf("session %s: load failed: %v", e.Name(), err)
+			continue
 		}
 		m.sessions[s.info.ID] = s
 	}
