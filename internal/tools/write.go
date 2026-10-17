@@ -47,6 +47,16 @@ func (w *Write) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 	if err != nil {
 		return errResult("%v", err)
 	}
+	if w.ws.IsRemote() {
+		if err := w.ws.Remote.WriteFile(remoteRel(w.ws, abs), []byte(a.Content), 0o644); err != nil {
+			return errResult("writing %s: %v", a.Path, err)
+		}
+		lines := strings.Count(a.Content, "\n")
+		if !strings.HasSuffix(a.Content, "\n") && a.Content != "" {
+			lines++
+		}
+		return okResult("wrote %s (%d lines, %d bytes) [remote]", a.Path, lines, len(a.Content))
+	}
 	if dir := filepath.Dir(abs); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return errResult("creating directory: %v", err)

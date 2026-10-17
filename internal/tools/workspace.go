@@ -12,10 +12,16 @@ import (
 )
 
 // Workspace is the file access boundary of a session: all tool paths are
-// resolved against Root and must stay inside it.
+// resolved against Root and must stay inside it. A non-nil Remote
+// delegates file ops and command runs to the SSH workspace (ssh://
+// targets); the lexical jail still applies to the remote path space.
 type Workspace struct {
-	Root string // absolute, cleaned
+	Root   string // absolute, cleaned (remote: the host-side root)
+	Remote RemoteFS
 }
+
+// IsRemote reports whether ops delegate to an SSH workspace.
+func (w Workspace) IsRemote() bool { return w.Remote != nil }
 
 // Resolve turns a tool path argument into an absolute path inside the
 // workspace. Relative paths join Root; absolute paths must already be
@@ -152,4 +158,27 @@ func splitPath(p string) []string {
 		return nil
 	}
 	return strings.Split(trimmed, string(filepath.Separator))
+}
+
+// RemoteFS is the slice of remote.Client the workspace delegates to when
+// the session's target is ssh:// (the tools never dial themselves).
+type RemoteFS interface {
+	Exec(command string) (ExecOutcome, error)
+	ReadFile(name string) ([]byte, error)
+	WriteFile(name string, data []byte, perm os.FileMode) error
+	ReadDir(name string) ([]DirEntry, error)
+	Stat(name string) (exists, isDir bool, err error)
+	Glob(pattern string) ([]string, error)
+}
+
+// ExecOutcome mirrors remote.ExecResult without the import.
+type ExecOutcome struct {
+	Output   string
+	ExitCode int
+}
+
+// DirEntry mirrors remote.Entry.
+type DirEntry struct {
+	Name  string
+	IsDir bool
 }

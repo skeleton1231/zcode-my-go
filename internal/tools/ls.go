@@ -51,6 +51,28 @@ func (l *Ls) Execute(ctx context.Context, args json.RawMessage) agent.ToolResult
 	if err != nil {
 		return errResult("%v", err)
 	}
+	if l.ws.IsRemote() {
+		remoteEntries, err := l.ws.Remote.ReadDir(remoteRel(l.ws, abs))
+		if err != nil {
+			return errResult("reading %s: %v", rel, err)
+		}
+		if len(remoteEntries) == 0 {
+			return okResult("(empty directory)")
+		}
+		var b strings.Builder
+		for i, e := range remoteEntries {
+			if i >= lsCapEntries {
+				fmt.Fprintf(&b, "… truncated at %d entries …\n", lsCapEntries)
+				break
+			}
+			if e.IsDir {
+				fmt.Fprintf(&b, "d %10s  %s/\n", "-", e.Name)
+			} else {
+				fmt.Fprintf(&b, "- %10s  %s\n", "?", e.Name)
+			}
+		}
+		return agent.ToolResult{Content: b.String()}
+	}
 	entries, err := os.ReadDir(abs)
 	if err != nil {
 		return errResult("reading %s: %v", rel, err)

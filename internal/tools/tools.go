@@ -40,10 +40,15 @@ func NewStates() *States { return &States{Todo: &TodoState{}, Jobs: NewJobs()} }
 // the todo tool then starts empty every turn — and ask may be nil, which
 // makes the ask tool report no user channel.
 func All(workspace string, state *States, ask func(ctx context.Context, q agent.Question) (string, error)) []agent.Tool {
+	return AllW(Workspace{Root: workspace}, state, ask)
+}
+
+// AllW is All over a prebuilt workspace (an SSH workspace whose Remote
+// is already dialed).
+func AllW(w Workspace, state *States, ask func(ctx context.Context, q agent.Question) (string, error)) []agent.Tool {
 	if state == nil {
 		state = NewStates()
 	}
-	w := Workspace{Root: workspace}
 	return []agent.Tool{
 		NewRead(w),
 		NewWrite(w),

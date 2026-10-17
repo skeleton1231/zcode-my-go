@@ -2,6 +2,8 @@ package remote
 
 import (
 	"os"
+
+	"github.com/skeleton1231/zcode-my-go/internal/remotetest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,11 +12,11 @@ import (
 // dialTestServer dials the in-process server for real round-trips.
 func dialTestServer(t *testing.T) *Client {
 	t.Helper()
-	srv := startTestServer(t)
-	host, port, _ := splitHostPort(srv.address)
+	srv := remotetest.Start(t)
+	host, port, _ := splitHostPort(srv.Address)
 	client, err := Dial(Config{
 		User: "tester", Host: host, Port: port,
-		Key: srv.keyPEM, Root: srv.root,
+		Key: srv.KeyPEM, Root: srv.Root,
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -70,7 +72,6 @@ func TestExecRoundTrip(t *testing.T) {
 
 func TestFileRoundTrip(t *testing.T) {
 	client := dialTestServer(t)
-	srv := startTestServer(t) // 仅为对齐磁盘根（见 dialTestServer；此处直接用 client.cfg.Root 校验）
 
 	if err := client.WriteFile("sub/a.txt", []byte("内容"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
@@ -100,7 +101,6 @@ func TestFileRoundTrip(t *testing.T) {
 	if !found {
 		t.Fatalf("entries = %+v", entries)
 	}
-	_ = srv
 }
 
 func TestGlobRemote(t *testing.T) {
@@ -136,9 +136,9 @@ func splitHostPort(addr string) (string, string, error) {
 // 磁盘根对齐检查：WriteFile 的目标应落在真实根内（测试服务器直接服务
 // 本地文件系统，root 即 t.TempDir）。
 func TestWriteLandsInRoot(t *testing.T) {
-	srv := startTestServer(t)
-	host, port, _ := splitHostPort(srv.address)
-	client, err := Dial(Config{User: "t", Host: host, Port: port, Key: srv.keyPEM, Root: srv.root})
+	srv := remotetest.Start(t)
+	host, port, _ := splitHostPort(srv.Address)
+	client, err := Dial(Config{User: "t", Host: host, Port: port, Key: srv.KeyPEM, Root: srv.Root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestWriteLandsInRoot(t *testing.T) {
 	if err := client.WriteFile("probe.txt", []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(srv.root, "probe.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(srv.Root, "probe.txt")); err != nil {
 		t.Fatalf("file not in root: %v", err)
 	}
 }
