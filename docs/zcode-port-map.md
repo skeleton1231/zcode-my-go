@@ -131,6 +131,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **/rewind 终端命令**：`/rewind [n]`（默认最近一轮）把任意回合回滚带到
    REPL/TUI/print 三端——回滚子系统三面齐备（桌面 ⟲、服务 RewindTo、终端
    命令）。
+**/export 终端命令**：`/export [md] [路径]` 把会话导出带到 REPL/TUI/print
+   ——导出子系统三面齐备（桌面菜单、sessions CLI、终端命令，同一导出器）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

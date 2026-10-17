@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -108,6 +109,41 @@ var commands = []command{
 				return "[压缩失败] " + err.Error()
 			}
 			return "[压缩] 会话已压缩"
+		},
+	},
+	{
+		name: "/export", usage: "/export [md] [路径]",
+		help: "导出当前会话（默认 HTML；md 为 Markdown）",
+		run: func(env *Env, args string) string {
+			id := env.SessionID()
+			asMD, dest := false, ""
+			for _, a := range strings.Fields(args) {
+				switch {
+				case a == "md" || a == "markdown":
+					asMD = true
+				case a == "html":
+					asMD = false
+				default:
+					dest = a
+				}
+			}
+			if dest == "" {
+				ext := ".html"
+				if asMD {
+					ext = ".md"
+				}
+				dest = "zgo-export-" + time.Now().Format("0102-1504") + ext
+			}
+			var err error
+			if asMD {
+				err = env.Svc.ExportSessionMarkdown(id, dest)
+			} else {
+				err = env.Svc.ExportSessionHTML(id, dest)
+			}
+			if err != nil {
+				return "[导出失败] " + err.Error()
+			}
+			return "[导出] " + dest
 		},
 	},
 	{
