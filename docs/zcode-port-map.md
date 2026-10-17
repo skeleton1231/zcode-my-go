@@ -62,10 +62,10 @@
 已完成：工具并行调度、hook 注入点（PreToolUse/PostToolUse + 外部命令钩子）、
 OAuth 订阅登录、远程工作区（SSH，工具全量远程化）、子代理并行（dispatch
 扇出）、E2E 测试体系（internal/e2e 脚本化全栈回放）、会话导出（HTML/
-Markdown）、**wasm 浏览器目标（第一部分）**：`mygo build -platform web` +
+Markdown）、**wasm 浏览器目标（两部分完成）**：`mygo build -platform web` +
 `cmd/webfs` 注入的内存 FS 垫片，完整 agent（UI/设置/会话/权限门/文件工具/
-流式 provider）跑进浏览器；数据在页面内存，持久化桥接（localStorage/
-IndexedDB）与 DAG 工作流编排为待做项。
+流式 provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedDB、启动
+前恢复——刷新不清空设置/会话/工作区。DAG 工作流编排单独交付。
 
 ## 翻译轮次记录
 

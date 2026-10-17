@@ -2,7 +2,10 @@
 // the Zgo browser target gets a file system: it copies web/zgo-fs.js (the
 // in-memory fs shim Go's js/wasm syscall layer needs — wasm_exec.js's
 // fallback only covers stdout) into the output and loads it before
-// wasm_exec.js, whose `if (!globalThis.fs)` keeps a pre-defined one.
+// wasm_exec.js, whose `if (!globalThis.fs)` keeps a pre-defined one. The
+// shim also persists every file change to IndexedDB and restores them
+// before the wasm instantiates (it wraps WebAssembly.instantiateStreaming),
+// so a reload keeps settings, sessions and workspace files.
 //
 // Usage, after the web build:
 //
@@ -24,34 +27,42 @@ const (
 )
 
 func main() {
-	out := filepath.Join("build", "web")
-	idx := filepath.Join(out, "index.html")
+	if err := patchSite(filepath.Join("build", "web"), shimSrc); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("webfs: zgo-fs.js 已注入 build/web")
+}
+
+// patchSite copies the shim into outDir and loads it from index.html
+// before wasm_exec.js. Idempotent: re-running changes nothing.
+func patchSite(outDir, shim string) error {
+	idx := filepath.Join(outDir, "index.html")
 	page, err := os.ReadFile(idx)
 	if err != nil {
-		log.Fatalf("reading %s (run `go tool mygo build -platform web` first): %v", idx, err)
+		return fmt.Errorf("reading %s (run `go tool mygo build -platform web` first): %w", idx, err)
 	}
-	shim, err := os.ReadFile(shimSrc)
+	data, err := os.ReadFile(shim)
 	if err != nil {
-		log.Fatalf("reading %s: %v", shimSrc, err)
+		return fmt.Errorf("reading %s: %w", shim, err)
 	}
-	if err := os.WriteFile(filepath.Join(out, "zgo-fs.js"), shim, 0o644); err != nil {
-		log.Fatalf("writing shim: %v", err)
+	if err := os.WriteFile(filepath.Join(outDir, "zgo-fs.js"), data, 0o644); err != nil {
+		return fmt.Errorf("writing shim: %w", err)
 	}
-	// The shim must run before wasm_exec.js; idempotent on re-runs.
 	text := string(page)
-	if !strings.Contains(text, shimTag) {
-		i := strings.Index(text, `wasm_exec.js`)
-		if i < 0 {
-			log.Fatal("index.html does not reference wasm_exec.js")
-		}
-		lineStart := strings.LastIndex(text[:i], "<script")
-		if lineStart < 0 {
-			log.Fatal("no script tag before wasm_exec.js")
-		}
-		text = text[:lineStart] + shimTag + "\n    " + text[lineStart:]
-		if err := os.WriteFile(idx, []byte(text), 0o644); err != nil {
-			log.Fatalf("writing index.html: %v", err)
-		}
+	if strings.Contains(text, shimTag) {
+		return nil // 已注入（重复构建后重跑）
 	}
-	fmt.Println("webfs: zgo-fs.js 已注入", idx)
+	i := strings.Index(text, `wasm_exec.js`)
+	if i < 0 {
+		return fmt.Errorf("index.html does not reference wasm_exec.js")
+	}
+	lineStart := strings.LastIndex(text[:i], "<script")
+	if lineStart < 0 {
+		return fmt.Errorf("no script tag before wasm_exec.js")
+	}
+	text = text[:lineStart] + shimTag + "\n    " + text[lineStart:]
+	if err := os.WriteFile(idx, []byte(text), 0o644); err != nil {
+		return fmt.Errorf("writing index.html: %w", err)
+	}
+	return nil
 }

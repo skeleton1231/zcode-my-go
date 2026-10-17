@@ -29,7 +29,9 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
    `go run ./cmd/webfs` 注入内存文件系统垫片（wasm 的 syscall 层需要 Node
    形态的 fs 对象，wasm_exec.js 的回退只有 stdout）。浏览器上的语义：
    用户数据目录与工作区都在内存 FS（`main_wasm.go` 的 SetPath 与
-   PickWorkspace 的 GOOS=js 分支），刷新即清空（持久化桥接是后续工作）；
+   PickWorkspace 的 GOOS=js 分支），垫片把每个文件的改动（去抖合并）逐条
+   写入本源 IndexedDB，并在 wasm 实例化前恢复——刷新不清空设置、会话与
+   工作区文件（API key 随设置文件存于本源 IndexedDB，仅本地）；
    bash 工具明确报错拒绝（无进程模型）；权限确认弹窗照常阻塞运行；
    provider 经浏览器的 fetch 流式调用。
 
@@ -52,3 +54,6 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 6. 浏览器目标：静态站点加载后窗口渲染；新建会话落在内存工作区；设置
    弹窗保存的配置经真实 provider 流式对话；写工具触发权限弹窗，未点击
    时运行阻塞；bash 工具返回明确的不可用错误。
+7. 浏览器持久化：写文件 + 保存设置后刷新页面，会话列表与完整历史
+   （含工具块）、设置（模型与 key）、工作区文件全部恢复；恢复后的会话
+   可继续运行（读回文件并作答）。
