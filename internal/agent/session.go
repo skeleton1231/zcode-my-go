@@ -598,8 +598,8 @@ func (s *Session) writeMetaLocked() error {
 // 启动只读 meta 行（见 loadMetaOnly），这里在第一次触及消息/用量时补全
 // 全量解析。装载结果合并进现有壳——wiring 等运行时字段保持不动。
 func (s *Session) ensureLoadedLocked() {
-	if s.loaded {
-		return
+	if s.loaded || s.path == "" {
+		return // 手工构造的内存会话（测试）没有可装载的文件
 	}
 	s.loaded = true // 先置位：装载失败也不再重试，空转录胜过死循环
 	full, err := loadSessionSafe(s.path)

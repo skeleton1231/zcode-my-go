@@ -35,7 +35,7 @@ func usage(w io.Writer) {
 
 // parseArgs 严格解析 argv：取值型 flag 的值不得形似 flag（否则报错而非
 // 静默吞掉），未知 flag 与缺值一律报错。
-func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, err error) {
+func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images []string, err error) {
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
 		next := ""
@@ -45,35 +45,41 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, err er
 		switch {
 		case arg == "-p" || arg == "--print":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, fmt.Errorf("-p/--print 需要一个 prompt 值")
+				return "", "", false, nil, fmt.Errorf("-p/--print 需要一个 prompt 值")
 			}
 			i++
 			prompt = argv[i]
 		case arg == "-t" || arg == "--tui":
 			fullscreen = true
+		case arg == "-i" || arg == "--image":
+			if next == "" || strings.HasPrefix(next, "-") {
+				return "", "", false, nil, fmt.Errorf("-i/--image 需要一个图片路径")
+			}
+			i++
+			images = append(images, argv[i])
 		case arg == "-C":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, fmt.Errorf("-C 需要一个目录值")
+				return "", "", false, nil, fmt.Errorf("-C 需要一个目录值")
 			}
 			i++
 			workspace = argv[i]
 		case strings.HasPrefix(arg, "-"):
-			return "", "", false, fmt.Errorf("未知参数 %q", arg)
+			return "", "", false, nil, fmt.Errorf("未知参数 %q", arg)
 		default:
 			if prompt != "" {
-				return "", "", false, fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)
+				return "", "", false, nil, fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)
 			}
 			prompt = arg
 		}
 	}
-	return prompt, workspace, fullscreen, nil
+	return prompt, workspace, fullscreen, images, nil
 }
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cron" {
 		os.Exit(runCron(os.Args[2:]))
 	}
-	prompt, workspace, fullscreen, err := parseArgs(os.Args[1:])
+	prompt, workspace, fullscreen, images, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)
 		usage(os.Stderr)
@@ -121,9 +127,14 @@ func main() {
 		fatal(err)
 	}
 
+	media, attachErrs := loadImageBlocks(images)
+	for _, e := range attachErrs {
+		fmt.Fprintln(os.Stderr, "附件：", e)
+	}
+
 	exit := 0
 	lastStop := ""
-	err = svc.Chat(info.ID, prompt, func(ev agent.Event) {
+	err = svc.ChatMedia(info.ID, prompt, media, func(ev agent.Event) {
 		if ev.Kind == agent.EvAgentEnd {
 			lastStop = string(ev.StopReason)
 		}
@@ -269,6 +280,7 @@ func fatal(err error) {
 // repl runs the interactive loop (zcode-cli's interactive mode): one
 // session, streamed turns, slash commands. It returns the exit code.
 func repl(workspace string) int {
+	var pending attachments // /attach 攒的图，随下一条消息发送
 	if workspace == "" {
 		if cwd, err := os.Getwd(); err == nil {
 			workspace = cwd
@@ -311,7 +323,8 @@ func repl(workspace string) int {
 		line := strings.TrimSpace(sc.Text())
 		handled, quit := runSlashCommand(&commandEnv{
 			svc: svc, info: &info, workspace: workspace,
-			out: func(msg string) { fmt.Fprintln(os.Stderr, msg) },
+			out:    func(msg string) { fmt.Fprintln(os.Stderr, msg) },
+			attach: &pending,
 		}, line)
 		if quit {
 			return 0
@@ -319,7 +332,7 @@ func repl(workspace string) int {
 		if handled {
 			continue
 		}
-		if err := svc.Chat(info.ID, line, func(ev agent.Event) { render(ev) }); err != nil {
+		if err := svc.ChatMedia(info.ID, line, pending.take(), func(ev agent.Event) { render(ev) }); err != nil {
 			fmt.Fprintln(os.Stderr, "错误：", err)
 		}
 		fmt.Println()

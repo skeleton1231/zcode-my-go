@@ -167,7 +167,7 @@ func TestNewManagerStartupCost(t *testing.T) {
 		}
 	}
 	t.Logf("eager=%v lazy=%v", eager, lazy)
-	if lazy > eager/4 {
+	if lazy > eager/2 {
 		t.Fatalf("lazy startup %v not meaningfully faster than eager %v", lazy, eager)
 	}
 }

@@ -15,10 +15,15 @@ type commandEnv struct {
 	info      *agent.SessionInfo
 	workspace string
 	out       func(string)
+	attach    *attachments // 终端表面的 /attach 状态（可空）
 }
 
 // runSlashCommand adapts slash.Run for the terminal surfaces.
 func runSlashCommand(env *commandEnv, line string) (handled, quit bool) {
+	var attachFn func(string) string
+	if env.attach != nil {
+		attachFn = env.attach.add
+	}
 	return slash.Run(&slash.Env{
 		Svc:        env.svc,
 		SessionID:  func() string { return env.info.ID },
@@ -26,6 +31,7 @@ func runSlashCommand(env *commandEnv, line string) (handled, quit bool) {
 		SetSession: func(info agent.SessionInfo) { *env.info = info },
 		// 输出只经 env.out：REPL 打 stderr、TUI 走 push。适配器再打
 		// 一份 stderr 会让 REPL 双行输出、TUI 全屏被裸文本污染。
-		Out: env.out,
+		Out:    env.out,
+		Attach: attachFn,
 	}, line)
 }
