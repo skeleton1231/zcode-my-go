@@ -189,7 +189,9 @@ type Command struct {
 // spellings included.
 func Commands() []Command {
 	out := []Command{{Usage: "/help", Help: "列出全部命令"}}
-	for _, alias := range []string{"/exit", "/quit /q"} {
+	// 退出拼写各自成条：合并成 "/quit /q" 会让输入 "/q" 时前缀匹配
+	// 落空、面板不弹。
+	for _, alias := range []string{"/exit", "/quit", "/q"} {
 		out = append(out, Command{Usage: alias, Help: "退出"})
 	}
 	for _, c := range commands {
