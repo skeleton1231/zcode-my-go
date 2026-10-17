@@ -102,6 +102,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **patch 多文件 diff/预览**：apply_patch 的结果 Diff 与 PreviewDiff 按段
    聚合（--- 文件名分隔、400 行上限），预览试算不落盘——diff 子系统对
    edit/write/patch 全量闭环。
+**惰性会话装载**（ZCode conversation-projection-store）：启动只读 meta 行，
+   首次触及转录再全量解析（同机对照 40×320KB 会话：全量 ~2s vs meta-only
+   ~9ms）；列表/信息查询零解析。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
