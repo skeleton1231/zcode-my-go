@@ -3,6 +3,7 @@ package uiapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 
@@ -355,6 +356,39 @@ func (a *App) answerQuestion(answer string) {
 		a.qCh <- answer
 		a.qCh = nil
 	}
+}
+
+// ForkFrom branches the conversation before this user turn (ZCode's
+// session fork): a new session opens with the shared prefix, ready for a
+// different question.
+func (a *App) ForkFrom(itemIndex int) {
+	if a.activeID == "" || a.chat.running {
+		return
+	}
+	turn := 0
+	for i := 0; i <= itemIndex && i < len(a.chat.items); i++ {
+		if a.chat.items[i].kind == itemUser {
+			turn++
+		}
+	}
+	if turn == 0 {
+		return
+	}
+	id := a.activeID
+	go func() {
+		info, err := a.svc.ForkSession(id, turn)
+		a.update(func() {
+			if err != nil {
+				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+					text: "分叉失败：" + err.Error()})
+				return
+			}
+			a.refreshSessions()
+			a.open(info.ID)
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: "已从第 " + fmt.Sprintf("%d", turn) + " 轮分叉，输入新的问题继续"})
+		})
+	}()
 }
 
 // StartEdit begins editing the last user message (ZCode's edit-message).

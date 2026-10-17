@@ -293,3 +293,47 @@ func TestEditAndResendGuards(t *testing.T) {
 		t.Fatal("empty edit allowed")
 	}
 }
+
+// TestForkAtUserTurn verifies a fork copies the prefix before the nth
+// user message, leaves the source intact, and persists for reload.
+func TestForkAtUserTurn(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	wire(m)
+	src, _ := m.New("ws")
+	src.Append(userMsg("第一问"))
+	src.Append(ai.Message{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "答一"}}})
+	src.Append(userMsg("第二问"))
+	src.Append(ai.Message{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "答二"}}})
+	src.Append(userMsg("第三问"))
+
+	fork, err := m.ForkAtUserTurn(src, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := fork.Messages()
+	if len(msgs) != 2 || msgs[0].Text() != "第一问" || msgs[1].Text() != "答一" {
+		t.Fatalf("fork messages = %+v", msgs)
+	}
+	if fork.Info().Workspace != "ws" || fork.Info().Title == "" {
+		t.Fatalf("fork info = %+v", fork.Info())
+	}
+	// 源会话原样。
+	if len(src.Messages()) != 5 {
+		t.Fatalf("source mutated: %d", len(src.Messages()))
+	}
+	// 越界拒绝。
+	if _, err := m.ForkAtUserTurn(src, 9); err == nil {
+		t.Fatal("out-of-range turn accepted")
+	}
+	// 分叉可重载。
+	reloaded, _ := NewManager(dir)
+	again, ok := reloaded.Get(fork.Info().ID)
+	if !ok || len(again.Messages()) != 2 {
+		t.Fatalf("fork reload = %v %d", ok, len(again.Messages()))
+	}
+}
+
+func userMsg(text string) ai.Message {
+	return ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}}
+}

@@ -451,6 +451,19 @@ func (s *AgentService) EditAndResend(sessionID, text string, emit func(agent.Eve
 	return sess.EditAndResend(text, emit)
 }
 
+// ForkSession branches a session before its nth user message.
+func (s *AgentService) ForkSession(sessionID string, userTurn int) (agent.SessionInfo, error) {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return agent.SessionInfo{}, fmt.Errorf("no session %s", sessionID)
+	}
+	fork, err := s.mgr.ForkAtUserTurn(sess, userTurn)
+	if err != nil {
+		return agent.SessionInfo{}, err
+	}
+	return fork.Info(), nil
+}
+
 // Retry regenerates a session's last answer.
 func (s *AgentService) Retry(sessionID string, emit func(agent.Event)) error {
 	sess, ok := s.mgr.Get(sessionID)
