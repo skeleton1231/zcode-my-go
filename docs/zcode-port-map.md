@@ -135,6 +135,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    ——导出子系统三面齐备（桌面菜单、sessions CLI、终端命令，同一导出器）。
 **zgo sessions search**：跨会话检索的 CLI 面（同一 SearchSessions）——
    搜索子系统三面齐备（桌面弹窗、服务 API、终端命令）。
+**任务导航**（ZCode task-navigation）：Ctrl+↑/↓ 用户回合间跳转（居中、
+   停跟随、边界不动、随搜索过滤行走）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

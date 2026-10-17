@@ -81,6 +81,9 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 20. zgo sessions search <关键词>（CLI 运维面）：跨会话检索——复用桌面搜索
    的同一 SearchSessions（文本+工具参数、片段、双上限）；表格式输出
    （会话前缀/标题/片段），无命中明确说明；与 export 前缀衔接。
+21. 任务导航（ZCode task-navigation）：Ctrl+↑/↓ 在用户回合间跳转——跳离
+   末尾停 FollowEnd，目标回合居中；边界不动；搜索过滤下沿匹配行跳转；
+   切换会话重置定位。
 ## 状态所有者
 
 | 状态     | 所有者           | 说明                              |
@@ -127,3 +130,5 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
     /help 收录。
 18. sessions search CLI：命中带标题与片段、无命中与空关键词各有明确行为、
     工具参数可检索。
+19. 任务导航：三问三答的转录上，向上逐跳到第三/第二/第一问，边界不再
+    动，向下可回；跳转停止跟随。
