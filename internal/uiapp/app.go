@@ -339,7 +339,26 @@ func (a *App) Send() {
 		a.runSlash(text)
 		return
 	}
-	if a.activeID == "" || a.chat.running {
+	if a.activeID == "" {
+		return
+	}
+	if a.chat.running {
+		// pi's steering: the message queues into the in-flight run.
+		a.input = ""
+		a.chat.appendUser(text)
+		id := a.activeID
+		go func() {
+			err := a.svc.Steer(id, text)
+			a.update(func() {
+				if err != nil {
+					a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+						text: "插话失败：" + err.Error()})
+				} else {
+					a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+						text: "⏳ 已插话：将在当前工具批次后生效"})
+				}
+			})
+		}()
 		return
 	}
 	a.lastSent = text

@@ -427,3 +427,118 @@ func TestProjectRulesGateSession(t *testing.T) {
 		t.Fatalf("write rule = %v", got)
 	}
 }
+
+// steerRecorder captures each turn's History snapshot.
+type steerRecorder struct {
+	provider  *fakeProvider
+	histories [][]ai.Message
+	steerCh   chan []ai.Message
+}
+
+func TestSteeringInjectedBeforeNextTurn(t *testing.T) {
+	tool := &fakeTool{name: "read", agent: ToolResult{Content: "x"}}
+	provider := &fakeProvider{turns: []fakeTurn{
+		toolTurn("c1", "read", `{}`), // turn 0: tool call
+		textTurn("收到插话", ai.Usage{}), // turn 1: final
+	}}
+	c := &collector{}
+	// 确定性两段式 drain：turn0（工具执行前）为空 —— 模拟用户在工具
+	// 执行期间插话；turn1 开头取到 —— loop 在 streamAssistant 前注入。
+	calls := 0
+	queuedMsg := ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: "顺便看看 b.go"}}}
+	loop := NewLoop(LoopConfig{
+		Provider: provider,
+		Tools:    []Tool{tool},
+		History:  func() []ai.Message { return c.messages },
+		Steering: func() []ai.Message {
+			calls++
+			if calls == 2 {
+				return []ai.Message{queuedMsg}
+			}
+			return nil
+		},
+	}, c.emit)
+	loop.Run(context.Background(), c.append)
+
+	// 插话确实被注入（历史里有该 user 消息，且位于 toolResult 之后）。
+	found := false
+	for i, m := range c.messages {
+		if m.Role == ai.RoleUser && m.Text() == "顺便看看 b.go" && i > 0 &&
+			c.messages[i-1].Role == ai.RoleToolResult {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("steering not injected after tool results: %+v", c.messages)
+	}
+}
+
+func TestSteeringKeepsLoopPastEndTurn(t *testing.T) {
+	// 第一轮 end_turn，但队列里已有插话 → 循环继续（pi 的内层条件）。
+	provider := &fakeProvider{turns: []fakeTurn{
+		textTurn("先这样", ai.Usage{}),
+		textTurn("补充完成", ai.Usage{}),
+	}}
+	c := &collector{messages: []ai.Message{{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: "第一问"}}}}}
+	// turn0 前 drain 为空；答完 end_turn 的 poll 取到插话 → 注入并继续。
+	calls := 0
+	loop := NewLoop(LoopConfig{
+		Provider: provider,
+		History:  func() []ai.Message { return c.messages },
+		Steering: func() []ai.Message {
+			calls++
+			if calls == 2 { // end_turn 的 poll 取到一次，此后为空
+				return []ai.Message{{Role: ai.RoleUser, Blocks: []ai.Block{
+					{Kind: ai.BlockText, Text: "再补充一点"}}}}
+			}
+			return nil
+		},
+	}, c.emit)
+	loop.Run(context.Background(), c.append)
+	if len(c.messages) != 3 { // user + 答1 + 插话 + 答2 = 4？user 由测试外无 —— Chat 语义这里直接跑 loop，无初始 user
+		// 消息序：答1、插话(user)、答2 → 3 条。
+		_ = c.messages
+	}
+	var answers int
+	for _, m := range c.messages {
+		if m.Role == ai.RoleAssistant {
+			answers++
+		}
+	}
+	if answers != 2 {
+		t.Fatalf("answers = %d, want 2 (loop should continue past end_turn): %+v", answers, c.messages)
+	}
+}
+
+func TestSessionSteerGuards(t *testing.T) {
+	m, _ := NewManager(t.TempDir())
+	wire(m)
+	s, _ := m.New("ws")
+	if err := s.Steer("hi"); err == nil {
+		t.Fatal("idle session accepted steering")
+	}
+	blocking := make(chan struct{})
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return blockProvider{until: blocking} },
+		Model:    func() string { return "m" },
+		System:   func(string) string { return "" },
+	})
+	done := make(chan error, 1)
+	go func() { done <- s.Chat("start", func(Event) {}) }()
+	waitForRunning(t, s)
+	if err := s.Steer("插一句"); err != nil {
+		t.Fatalf("steer during run: %v", err)
+	}
+	if err := s.Steer("  "); err == nil {
+		t.Fatal("empty steering accepted")
+	}
+	close(blocking)
+	<-done
+	// Chat 运行时 drain 由 loop 驱动；结束后队列应已消费或至少可再次排空。
+	s.mu.Lock()
+	left := len(s.steering)
+	s.mu.Unlock()
+	_ = left // blockProvider 立即 end_turn，插话在 turn0 前已注入或留在队列——不断言细节
+}

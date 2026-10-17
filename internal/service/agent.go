@@ -645,6 +645,15 @@ func (s *AgentService) ExportSessionMarkdown(id, dest string) error {
 	return os.WriteFile(dest, []byte(doc), 0o644)
 }
 
+// Steer queues a message into a running session (pi's steering).
+func (s *AgentService) Steer(sessionID, text string) error {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("no session %s", sessionID)
+	}
+	return sess.Steer(text)
+}
+
 // Abort cancels a session's running loop.
 func (s *AgentService) Abort(sessionID string) {
 	if sess, ok := s.mgr.Get(sessionID); ok {

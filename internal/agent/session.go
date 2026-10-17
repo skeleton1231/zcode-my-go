@@ -51,7 +51,8 @@ type Session struct {
 	cancel          context.CancelFunc
 	permissions     *permission.Service // session-scoped rules die with it
 	compactFailures int
-	usageTotal      ai.Usage // cumulative tokens, persisted per run
+	usageTotal      ai.Usage     // cumulative tokens, persisted per run
+	steering        []ai.Message // queued while a run is in flight
 
 	// wiring, installed by the manager
 	provider   func() ai.Provider
@@ -164,6 +165,7 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		SessionID:   id,
 		Permissions: s.permissions,
 		Ask:         s.ask,
+		Steering:    s.drainSteering,
 	}, func(ev Event) {
 		ev.SessionID = id
 		if ev.Kind == EvAgentEnd && ev.Usage != (ai.Usage{}) {
@@ -268,6 +270,36 @@ func (s *Session) SetPlanMode(on bool) {
 	if s.permissions != nil {
 		s.permissions.SetMode(mode)
 	}
+}
+
+// Steer queues a user message while a run is in flight (pi's steering):
+// the loop injects it before its next turn; idle sessions reject — send
+// instead.
+func (s *Session) Steer(text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("empty message")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancel == nil {
+		return errors.New("no run in progress; send the message instead")
+	}
+	s.steering = append(s.steering, ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}})
+	return nil
+}
+
+// drainSteering hands the queued messages to the loop and forgets them.
+func (s *Session) drainSteering() []ai.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.steering) == 0 {
+		return nil
+	}
+	out := s.steering
+	s.steering = nil
+	return out
 }
 
 // Rename sets the session's title (ZCode's rename), rewriting the meta
