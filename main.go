@@ -30,6 +30,7 @@ func main() {
 
 	a := uiapp.New(svc)
 	app.WhenReady(func() {
+		svc.StartScheduler() // 定时自动化（specs/automation.md）
 		app.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Role: mygo.RoleAppMenu},
 			{Label: "会话", Submenu: []*mygo.MenuItem{
@@ -84,5 +85,6 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
-	svc.Close() // 关停 MCP 子进程
+	svc.StopScheduler() // 停调度循环
+	svc.Close()         // 关停 MCP 子进程
 }

@@ -73,7 +73,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    回滚最近一回合/编辑重发/重试先恢复检查点（read-tree -u --reset +
    clean -fd，不动分支历史）再截断转录；非 git/SSH 工作区降级为仅回退
    转录。fork/编辑重试/重试即 conversation 半边，此前已备。
-待做：会话分享。
+**定时自动化**（ZCode automation-experience 的调度核心，specs/automation.md）：
+   internal/schedule（五字段 cron 解析/Next、jobs.json 热重载、分钟调度器、
+   防重叠与结果记账）+ 服务调度接线（桌面随启动开、退出即停）+ zgo cron
+   CLI（list/add/rm/run/enable/disable）。桌面任务面板为后续。
+待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录
 

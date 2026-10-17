@@ -70,6 +70,9 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, err er
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "cron" {
+		os.Exit(runCron(os.Args[2:]))
+	}
 	prompt, workspace, fullscreen, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)
@@ -242,6 +245,9 @@ func readLine() (string, error) {
 // userDataDir mirrors the desktop app's settings location, so the CLI and
 // the app share configuration.
 func userDataDir() (string, error) {
+	if dir := os.Getenv("ZGO_TEST_DATADIR"); dir != "" {
+		return dir, nil // 测试隔离（cron_test）
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
