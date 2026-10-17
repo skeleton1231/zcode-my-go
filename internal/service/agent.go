@@ -384,6 +384,25 @@ func (s *AgentService) mcpServers() []*mcp.Server {
 	return s.mcp
 }
 
+// Retry regenerates a session's last answer.
+func (s *AgentService) Retry(sessionID string, emit func(agent.Event)) error {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("no session %s", sessionID)
+	}
+	return sess.Retry(emit)
+}
+
+// ModelSuggestions lists catalog models for the configured dialect.
+func (s *AgentService) ModelSuggestions() []string {
+	cfg := s.resolve()
+	var out []string
+	for _, m := range ai.CatalogModels(cfg.API) {
+		out = append(out, m.ID)
+	}
+	return out
+}
+
 // Abort cancels a session's running loop.
 func (s *AgentService) Abort(sessionID string) {
 	if sess, ok := s.mgr.Get(sessionID); ok {

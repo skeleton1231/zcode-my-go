@@ -186,3 +186,50 @@ func TestManagerListOrdersNewestFirst(t *testing.T) {
 		t.Fatal("deleted session still indexed")
 	}
 }
+
+// TestRetryRegenerates verifies retry truncates back to the last user
+// message, re-runs, and replays identically from the JSONL record.
+func TestRetryRegenerates(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return failProvider{msg: "no provider"} },
+		Model:    func() string { return "fake-model" },
+	})
+	s, _ := m.New("ws")
+	s.Append(ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "first"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "bad answer"}}})
+	s.Append(ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "second"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "worse"}}})
+
+	if err := s.Retry(func(Event) {}); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	// 截断到第二条 user 之前，重跑后历史以 user "second" + 新回合收尾。
+	msgs := s.Messages()
+	if len(msgs) < 3 || msgs[len(msgs)-2].Text() != "second" {
+		t.Fatalf("messages after retry = %+v", msgs)
+	}
+	if msgs[0].Text() != "first" || msgs[1].Text() != "bad answer" {
+		t.Fatalf("earlier turns lost: %+v", msgs[:2])
+	}
+
+	reloaded, _ := NewManager(dir)
+	again, ok := reloaded.Get(s.Info().ID)
+	if !ok {
+		t.Fatal("session lost")
+	}
+	rmsgs := again.Messages()
+	if len(rmsgs) != len(msgs) {
+		t.Fatalf("replayed = %d, want %d", len(rmsgs), len(msgs))
+	}
+}
+
+func TestRetryGuards(t *testing.T) {
+	m, _ := NewManager(t.TempDir())
+	wire(m)
+	s, _ := m.New("ws")
+	if err := s.Retry(func(Event) {}); err == nil {
+		t.Fatal("empty retry allowed")
+	}
+}

@@ -130,19 +130,25 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 		s.messages = pruned
 	}
 	s.mu.Unlock()
-	s.autoCompact(ctx, func(ev Event) { ev.SessionID = id; emit(ev) })
+	modelInfo := ai.LookupModel(s.model())
+	s.autoCompact(ctx, func(ev Event) { ev.SessionID = id; emit(ev) }, modelInfo.ContextWindow)
 
 	if err := s.Append(ai.Message{Role: ai.RoleUser,
 		Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}}); err != nil {
 		return err
 	}
+	s.run(ctx, workspace, id, modelInfo, emit)
+	return nil
+}
 
+// run drives the loop for one turn sequence (Chat and Retry share it).
+func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.ModelInfo, emit func(Event)) {
 	loop := NewLoop(LoopConfig{
 		Provider:    s.provider(),
 		Model:       s.model(),
 		System:      s.system(workspace),
 		Tools:       s.buildTools(workspace, id),
-		MaxTokens:   16384,
+		MaxTokens:   modelInfo.MaxOutput,
 		MaxTurns:    DefaultMaxTurns,
 		History:     s.Messages,
 		SessionID:   id,
@@ -153,6 +159,57 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 		emit(ev)
 	})
 	loop.Run(ctx, s.Append)
+}
+
+// Retry drops everything from the last user message onward and regenerates
+// the answer (ZCode's regenerate): the transcript truncation is persisted
+// as a regenerate record and replayed on load, keeping the file
+// append-only.
+func (s *Session) Retry(emit func(Event)) error {
+	s.mu.Lock()
+	if s.cancel != nil {
+		s.mu.Unlock()
+		return errors.New("a run is already in progress")
+	}
+	last := -1
+	for i, m := range s.messages {
+		if m.Role == ai.RoleUser {
+			last = i
+		}
+	}
+	if last < 0 {
+		s.mu.Unlock()
+		return errors.New("nothing to regenerate")
+	}
+	prompt := s.messages[last].Text()
+	s.messages = s.messages[:last]
+	kept := last
+	workspace := s.info.Workspace
+	modelInfo := ai.LookupModel(s.model())
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	id := s.info.ID
+	rec, err := json.Marshal(regenerateRecord{Type: "regenerate", Kept: kept})
+	if err == nil {
+		err = appendLine(s.path, rec)
+	}
+	s.mu.Unlock()
+	if err != nil {
+		cancel()
+		return fmt.Errorf("persisting regenerate: %w", err)
+	}
+
+	defer func() {
+		s.mu.Lock()
+		s.cancel = nil
+		s.mu.Unlock()
+		cancel()
+	}()
+	if err := s.Append(ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: prompt}}}); err != nil {
+		return err
+	}
+	s.run(ctx, workspace, id, modelInfo, emit)
 	return nil
 }
 
@@ -213,6 +270,12 @@ type metaRecord struct {
 type messageRecord struct {
 	Type    string     `json:"type"`
 	Message ai.Message `json:"message"`
+}
+
+// regenerateRecord marks a retry: messages beyond Kept were dropped.
+type regenerateRecord struct {
+	Type string `json:"type"`
+	Kept int    `json:"kept"`
 }
 
 // writeLine appends one message record. Called with s.mu held.
@@ -287,6 +350,11 @@ func loadSession(path string) (*Session, error) {
 			var rec messageRecord
 			if json.Unmarshal([]byte(line), &rec) == nil {
 				s.messages = append(s.messages, rec.Message)
+			}
+		case "regenerate":
+			var rec regenerateRecord
+			if json.Unmarshal([]byte(line), &rec) == nil && rec.Kept >= 0 && rec.Kept <= len(s.messages) {
+				s.messages = s.messages[:rec.Kept]
 			}
 		case "compaction":
 			var rec compactionRecord

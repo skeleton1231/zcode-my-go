@@ -13,9 +13,6 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 )
 
-// compactPolicy is the auto-compaction wiring every session runs.
-var compactPolicy = compact.DefaultPolicy()
-
 // compactionRecord is the JSONL record a compaction appends; loading it
 // replays the same truncation, keeping the file append-only.
 type compactionRecord struct {
@@ -62,13 +59,15 @@ func (s *Session) Compact(ctx context.Context) error {
 // autoCompact runs at Chat entry when the policy decides so (ZCode's
 // preflight). Failures count toward the circuit breaker and never block
 // the chat itself.
-func (s *Session) autoCompact(ctx context.Context, emit func(Event)) {
+func (s *Session) autoCompact(ctx context.Context, emit func(Event), contextWindow int) {
 	s.mu.Lock()
 	history := s.messages
 	failures := s.compactFailures
 	s.mu.Unlock()
 
-	d := compact.Decide(compactPolicy, compact.EstimateTokens(history), len(history), failures)
+	policy := compact.DefaultPolicy()
+	policy.ContextWindow = contextWindow
+	d := compact.Decide(policy, compact.EstimateTokens(history), len(history), failures)
 	if !d.ShouldCompact {
 		return
 	}

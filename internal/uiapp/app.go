@@ -31,6 +31,8 @@ type App struct {
 	lastSent string
 	planMode bool
 
+	modelSuggestions []string
+
 	// permission ask modal state (driven from the agent's goroutine)
 	askOpen bool
 	askReq  agent.AskRequest
@@ -56,7 +58,7 @@ type App struct {
 // New builds the app over the service.
 func New(svc *service.AgentService) *App {
 	v := svc.GetSettings()
-	return &App{svc: svc, settings: &v}
+	return &App{svc: svc, settings: &v, modelSuggestions: svc.ModelSuggestions()}
 }
 
 // AttachWindow binds the window the view runs in.
@@ -274,6 +276,39 @@ func (a *App) answerQuestion(answer string) {
 		a.qCh <- answer
 		a.qCh = nil
 	}
+}
+
+// Retry regenerates the last answer.
+func (a *App) Retry() {
+	if a.activeID == "" || a.chat.running {
+		return
+	}
+	id := a.activeID
+	// 回退视图：移除最后的 user 与其后的 assistant/tool 项（与 agent 截断一致）。
+	a.chat.items = a.chat.items[:lastUserIndex(a.chat.items)]
+	a.sending = true
+	go func() {
+		err := a.svc.Retry(id, func(ev agent.Event) {
+			a.update(func() { a.chat.apply(ev) })
+		})
+		a.update(func() {
+			a.sending = false
+			if err != nil {
+				a.chat.endErr = err.Error()
+			}
+			a.refreshSessions()
+		})
+	}()
+}
+
+// lastUserIndex finds the index of the last user item.
+func lastUserIndex(items []chatItem) int {
+	for i := len(items) - 1; i >= 0; i-- {
+		if items[i].kind == itemUser {
+			return i
+		}
+	}
+	return len(items)
 }
 
 // TogglePlanMode switches the open session between normal and plan mode.

@@ -26,8 +26,7 @@ func (a *App) settingsModal(c *ui.Context, t *ui.Theme) {
 			}
 			ui.TextInput(c, &a.setKey).Label(keyLabel).Placeholder("sk-…")
 
-			ui.TextInput(c, &a.setModel).Label("模型 ID").
-				Placeholder("claude-sonnet-4-5 / glm-5.2 / …")
+			ui.Autocomplete(c, &a.setModel, a.modelSuggestions).Label("模型 ID")
 
 			if a.settingsError != "" {
 				ui.Text(c, a.settingsError).TextColor(t.Danger).FontSize(12)
