@@ -37,6 +37,8 @@ func (s sshClient) ReadDir(name string) ([]tools.DirEntry, error) {
 
 func (s sshClient) Stat(name string) (bool, bool, error) { return s.c.Stat(name) }
 
+func (s sshClient) ReadLink(name string) (string, bool, error) { return s.c.ReadLink(name) }
+
 func (s sshClient) Glob(pattern string) ([]string, error) { return s.c.Glob(pattern) }
 
 // openWorkspace builds the session's tools.Workspace: local paths stay
