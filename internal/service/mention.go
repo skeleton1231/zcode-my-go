@@ -21,6 +21,12 @@ var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9_./\\-]+)`)
 const (
 	mentionTextCap  = 60 << 10
 	mentionImageCap = 5 << 20
+	// mentionTotalCap 是全部文本展开的总量预算（issue #120：提及数量
+	// 无上限——50 个 @文件 × 60KB 逼近 JSONL 读取上限，重载时整条消息
+	// 静默消失，#105 的文本载荷版）。超预算的引用不展开，消息尾注明。
+	mentionTotalCap = 2 << 20
+	// mentionMaxFiles 是单条消息最多展开的引用数（防御拖拽整目录）。
+	mentionMaxFiles = 30
 )
 
 // expandMentions 把消息里的 @路径 引用展开（specs/agent-core 规则 11）：
@@ -39,6 +45,7 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 
 	seen := map[string]bool{}
 	var expansions []string
+	skipped, total := 0, 0
 	out := text
 	for _, m := range mentionPattern.FindAllStringSubmatch(text, -1) {
 		rel := filepath.ToSlash(m[1])
@@ -59,13 +66,25 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 			continue
 		}
 		content := string(data)
-		if len(content) > mentionTextCap {
-			content = content[:mentionTextCap] + "\n…（截断）"
+		if r := []rune(content); len(r) > mentionTextCap {
+			// 按 rune 截断（issue #120 顺带：字节截断让中文尾部乱码）。
+			content = string(r[:mentionTextCap]) + "\n…（截断）"
 		}
+		// 总量/数量预算（issue #120：提及数无上限——50×60KB 逼近 JSONL
+		// 行读取上限，重载时整条消息静默消失）。超出的引用不展开、尾注
+		// 说明——模型可见，可分条追问。
+		if len(expansions) >= mentionMaxFiles || total+len(content) > mentionTotalCap {
+			skipped++
+			continue
+		}
+		total += len(content)
 		expansions = append(expansions, fmt.Sprintf("@%s：\n```\n%s\n```", rel, content))
 	}
 	if len(expansions) > 0 {
 		out = out + "\n\n" + strings.Join(expansions, "\n\n")
+	}
+	if skipped > 0 {
+		out += fmt.Sprintf("\n\n（另有 %d 个引用因总体积/数量上限未展开，可分条追问）", skipped)
 	}
 	return out, media
 }
