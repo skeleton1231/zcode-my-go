@@ -80,6 +80,9 @@ func (p *Patch) apply(op PatchOp) (string, bool) {
 	if err != nil {
 		return fmt.Sprintf("%s: %v", op.Path, err), true
 	}
+	if p.ws.IsRemote() {
+		return p.applyRemote(op, abs)
+	}
 	switch op.Kind {
 	case PatchAdd:
 		if _, err := os.Stat(abs); err == nil {
@@ -111,6 +114,37 @@ func (p *Patch) apply(op PatchOp) (string, bool) {
 			return fmt.Sprintf("%s: %v", op.Path, err), true
 		}
 		if err := os.WriteFile(abs, []byte(updated), 0o644); err != nil {
+			return fmt.Sprintf("%s: %v", op.Path, err), true
+		}
+		return fmt.Sprintf("updated %s (%d hunks)", op.Path, applied), false
+	}
+}
+
+// applyRemote 在 SSH 工作区上应用一个补丁段（review #83：曾落回本地
+// 文件系统操作）。RemoteFS 无删除原语，Delete 显式报不支持。
+func (p *Patch) applyRemote(op PatchOp, abs string) (string, bool) {
+	rel := remoteRel(p.ws, abs)
+	switch op.Kind {
+	case PatchAdd:
+		if exists, _, err := p.ws.Remote.Stat(rel); err == nil && exists {
+			return fmt.Sprintf("%s: already exists", op.Path), true
+		}
+		if err := p.ws.Remote.WriteFile(rel, []byte(strings.Join(op.Add, "\n")+"\n"), 0o644); err != nil {
+			return fmt.Sprintf("%s: %v", op.Path, err), true
+		}
+		return fmt.Sprintf("added %s (%d lines)", op.Path, len(op.Add)), false
+	case PatchDelete:
+		return fmt.Sprintf("%s: 远程工作区暂不支持 delete 操作（RemoteFS 无删除原语）；用 bash 的 rm 或 edit 替代", op.Path), true
+	default: // update
+		data, err := p.ws.Remote.ReadFile(rel)
+		if err != nil {
+			return fmt.Sprintf("%s: %v", op.Path, err), true
+		}
+		updated, applied, aerr := ApplyHunks(string(data), op.Hunks)
+		if aerr != nil {
+			return fmt.Sprintf("%s: %v", op.Path, aerr), true
+		}
+		if err := p.ws.Remote.WriteFile(rel, []byte(updated), 0o644); err != nil {
 			return fmt.Sprintf("%s: %v", op.Path, err), true
 		}
 		return fmt.Sprintf("updated %s (%d hunks)", op.Path, applied), false
