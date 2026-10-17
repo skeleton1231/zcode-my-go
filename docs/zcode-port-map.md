@@ -109,6 +109,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **MCP 设置诊断**（ZCode mcp-settings-diagnostics）：mcp.Diagnose 新实例
    探测（握手 + tools/list + 15s 上限）+ 服务并行编排 + 设置弹窗「诊断
    MCP」结果展示（✓ 工具清单/✕ 错误）。
+**zgo doctor 环境诊断**：provider/模型目录/MCP 真探测/git/ssh 工具链一屏
+   报告（key 永不回显）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

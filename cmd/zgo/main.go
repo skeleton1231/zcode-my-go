@@ -79,6 +79,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cron" {
 		os.Exit(runCron(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "doctor" {
+		os.Exit(runDoctor())
+	}
 	prompt, workspace, fullscreen, images, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)
