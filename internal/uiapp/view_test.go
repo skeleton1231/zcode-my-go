@@ -292,6 +292,33 @@ func TestSearchKeepsNoticesVisible(t *testing.T) {
 	}
 }
 
+// TestStopDeniesPendingAsk 验证停止运行会解开挂起的确认（issue #79：
+// asker 阻塞在无 ctx 感知的 <-ch 上，不主动解开则工具 goroutine
+// 永久泄漏）。
+func TestStopDeniesPendingAsk(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	a.Init()
+	ch := make(chan agent.AskResponse, 1)
+	a.askCh = ch
+	a.askOpen = true
+	a.Stop()
+	if a.askCh != nil || a.askOpen {
+		t.Fatal("ask slot not cleared")
+	}
+	select {
+	case resp := <-ch:
+		if !resp.Deny {
+			t.Fatalf("pending ask not denied: %+v", resp)
+		}
+	default:
+		t.Fatal("pending ask left unanswered")
+	}
+}
+
 // TestSearchMatchesToolArgs 验证 args 参与匹配（issue #42：文件名/命令
 // 只在 args 里，渲染可见却搜索零匹配）。
 func TestSearchMatchesToolArgs(t *testing.T) {

@@ -392,6 +392,14 @@ func (a *App) Stop() {
 	if a.activeID != "" {
 		go a.svc.Abort(a.activeID)
 	}
+	// 挂起的确认随停止一并拒绝（issue #79）：asker 阻塞在 <-ch 且无
+	// ctx 感知，不主动解开会让工具 goroutine 永久泄漏。
+	if a.askCh != nil {
+		ch := a.askCh
+		a.askCh = nil
+		a.askOpen = false
+		ch <- agent.AskResponse{Deny: true, Note: "用户中止了运行"}
+	}
 }
 
 // Running reports whether a run is in progress.
