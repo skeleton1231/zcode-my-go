@@ -962,7 +962,7 @@ func (s *AgentService) ExportSessionMarkdown(id, dest string) error {
 }
 
 // AppendForTesting appends a raw message to a session's transcript
-//（sessions-CLI 等 e2e 的数据铺垫；生产路径一律经 Chat 家族）。
+// （sessions-CLI 等 e2e 的数据铺垫；生产路径一律经 Chat 家族）。
 func (s *AgentService) AppendForTesting(sessionID string, m ai.Message) error {
 	sess, ok := s.mgr.Get(sessionID)
 	if !ok {
