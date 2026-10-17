@@ -27,9 +27,11 @@ func (w *Workflow) Name() string { return "workflow" }
 // Description implements agent.Tool.
 func (w *Workflow) Description() string {
 	return "Run a multi-step plan: research steps (read-only investigation) and " +
-		"edit steps (changes, gated by the session's permissions). Steps run in " +
-		"order, each seeing the plan and prior results; use for tasks that " +
-		"naturally decompose. Keep plans under eight steps."
+		"edit steps (changes, gated by the session's permissions). Without " +
+		"after-declarations steps run in order, each seeing the plan and prior " +
+		"results; give steps names and declare after to run independent steps " +
+		"in parallel (up to 4), each seeing its upstream results. Use for " +
+		"tasks that naturally decompose. Keep plans under eight steps."
 }
 
 // Parameters implements agent.Tool.
@@ -41,11 +43,17 @@ func (w *Workflow) Parameters() map[string]any {
 			"items": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"name": prop("string", "Unique step name; required on every step once after is used"),
 					"description": prop("string", "What this step does, self-contained"),
 					"kind": map[string]any{
 						"type":        "string",
 						"description": "research (read-only) or edit (changes)",
 						"enum":        []string{"research", "edit"},
+					},
+					"after": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "Names of steps that must complete before this one; declaring any after switches the whole plan to parallel DAG scheduling",
 					},
 				},
 				"required": []string{"description", "kind"},
@@ -76,7 +84,7 @@ func (w *Workflow) Execute(ctx context.Context, args json.RawMessage) agent.Tool
 		if res.Failed {
 			mark = "✕"
 		}
-		fmtStepLine(&b, mark, i+1, res.Step.Kind, res.Step.Description, res.Text)
+		fmtStepLine(&b, mark, i+1, res.Step, res.Text)
 	}
 	if err != nil {
 		return agent.ToolResult{IsError: true, Content: b.String()}
@@ -84,8 +92,12 @@ func (w *Workflow) Execute(ctx context.Context, args json.RawMessage) agent.Tool
 	return agent.ToolResult{Content: b.String()}
 }
 
-func fmtStepLine(b *strings.Builder, mark string, n int, kind, desc, text string) {
-	b.WriteString(mark + " " + itoa3(n) + ". [" + kind + "] " + desc + "\n")
+func fmtStepLine(b *strings.Builder, mark string, n int, step agent.WorkflowStep, text string) {
+	name := ""
+	if step.Name != "" {
+		name = step.Name + " "
+	}
+	b.WriteString(mark + " " + itoa3(n) + ". " + name + "[" + step.Kind + "] " + step.Description + "\n")
 	if text != "" {
 		for _, line := range strings.Split(text, "\n") {
 			b.WriteString("    " + line + "\n")

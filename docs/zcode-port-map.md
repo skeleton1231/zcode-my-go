@@ -18,7 +18,7 @@
 | core/tool/（executor、scheduler、registry、json-schema） | — | `agent.loop.execute`（串行调度 + 权限门 + per-args 能力）、`agent.declarations` | ✅ 已翻译（串行为设计选择，并行调度见 Zgo 路线） |
 | core/context/、session-context/、memory/ | — | `internal/prompt`（ZGO/AGENTS/CLAUDE.md 注入、git 摘要）+ `internal/tools/memory.go`（workspace 级长期记忆：文件存储、memory 工具、系统提示注入 4KB）——即分层记忆：项目上下文层 + 工作区记忆层 + 会话压缩层 | ✅ 已翻译 |
 | core/subagent/ | — | `internal/agent/subagent.go`（RunSubtask 嵌套循环 + `task` 工具 + tools.ReadOnly） | ✅ 已翻译 |
-| core/workflow/、dynamic-workflow/、runtime-task/ | 26k | `internal/agent/workflow.go`（RunWorkflow：research/edit 步骤编排、逐步提示携带计划与前序结果、edit 步骤继承权限门与会话规则）+ `workflow` 工具 | ✅ 已翻译（语义级：步骤编排与门控；DAG 并行编排见 Zgo 路线） |
+| core/workflow/、dynamic-workflow/、runtime-task/ | 26k | `internal/agent/workflow.go`（RunWorkflow：research/edit 步骤编排、逐步提示携带计划与前序结果、edit 步骤继承权限门与会话规则；after 依赖按 DAG 并行调度，独立步并发上限 4，失败停摆并跳过下游）+ `workflow` 工具 | ✅ 已翻译（步骤编排、门控与 DAG 并行） |
 | core/mcp/ | — | `internal/mcp`（stdio JSON-RPC 2.0：initialize 握手、tools/list、tools/call、mcp_ 前缀适配、settings.mcpServers、退出唤醒等待者；真子进程测试） | ✅ 已翻译 |
 | core/hooks/、telemetry/ | 4k | 事件流（agent.Event）即观测面；ZGO_DEBUG 请求转储 | ✅ 等价实现（hook 注入点见 Zgo 路线） |
 | core/system-reminder/ | — | `agent.EvCompaction` 等 notice 事件 + UI notice 项 | ✅ 等价实现 |
@@ -59,13 +59,15 @@
 ## Zgo 自身路线（非翻译欠账）
 
 以下为 Zgo 作为独立产品的增强方向，完成时按需对齐 ZCode 对应实现。
-已完成：工具并行调度、hook 注入点（PreToolUse/PostToolUse + 外部命令钩子）、
-OAuth 订阅登录、远程工作区（SSH，工具全量远程化）、子代理并行（dispatch
-扇出）、E2E 测试体系（internal/e2e 脚本化全栈回放）、会话导出（HTML/
-Markdown）、**wasm 浏览器目标（两部分完成）**：`mygo build -platform web` +
-`cmd/webfs` 注入的内存 FS 垫片，完整 agent（UI/设置/会话/权限门/文件工具/
-流式 provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedDB、启动
-前恢复——刷新不清空设置/会话/工作区。DAG 工作流编排单独交付。
+已完成：工具并行调度（同路径读改写串行化）、DAG 工作流编排（after 依赖 +
+并发上限）、hook 注入点（PreToolUse/PostToolUse + 外部命令钩子）、OAuth
+订阅登录、远程工作区（SSH，工具全量远程化）、子代理并行（dispatch 扇出）、
+E2E 测试体系（internal/e2e 脚本化全栈回放）、会话导出（HTML/Markdown）、
+**wasm 浏览器目标（两部分完成）**：`mygo build -platform web` + `cmd/webfs`
+注入的内存 FS 垫片，完整 agent（UI/设置/会话/权限门/文件工具/流式
+provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedDB、启动前
+恢复——刷新不清空设置/会话/工作区。
+待做：会话分享。
 
 ## 翻译轮次记录
 
