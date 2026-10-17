@@ -20,8 +20,16 @@ const contextCapBytes = 8 << 10
 // gitTimeout bounds each best-effort git query.
 const gitTimeout = 3 * time.Second
 
-// System builds the workspace-aware system prompt.
+// System builds the workspace-aware system prompt（稳定块 + 易变块的拼接，
+// 非缓存路径用；缓存路径分开取 SystemStable/SystemVolatile——git dirty
+// 计数每轮变化，混在缓存前缀里会整块失效，issue #139）。
 func System(workspace string) string {
+	return SystemStable(workspace) + SystemVolatile(workspace)
+}
+
+// SystemStable is the cacheable system prefix: identity, environment,
+// project context, doctrine——跨轮不变（日期按天粒度）。
+func SystemStable(workspace string) string {
 	shell := "bash"
 	if runtime.GOOS == "windows" {
 		shell = "PowerShell"
@@ -35,9 +43,6 @@ Environment:
 		"- Workspace: " + workspace + "\n" +
 		"- Date: " + time.Now().Format("2006-01-02") + "\n")
 
-	if git := gitSummary(workspace); git != "" {
-		b.WriteString("- Git: " + git + "\n")
-	}
 	if ctx := projectContext(workspace); ctx != "" {
 		b.WriteString("\nProject context (from the workspace's context file):\n" + ctx + "\n")
 	}
@@ -53,6 +58,15 @@ How to work:
   rewrites. Read a file before editing it.
 - Keep answers concise. When you finish a task, summarize what changed.`)
 	return b.String()
+}
+
+// SystemVolatile is the uncacheable system tail: the git summary whose
+// dirty count changes every edit——编辑会话主场景，绝不能进缓存前缀。
+func SystemVolatile(workspace string) string {
+	if git := gitSummary(workspace); git != "" {
+		return "\nRepository:\n- Git: " + git + "\n"
+	}
+	return ""
 }
 
 // gitSummary reports the branch and a dirty/clean hint, best-effort: no
