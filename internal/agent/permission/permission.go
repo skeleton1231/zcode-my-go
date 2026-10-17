@@ -179,8 +179,28 @@ func match(set Ruleset, ctx Context) (Decision, bool) {
 }
 
 // WildcardMatch is ZCode's wildcardToRegExp: * spans anything, the rest is
-// literal.
+// literal. Rules are persisted data and may be damaged (illegal UTF-8 and
+// such): a pattern that fails to compile matches nothing — never a panic
+// (issue #12).
 func WildcardMatch(pattern, subject string) bool {
+	expr := "^" + wildcardExpr(pattern) + "$"
+	if v, ok := patternCache.Load(expr); ok {
+		return v.(*regexp.Regexp).MatchString(subject)
+	}
+	re, err := regexp.Compile(expr) // 编译失败：视作不匹配，不 panic
+	if err != nil {
+		return false
+	}
+	patternCache.Store(expr, re)
+	return re.MatchString(subject)
+}
+
+// patternCache 缓存已编译 pattern：Check 在每次工具调用路径上，避免
+// 重复编译（issue #12 建议）。
+var patternCache sync.Map // string → *regexp.Regexp
+
+// wildcardExpr 把 * 通配模式编译为正则字面量。
+func wildcardExpr(pattern string) string {
 	parts := split(pattern, '*')
 	var expr string
 	for i, p := range parts {
@@ -189,7 +209,7 @@ func WildcardMatch(pattern, subject string) bool {
 		}
 		expr += regexp.QuoteMeta(p)
 	}
-	return regexp.MustCompile("^" + expr + "$").MatchString(subject)
+	return expr
 }
 
 func split(s string, sep byte) []string {
@@ -208,10 +228,16 @@ func split(s string, sep byte) []string {
 // ZCode's session rule subjects: a bare argument line narrows to an exact
 // match, a command line narrows to its head word ("git push origin" →
 // "git *"), and nothing fits the whole tool forever.
+// maxRuleSubjectRunes 是规则 subject 的截断上限，按 rune 计：按字节截
+// 断中文会在字符中间切开，产生非法 UTF-8 的规则 ID/Args（issue #12）。
+const maxRuleSubjectRunes = 40
+
 func RuleForTool(tool, args string) Rule {
 	subject := args
-	if len(subject) > 40 {
-		subject = subject[:40]
+	truncated := false
+	if runes := []rune(subject); len(runes) > maxRuleSubjectRunes {
+		subject = string(runes[:maxRuleSubjectRunes])
+		truncated = true
 	}
 	rule := Rule{ID: "session." + tool, Tool: tool, Behavior: Allow}
 	if subject == "" {
@@ -220,6 +246,10 @@ func RuleForTool(tool, args string) Rule {
 	rule.ID += "." + subject
 	if head, rest, found := cut(subject, ' '); found && rest != "" {
 		rule.Args = head + " *"
+	} else if truncated {
+		// 截断后的单 token 精确匹配不了原参数：退化为前缀匹配，
+		// 仍窄于整工具放行（issue #12）。
+		rule.Args = subject + "*"
 	} else {
 		rule.Args = subject // 精确匹配（单文件、单命令）
 	}
