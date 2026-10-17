@@ -47,3 +47,13 @@ func TestHTMLToleratesEmpty(t *testing.T) {
 		t.Fatal("empty export broken")
 	}
 }
+
+// TestHTMLToolSummaryNames 验证工具条目的折叠标题携带工具名与参数
+// （issue #73：ToolName/ToolArgs 恒为零值，summary 渲染成空 " · "）。
+func TestHTMLToolSummaryNames(t *testing.T) {
+	out := HTML(sampleMessages(), "t", "m", "ws")
+	// 模板自动转义：引号呈 &#34; 形态。
+	if !strings.Contains(out, "read · ") || !strings.Contains(out, "{&#34;path&#34;:") {
+		t.Fatal("tool summary lacks name/args")
+	}
+}

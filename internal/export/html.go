@@ -95,6 +95,9 @@ func HTML(messages []ai.Message, title, model, workspace string) string {
 		When: time.Now().Format("2006-01-02 15:04"),
 	}
 	var pendingTools []Entry
+	// 工具名/参数按 ID 从 assistant 的 ToolCall 块建映射（issue #73：
+	// 移植自 markdown.go 时丢了这一步，summary 恒渲染成空 " · "）。
+	toolCalls := map[string]ai.Block{}
 	flush := func() {
 		page.Entries = append(page.Entries, pendingTools...)
 		pendingTools = nil
@@ -107,6 +110,11 @@ func HTML(messages []ai.Message, title, model, workspace string) string {
 				Text: template.HTML(html.EscapeString(m.Text()))})
 		case ai.RoleAssistant:
 			flush()
+			for _, b := range m.Blocks {
+				if b.Kind == ai.BlockToolCall {
+					toolCalls[b.ID] = b
+				}
+			}
 			page.Entries = append(page.Entries, Entry{Role: "assistant",
 				Text: renderMarkdown(m.Text())})
 		case ai.RoleToolResult:
@@ -114,8 +122,11 @@ func HTML(messages []ai.Message, title, model, workspace string) string {
 				if b.Kind != ai.BlockToolResult {
 					continue
 				}
+				call := toolCalls[b.ToolCallID]
 				pendingTools = append(pendingTools, Entry{
 					Role:       "tool",
+					ToolName:   call.Name,
+					ToolArgs:   call.Arguments,
 					ToolOutput: template.HTML(html.EscapeString(b.Text)),
 					ToolError:  b.IsError,
 				})
