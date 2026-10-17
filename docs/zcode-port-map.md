@@ -89,6 +89,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    运行/删除/新建表单，specs/automation.md 规则 7）。
 **终端面板**（ZCode browser-workbench 的 terminal-ui 半边）：底部抽屉跑
    会话工作区的 shell（mygo terminal 插件/Ghostty libghostty-vt，库自动
+   获取）；会话切换重建、失败降级提示、退出回收 PTY。
    获取）；会话切换重建、失败降级提示、退出回收 PTY；ssh:// 工作区经
    remote.Shell 接远端交互 shell（PTY + WindowChange，remotetest 进程内
    服务器端到端验证）。
@@ -101,7 +102,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **patch 多文件 diff/预览**：apply_patch 的结果 Diff 与 PreviewDiff 按段
    聚合（--- 文件名分隔、400 行上限），预览试算不落盘——diff 子系统对
    edit/write/patch 全量闭环。
-待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
+会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
+   服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
+   承接原则）。命名路线至此全部收官。
 
 ## 翻译轮次记录
 

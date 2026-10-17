@@ -51,6 +51,26 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
 - **三协议**：Anthropic 兼容 / OpenAI / Gemini，设置里一键切换。
 - **订阅登录**：`/login`（Claude Pro/Max OAuth，PKCE + 本地回调 + 自动刷新），
   三端可用；无 API Key 时以订阅身份调用。
+- **插话与并行**：运行中插话（steering）注入下一回合；单批工具调用并行执行
+  （同路径读改写自动串行化），子代理与 DAG 工作流并行扇出。
+- **Hook**：PreToolUse/PostToolUse 内部钩子 + 设置文件里的外部命令钩子。
+- **SSH 远程工作区**：会话目标 `ssh://user@host:port/path`，read/write/edit/
+  bash/grep/glob/ls/patch 全量经 SSH 客户端在远端执行，同样的 path jail。
+- **工作区检查点与回滚**：git 工作区每回合前快照（临时索引，不触碰真实
+  索引），「回滚最近一回合」/编辑重发/重试同时恢复转录与文件（分支与历史
+  不动）。
+- **diff 全链路**：edit/write/patch 的工具块彩色展示统一 diff；权限确认弹窗
+  **批准前预览**待执行改动（试算不落盘）；patch 多文件按段聚合。
+- **多模态输入**：composer 📎 添加图片（三协议 base64/dataURL/inlineData）；
+  消息内 `@路径` 引用自动展开文件内容（三端同享，path jail）。
+- **定时自动化**：`zgo cron` 管理定时任务（五字段 cron，jobs.json 热重载，
+  分钟调度器，防重叠），桌面「定时任务」面板可视管理；桌面应用随启动开。
+- **终端与文件树**：桌面底部抽屉终端（工作区 shell，Ghostty vt 内核）；
+  右列文件树 + 只读预览（本地与 SSH 远程同源）。
+- **浏览器目标**：`go tool mygo build -platform web && go run ./cmd/webfs`——
+  完整 agent 跑进浏览器（内存 FS 垫片 + IndexedDB 持久化，刷新不清空）。
+- **会话导出即分享**：HTML / Markdown 自包含导出（无上传服务——个人 agent
+  的分享物就是导出文件本身）。
 
 ## 快速开始
 
@@ -61,6 +81,14 @@ go tool mygo dev      # 开发模式（热重载）
 go test ./...         # 全部测试（含无窗口视图测试）
 go tool mygo build    # 打包（.exe 安装器 / .dmg / .deb）
 go run ./cmd/zgo -p "解释这个仓库"   # 终端模式
+```
+
+更多形态：
+
+```bash
+zgo cron add --schedule '*/10 * * * *' --prompt '看看构建状态' --workspace .   # 定时任务
+zgo cron list && zgo cron run <id>                                             # 查看 / 立即执行
+go tool mygo build -platform web && go run ./cmd/webfs   # 浏览器版（wasm 静态站点）
 ```
 
 首次启动后在设置弹窗填入：

@@ -5,6 +5,7 @@ package schedule
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,8 +54,11 @@ func parseField(part string, min, max int) (map[int]bool, error) {
 		body := token
 		if i := strings.Index(token, "/"); i >= 0 {
 			body = token[:i]
-			fmt.Sscanf(token[i+1:], "%d", &step)
-			if step < 1 {
+			// strconv 全串校验（issue #113）：Sscanf 的 lenient 语义忽略
+			// 错误——*/x 与 */ 曾静默落成每分钟触发，无人值守 agent 按分
+			// 钟烧 token。Atoi 拒绝一切非纯数字。
+			var err error
+			if step, err = strconv.Atoi(token[i+1:]); err != nil || step < 1 {
 				return nil, fmt.Errorf("步长 %q 无效", token[i+1:])
 			}
 		}
@@ -62,12 +66,22 @@ func parseField(part string, min, max int) (map[int]bool, error) {
 		switch {
 		case body == "*":
 			// 全域（可带步长）
-		case strings.Contains(body, "-"):
-			if _, err := fmt.Sscanf(body, "%d-%d", &lo, &hi); err != nil || lo > hi {
+		case strings.Count(body, "-") >= 1:
+			// 区间只允许一个 -，两段各自 Atoi 全串校验（1-2-3 曾被吞成 1-2）。
+			ends := strings.SplitN(body, "-", 2)
+			if strings.Contains(ends[1], "-") {
+				return nil, fmt.Errorf("区间 %q 无效", body)
+			}
+			var err error
+			if lo, err = strconv.Atoi(ends[0]); err != nil {
+				return nil, fmt.Errorf("区间 %q 无效", body)
+			}
+			if hi, err = strconv.Atoi(ends[1]); err != nil || lo > hi {
 				return nil, fmt.Errorf("区间 %q 无效", body)
 			}
 		default:
-			if _, err := fmt.Sscanf(body, "%d", &lo); err != nil {
+			var err error
+			if lo, err = strconv.Atoi(body); err != nil {
 				return nil, fmt.Errorf("数值 %q 无效", body)
 			}
 			hi = lo

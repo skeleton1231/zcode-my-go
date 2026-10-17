@@ -86,3 +86,33 @@ func TestNext(t *testing.T) {
 		t.Fatalf("impossible schedule returned %s", next)
 	}
 }
+
+// TestParseCronRejectsMalformedFields 验证畸形字段报错而非静默误解析
+// （issue #113：Sscanf 错误全被忽略——*/x 与 */ 变每分钟触发，无人值守
+// agent 每分钟烧 token）。
+func TestParseCronRejectsMalformedFields(t *testing.T) {
+	for _, expr := range []string{
+		"*/x * * * *",
+		"*/ * * * *",
+		"1-2-3 * * * *",
+		"5x * * * *",
+		"* 5x * * *",
+		"* * * 13 *",
+		"* * 0 * *",
+	} {
+		if _, err := ParseCron(expr); err == nil {
+			t.Errorf("ParseCron(%q) accepted", expr)
+		}
+	}
+	// 合法表达式回归。
+	for _, expr := range []string{
+		"*/2 * * * *",
+		"*/15 8-18 * * 1-5",
+		"30 4 1 1 *",
+		"0 0 * * 7",
+	} {
+		if _, err := ParseCron(expr); err != nil {
+			t.Errorf("ParseCron(%q) = %v", expr, err)
+		}
+	}
+}
