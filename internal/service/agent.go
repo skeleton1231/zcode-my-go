@@ -69,6 +69,7 @@ type AgentService struct {
 	memRoot  string
 	wsCache  map[string]tools.Workspace // sessionID → (possibly remote) workspace
 	wsClose  map[string]func()          // sessionID → dial cleanup
+	askMu    sync.Mutex // asker 单槽串行化（issue #79）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -462,7 +463,15 @@ func (s *AgentService) saveSettingsLocked(cfg settings) (SettingsView, error) {
 func (s *AgentService) SetAsker(ask func(agent.AskRequest) agent.AskResponse) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.ask = ask
+	// ask 全局串行化（issue #79）：确认通道（桌面 modal、终端 stdin）
+	// 都是单槽，跨会话/跨回合并发 ask 会覆盖槽内状态、孤儿化先到者的
+	// 应答 channel。per-Loop 的 askMu 只覆盖单次运行，这里在 asker
+	// 装配处把串行化上移到与单槽同层级。
+	s.ask = func(req agent.AskRequest) agent.AskResponse {
+		s.askMu.Lock()
+		defer s.askMu.Unlock()
+		return ask(req)
+	}
 	s.rewire()
 }
 
