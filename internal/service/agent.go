@@ -74,6 +74,7 @@ type AgentService struct {
 	wsCache          map[string]tools.Workspace // sessionID → (possibly remote) workspace
 	wsClose          map[string]func()          // sessionID → dial cleanup
 	askMu            sync.Mutex                 // asker 单槽串行化（issue #79）
+	refreshMu        sync.Mutex                 // OAuth 刷新 single-flight（issue #136）
 	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 }
@@ -201,7 +202,7 @@ func (s *AgentService) rewire() {
 			if s.providerOverride != nil {
 				return s.providerOverride()
 			}
-			return providerFor(cfg, s.persistOAuth)
+			return s.providerFor(cfg)
 		},
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
@@ -216,7 +217,7 @@ func (s *AgentService) rewire() {
 				s.states[sessionID] = state
 			}
 			s.mu.Unlock()
-			provider := func() ai.Provider { return providerFor(cfg, s.persistOAuth) }
+			provider := func() ai.Provider { return s.providerFor(cfg) }
 			model := cfg.Model
 			question := s.question
 			task := tools.NewTask(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
@@ -230,11 +231,11 @@ func (s *AgentService) rewire() {
 			ws := s.workspaceFor(sessionID, workspace)
 			all := append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)))
-			wfProvider := func() ai.Provider { return providerFor(cfg, s.persistOAuth) }
+			wfProvider := func() ai.Provider { return s.providerFor(cfg) }
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
 			wfAsk := s.ask
-			dispProvider := func() ai.Provider { return providerFor(cfg, s.persistOAuth) }
+			dispProvider := func() ai.Provider { return s.providerFor(cfg) }
 			dispModel := cfg.Model
 			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string) []agent.SubtaskResult {
 				return agent.RunSubtasks(ctx, agent.SubtaskConfig{
@@ -310,10 +311,11 @@ func thinkingLevelOf(v string) ai.ThinkingLevel {
 // An Anthropic subscription token (from /login) authenticates as Bearer
 // when no API key is set; an expired token refreshes synchronously
 // (best effort — a failed refresh falls back to the stale token).
-// persist（可空）在刷新成功后回写凭据：providerFor 的 cfg 是 rewire 时
-// 的快照，不回写会让每次构建 provider 都重新刷新（网络浪费），且
-// 服务端轮换 refresh token 后存储的旧凭据失效 → 长会话 401。
-func providerFor(cfg settings, persist func(aiAuth.Token)) ai.Provider {
+// providerFor 构建当前配置对应的 provider。OAuth 刷新经 refreshOAuth：
+// 互斥 + 锁内重读（issue #136：并行子代理/DAG 同时撞过期会多路 Refresh
+// 同一 refresh_token，服务端轮换后其余路 invalid_grant 回退旧 access
+// token → 401 且不重试）。
+func (s *AgentService) providerFor(cfg settings) ai.Provider {
 	switch cfg.API {
 	case "openai":
 		return ai.NewOpenAI(cfg.BaseURL, cfg.APIKey)
@@ -323,13 +325,8 @@ func providerFor(cfg settings, persist func(aiAuth.Token)) ai.Provider {
 		client := ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
 		if cfg.APIKey == "" && cfg.OAuth.AccessToken != "" {
 			if cfg.OAuth.Expired() && cfg.OAuth.RefreshToken != "" {
-				if fresh, err := aiAuth.Refresh(context.Background(),
-					authTokenURL, cfg.OAuth.RefreshToken); err == nil {
-					cfg.OAuth = fresh
+				if fresh := s.refreshOAuth(cfg.OAuth); fresh.AccessToken != "" {
 					client.OAuthToken = fresh.AccessToken
-					if persist != nil {
-						persist(fresh)
-					}
 					return client
 				}
 			}
@@ -337,6 +334,25 @@ func providerFor(cfg settings, persist func(aiAuth.Token)) ai.Provider {
 		}
 		return client
 	}
+
+}
+
+// refreshOAuth 刷新订阅凭据（single-flight，issue #136）：互斥后重读
+// settings——若 ExpiresAt 已被并发刷新就直接取新值（锁内重读是关键：
+// 只串行化仍会各自拿旧值刷新）；否则 Refresh + persistOAuth。返回零值
+// Token 表示刷新失败（调用方回退旧 token）。
+func (s *AgentService) refreshOAuth(stale aiAuth.Token) aiAuth.Token {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if fresh := s.settings.OAuth; fresh.AccessToken != "" && !fresh.Expired() {
+		return fresh // 别人已刷新，直接复用
+	}
+	fresh, err := aiAuth.Refresh(context.Background(), authTokenURL, stale.RefreshToken)
+	if err != nil {
+		return aiAuth.Token{}
+	}
+	s.persistOAuth(fresh)
+	return fresh
 }
 
 // persistOAuth 回写订阅凭据：更新内存设置并落盘（0600，与 API key 同
@@ -358,8 +374,8 @@ func (s *AgentService) persistOAuth(tok aiAuth.Token) {
 	}
 }
 
-// authTokenURL is the token endpoint (pi's constant).
-const authTokenURL = aiAuth.TokenURL
+// authTokenURL is the token endpoint (pi's constant). 测试可换端点。
+var authTokenURL = aiAuth.TokenURL
 
 // LoginStatus reports whether a subscription token is present.
 func (s *AgentService) LoginStatus() (ok bool, expiresAt time.Time) {
