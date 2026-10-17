@@ -47,6 +47,7 @@ type Session struct {
 	info            SessionInfo
 	messages        []ai.Message
 	path            string
+	loaded          bool   // 惰性装载：启动只读 meta，首次触及转录再全量解析
 	metaTitle       string // title as last written to disk
 	cancel          context.CancelFunc
 	permissions     *permission.Service // session-scoped rules die with it
@@ -76,6 +77,8 @@ func (s *Session) Info() SessionInfo {
 // Messages returns a copy of the transcript.
 func (s *Session) Messages() []ai.Message {
 	s.mu.Lock()
+	s.ensureLoadedLocked()
+
 	defer s.mu.Unlock()
 	return append([]ai.Message(nil), s.messages...)
 }
@@ -84,6 +87,8 @@ func (s *Session) Messages() []ai.Message {
 // write path of the history.
 func (s *Session) Append(m ai.Message) error {
 	s.mu.Lock()
+	s.ensureLoadedLocked()
+
 	defer s.mu.Unlock()
 	m = truncateMessage(m) // 唯一写入路径：内存与磁盘一致（issue #10）
 	s.messages = append(s.messages, m)
@@ -149,6 +154,7 @@ func (s *Session) ChatMedia(text string, media []ai.Block, emit func(Event)) err
 	// 微压缩先行（ZCode microcompact）：无 provider 成本，修剪保留窗口外
 	// 的长工具输出；不足以达标时再走全量摘要。
 	s.mu.Lock()
+	s.ensureLoadedLocked()
 	if pruned, changed := compact.Microcompact(s.messages, compact.DefaultKeepTail); changed {
 		s.messages = pruned
 	}
@@ -231,6 +237,8 @@ func (s *Session) EditAndResend(text string, emit func(Event)) error {
 // lastUserIndex is the index of the last user message, or -1.
 func (s *Session) lastUserIndex() int {
 	s.mu.Lock()
+	s.ensureLoadedLocked()
+
 	defer s.mu.Unlock()
 	last := -1
 	for i, m := range s.messages {
@@ -296,6 +304,7 @@ func (s *Session) Running() bool {
 func (s *Session) Rewind(userIndex int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureLoadedLocked()
 	if s.cancel != nil {
 		return errors.New("a run is already in progress")
 	}
@@ -389,6 +398,8 @@ func (s *Session) Rename(title string) error {
 // UsageTotal returns the session's cumulative token usage.
 func (s *Session) UsageTotal() ai.Usage {
 	s.mu.Lock()
+	s.ensureLoadedLocked()
+
 	defer s.mu.Unlock()
 	return s.usageTotal
 }
@@ -583,6 +594,64 @@ func (s *Session) writeMetaLocked() error {
 	return nil
 }
 
+// ensureLoadedLocked brings a lazy shell's transcript in（调用方持锁）：
+// 启动只读 meta 行（见 loadMetaOnly），这里在第一次触及消息/用量时补全
+// 全量解析。装载结果合并进现有壳——wiring 等运行时字段保持不动。
+func (s *Session) ensureLoadedLocked() {
+	if s.loaded || s.path == "" {
+		return // 手工构造的内存会话（测试）没有可装载的文件
+	}
+	s.loaded = true // 先置位：装载失败也不再重试，空转录胜过死循环
+	full, err := loadSessionSafe(s.path)
+	if err != nil {
+		log.Printf("session %s: lazy load failed: %v", s.path, err)
+		return
+	}
+	s.messages = full.messages
+	s.usageTotal = full.usageTotal
+	if full.metaTitle != "" {
+		s.metaTitle = full.metaTitle
+	}
+}
+
+// loadMetaOnly reads just a session file's first (meta) line — startup's
+// cheap projection（conversation-projection-store：列表不需要转录）。
+// 首行不是 meta（损坏序）时退回全量装载并直接标记已载。
+func loadMetaOnly(path string) (s *Session, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("session %s: panic on meta load: %v", path, r)
+			err = fmt.Errorf("panic on meta load: %v", r)
+		}
+	}()
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	line, err := bufio.NewReader(f).ReadString('\n')
+	line = strings.TrimSpace(line)
+	var rec metaRecord
+	if err == nil && line != "" && json.Unmarshal([]byte(line), &rec) == nil && rec.ID != "" {
+		// meta 行没有 UpdatedAt：用文件 mtime 兜底（列表排序近似新近度，
+		// 全量装载后由内存值纠正）。
+		var mtime time.Time
+		if fi, err := os.Stat(path); err == nil {
+			mtime = fi.ModTime()
+		}
+		return &Session{path: path, loaded: false,
+			info: SessionInfo{ID: rec.ID, Title: rec.Title, Workspace: rec.Workspace,
+				UpdatedAt: mtime},
+			metaTitle: rec.Title}, nil
+	}
+	// 首行缺失/损坏/非 meta：退回全量。
+	full, err := loadSessionSafe(path)
+	if full != nil {
+		full.loaded = true
+	}
+	return full, err
+}
+
 // loadSessionSafe 兜底 loadSession 的 panic（issue #9：损坏的会话文件曾
 // 让启动 brick）。recover 后按加载失败处理，交给调用方跳过。
 func loadSessionSafe(path string) (s *Session, err error) {
@@ -729,7 +798,7 @@ func NewManager(dir string) (*Manager, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".jsonl" {
 			continue
 		}
-		s, err := loadSessionSafe(filepath.Join(dir, e.Name()))
+		s, err := loadMetaOnly(filepath.Join(dir, e.Name()))
 		if err != nil {
 			// 加载失败要可见（issue #10）：静默跳过曾让用户以为会话丢了。
 			log.Printf("session %s: load failed: %v", e.Name(), err)

@@ -75,7 +75,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    转录。fork/编辑重试/重试即 conversation 半边，此前已备。
 **多模态输入（图片附件）**：ai.BlockImage + 三协议翻译（Anthropic
    base64 source / OpenAI image_url / Gemini inlineData）+ composer 📎
-   附件 chips + ChatMedia 通道；对齐 ZCode attachment-ux 的输入侧。@ 引用：消息内
+   附件 chips + ChatMedia 通道 + 终端形态（print `-i` 与 REPL/TUI
+   `/attach`，同限校验、随下一条消息发送）；对齐 ZCode attachment-ux 的输入侧。@ 引用：消息内
    @路径 在服务层展开（文本围栏化/图片成块、path jail、60KB/5MB 上限，
    桌面/TUI/print 三端同享），桌面 composer 附文件提示与点选补全。
 **工具 diff 预览**：internal/textdiff（行级 LCS 统一 diff，上下文 3 行，
@@ -102,6 +103,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **patch 多文件 diff/预览**：apply_patch 的结果 Diff 与 PreviewDiff 按段
    聚合（--- 文件名分隔、400 行上限），预览试算不落盘——diff 子系统对
    edit/write/patch 全量闭环。
+**惰性会话装载**（ZCode conversation-projection-store）：启动只读 meta 行，
+   首次触及转录再全量解析（同机对照 40×320KB 会话：全量 ~2s vs meta-only
+   ~9ms）；列表/信息查询零解析。
+**MCP 设置诊断**（ZCode mcp-settings-diagnostics）：mcp.Diagnose 新实例
+   探测（握手 + tools/list + 15s 上限）+ 服务并行编排 + 设置弹窗「诊断
+   MCP」结果展示（✓ 工具清单/✕ 错误）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

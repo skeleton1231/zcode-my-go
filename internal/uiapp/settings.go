@@ -35,6 +35,25 @@ func (a *App) settingsModal(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, a.settingsError).TextColor(t.Danger).FontSize(12)
 			}
 
+			// MCP 诊断（specs/desktop-shell 规则 12）：并行探测全部配置的
+			// 服务器（新实例，不动在跑集合），结果就地展示。
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				if ui.Button(c, "诊断 MCP").Disabled(a.mcpDiagRunning).Clicked() {
+					a.runMCPDiagnostics()
+				}
+				if a.mcpDiagRunning {
+					ui.Text(c, "诊断中…").TextColor(t.TextMuted).FontSize(12)
+				}
+			})
+			for _, rep := range a.mcpDiagReports {
+				color := t.Success
+				if !rep.OK {
+					color = t.Danger
+				}
+				ui.Text(c, rep.Line()).Font("monospace").FontSize(12).
+					TextColor(color).Selectable()
+			}
+
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "取消").Clicked() {
 					a.settingsOpen = false

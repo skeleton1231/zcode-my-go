@@ -124,8 +124,12 @@ func (s *AgentService) WorkspaceFiles(sessionID, prefix string) []string {
 	return out
 }
 
+// ImageMediaType maps an image extension to its MIME type; "" when not
+// an image（桌面/终端表面共用）.
+func ImageMediaType(name string) string { return imageMediaType(name) }
+
 // imageMediaType maps an image extension to its MIME type（uiapp 的
-// mediaTypeOf 同表；service 不 import uiapp，各持一份小表）。
+// mediaTypeOf 同表；service 不 import uiapp，各持一份小表）.
 func imageMediaType(name string) string {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".png":
