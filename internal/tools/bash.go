@@ -74,16 +74,25 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		return errResult("%v", err)
 	}
 	cmd.Dir = b.ws.Root
+	// 击杀必须覆盖整棵进程树（issue #7）：exec 的默认 kill 只杀直接
+	// 子进程，Start-Process 派生的孙进程会活过超时/中止。平台差异
+	// 在 prockill_*.go。
+	setupTreeKill(cmd)
+	cmd.Cancel = func() error { return killTree(cmd) }
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	if err := cmd.Run(); err != nil {
-		// Context cancellation (abort) and timeout surface differently: an
-		// abort propagates as the run ending; a timeout is a tool error the
-		// model can react to.
-		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
-			return errResult("timed out after %s\npartial output:\n%s",
-				timeout, truncateBytes(out.Bytes(), bashHeadTail, bashHeadTail))
+		// 分类必须先看 ctx.Err()（issue #6）：击杀后 Windows 上 Run 返回
+		// *exec.ExitError（被杀进程 exit code 1），按 err 类型分类会把
+		// 超时/中止误报成 exit status 1，丢失超时信息与 partial output。
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			partial := truncateBytes(out.Bytes(), bashHeadTail, bashHeadTail)
+			if errors.Is(ctxErr, context.DeadlineExceeded) {
+				return errResult("timed out after %s\npartial output:\n%s", timeout, partial)
+			}
+			return agent.ToolResult{IsError: true,
+				Content: "canceled\npartial output:\n" + partial}
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -92,9 +101,6 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 				Content: fmt.Sprintf("exit status %d\n%s",
 					exitErr.ExitCode(), truncateBytes(out.Bytes(), bashHeadTail, bashHeadTail)),
 			}
-		}
-		if ctx.Err() == context.Canceled {
-			return agent.ToolResult{IsError: true, Content: "canceled"}
 		}
 		return errResult("running command: %v\n%s", err,
 			truncateBytes(out.Bytes(), bashHeadTail, bashHeadTail))
