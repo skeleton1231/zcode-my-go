@@ -69,7 +69,7 @@ type AgentService struct {
 	memRoot  string
 	wsCache  map[string]tools.Workspace // sessionID → (possibly remote) workspace
 	wsClose  map[string]func()          // sessionID → dial cleanup
-	askMu    sync.Mutex // asker 单槽串行化（issue #79）
+	askMu    sync.Mutex                 // asker 单槽串行化（issue #79）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -223,6 +223,16 @@ func (s *AgentService) rewire() {
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
 			wfAsk := s.ask
+			dispProvider := func() ai.Provider { return providerFor(cfg, s.persistOAuth) }
+			dispModel := cfg.Model
+			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string) []agent.SubtaskResult {
+				return agent.RunSubtasks(ctx, agent.SubtaskConfig{
+					Provider: dispProvider(),
+					Model:    dispModel,
+					System:   agent.SubtaskSystem(),
+					Tools:    tools.ReadOnly(workspace),
+				}, prompts)
+			}))
 			all = append(all, tools.NewWorkflow(func(ctx context.Context, steps []agent.WorkflowStep) ([]agent.StepResult, error) {
 				return agent.RunWorkflow(ctx, agent.WorkflowConfig{
 					Provider:    wfProvider(),
