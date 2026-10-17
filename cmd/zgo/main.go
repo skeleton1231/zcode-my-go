@@ -92,6 +92,13 @@ func main() {
 		}
 		render(ev)
 	})
+	if err == nil {
+		if total, uerr := svc.SessionUsage(info.ID); uerr == nil &&
+			(total.InputTokens != 0 || total.OutputTokens != 0) {
+			fmt.Fprintf(os.Stderr, "[用量] 累计 ↑%d ↓%d tokens\n",
+				total.InputTokens+total.CacheReadTokens+total.CacheWriteTokens, total.OutputTokens)
+		}
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		exit = 1

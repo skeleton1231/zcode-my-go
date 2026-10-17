@@ -147,6 +147,9 @@ func (a *App) open(id string) {
 	}
 	a.chat = restoreChat(messages)
 	a.list = ui.ListState{} // a restored chat starts at its end
+	if total, err := a.svc.SessionUsage(id); err == nil {
+		a.chat.sessionTotal = total
+	}
 	a.RefreshPlan()
 }
 

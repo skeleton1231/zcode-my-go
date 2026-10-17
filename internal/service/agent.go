@@ -464,6 +464,15 @@ func (s *AgentService) ForkSession(sessionID string, userTurn int) (agent.Sessio
 	return fork.Info(), nil
 }
 
+// SessionUsage returns a session's cumulative token usage.
+func (s *AgentService) SessionUsage(id string) (ai.Usage, error) {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return ai.Usage{}, fmt.Errorf("no session %s", id)
+	}
+	return sess.UsageTotal(), nil
+}
+
 // Retry regenerates a session's last answer.
 func (s *AgentService) Retry(sessionID string, emit func(agent.Event)) error {
 	sess, ok := s.mgr.Get(sessionID)
