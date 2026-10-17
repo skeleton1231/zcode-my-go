@@ -143,6 +143,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    搜索子系统三面齐备（桌面弹窗、服务 API、终端命令）。
 **任务导航**（ZCode task-navigation）：Ctrl+↑/↓ 用户回合间跳转（居中、
    停跟随、边界不动、随搜索过滤行走）。
+**层级项目上下文**（ZCode context-hierarchy）：~/.zgo/ZGO.md 用户全局
+   + 自工作区向上到 git 顶（真祖先才回溯——HOME 即仓库的机器上退单层）
+   每层第一个命中的上下文文件（ZGO/AGENTS/CLAUDE），浅→深拼接、8KB
+   rune 安全封顶；远程工作区经 RemoteFS 根相对读根层（修复远程会话静
+   疑丢失项目上下文）；上下文入稳定缓存前缀。Wiring.System 携带
+   sessionID 以解析会话工作区。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

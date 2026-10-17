@@ -520,7 +520,7 @@ func TestSessionSteerGuards(t *testing.T) {
 	m.Wire(Wiring{
 		Provider: func() ai.Provider { return blockProvider{until: blocking} },
 		Model:    func() string { return "m" },
-		System:   func(string) string { return "" },
+		System:   func(string, string) string { return "" },
 	})
 	done := make(chan error, 1)
 	go func() { done <- s.Chat("start", func(Event) {}) }()
@@ -543,7 +543,7 @@ func TestSteeringClearedOnRunEnd(t *testing.T) {
 	m.Wire(Wiring{
 		Provider: func() ai.Provider { return blockProvider{until: blocking} },
 		Model:    func() string { return "m" },
-		System:   func(string) string { return "" },
+		System:   func(string, string) string { return "" },
 	})
 	s, _ := m.New("ws")
 	done := make(chan error, 1)
