@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -122,6 +123,13 @@ var commands = []command{
 			}
 			if _, err := env.Svc.SaveSettings(v.API, v.BaseURL, "", args, v.Thinking); err != nil {
 				return err.Error()
+			}
+			// 未识别要立刻可见（issue #61）：手滑拼写曾得到成功假象，
+			// 下次 Chat 才 400。警告不阻断——README 承诺任意模型 ID，
+			// 自定义端点的非目录模型是合法用法。
+			if !ai.KnownModel(args) {
+				return "[模型] 已切换为 " + args +
+					"（未识别：不在目录中，按自定义模型使用；若拼写有误请重试）"
 			}
 			return "[模型] 已切换为 " + args
 		},

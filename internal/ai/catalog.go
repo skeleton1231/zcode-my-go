@@ -62,6 +62,22 @@ func LookupModel(id string) ModelInfo {
 	return ModelInfo{ID: id, ContextWindow: DefaultContextWindow, MaxOutput: DefaultMaxOutput}
 }
 
+// KnownModel 报告 id 是否为目录模型或其家族变体（带日期后缀等）。
+// 静态校验有本质限制：glm-5.2x 与合法日期后缀在前缀上不可区分，
+// 但完全无家族前缀的拼写错误（如 cloude）可捕获（issue #61）。
+func KnownModel(id string) bool {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if id == "" {
+		return false
+	}
+	for _, m := range catalog {
+		if strings.HasPrefix(id, strings.ToLower(m.ID)) {
+			return true
+		}
+	}
+	return false
+}
+
 // CatalogModels lists suggested models for one API dialect.
 func CatalogModels(api string) []ModelInfo {
 	var out []ModelInfo
