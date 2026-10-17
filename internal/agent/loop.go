@@ -304,19 +304,67 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 
 // executeBatchParallel overlaps the batch's execution: each tool emits its
 // own end event when it finishes (completion order, as pi documents),
-// while the blocks assemble by source order for the transcript.
+// while the blocks assemble by source order for the transcript. 同路径的
+// 读-改-写调用（write/edit/patch）组内顺序执行（issue #78：并行 RMW
+// 竞态曾让同文件多 edit 静默丢改动，10/10 复现），组间保持并行。
 func (l *Loop) executeBatchParallel(ctx context.Context, turn int, msg ai.Message, calls []ai.Block, stop ai.StopReason) []ai.Block {
 	blocks := make([]ai.Block, len(calls))
 	var wg sync.WaitGroup
-	for i, call := range calls {
+	for _, group := range l.pathGroups(calls) {
 		wg.Add(1)
-		go func(i int, call ai.Block) {
+		go func(group []int) {
 			defer wg.Done()
-			blocks[i] = l.executeOne(ctx, turn, msg, call, stop)
-		}(i, call)
+			for _, i := range group {
+				blocks[i] = l.executeOne(ctx, turn, msg, calls[i], stop)
+			}
+		}(group)
 	}
 	wg.Wait()
 	return blocks
+}
+
+// pathGroups 把批次按下标分组：同 PathKey 的调用同组（顺序执行）；
+// 无键的工具各自成组；PathGroupable 工具解析不出路径的保守归入
+// 串行组（与任何同批调用都不并行）。
+func (l *Loop) pathGroups(calls []ai.Block) [][]int {
+	var serial []int          // 保守串行组（解析失败的 RMW 调用）
+	byPath := map[string][]int{}
+	singles := [][]int{}
+	for i, call := range calls {
+		key, grouped := "", false
+		for _, t := range l.cfg.Tools {
+			if t.Name() != call.Name {
+				continue
+			}
+			if p, ok := t.(PathGroupable); ok {
+				if path, ok := p.PathKey(call.Arguments); ok && path != "" {
+					key = "path:" + path
+					grouped = true
+				} else {
+					// 声称按路径分组却解析失败：保守串行。
+					key = "serial"
+					grouped = true
+				}
+			}
+			break
+		}
+		switch {
+		case key == "serial":
+			serial = append(serial, i)
+		case grouped:
+			byPath[key] = append(byPath[key], i)
+		default:
+			singles = append(singles, []int{i})
+		}
+	}
+	groups := singles
+	for _, idxs := range byPath {
+		groups = append(groups, idxs)
+	}
+	if len(serial) > 0 {
+		groups = append(groups, serial)
+	}
+	return groups
 }
 
 // batchIsParallelizable reports whether every call's tool may overlap.

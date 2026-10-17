@@ -66,3 +66,15 @@ func (w *Write) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 func (w *Write) Capability() permission.Capability {
 	return permission.Capability{Risk: permission.RiskMedium}
 }
+
+// PathKey implements agent.PathGroupable: write 是读-改-写语义，同路径
+// 的并行调用必须顺序执行（issue #78）。
+func (w *Write) PathKey(args string) (string, bool) {
+	var a struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal([]byte(args), &a) != nil {
+		return "", false
+	}
+	return a.Path, true
+}
