@@ -15,7 +15,7 @@ func (a *App) settingsModal(c *ui.Context, t *ui.Theme) {
 			ui.Text(c, "设置").Bold().FontSize(15)
 
 			ui.Text(c, "协议").FontSize(12)
-			ui.Segmented(c, &a.setAPI, "anthropic", "openai")
+			ui.Segmented(c, &a.setAPI, "anthropic", "openai", "gemini")
 
 			ui.TextInput(c, &a.setBaseURL).Label("API Base URL（按协议选择端点）").
 				Placeholder("https://api.anthropic.com / https://api.openai.com/v1")

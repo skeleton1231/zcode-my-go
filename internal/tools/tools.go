@@ -51,6 +51,7 @@ func All(workspace string, state *States, ask func(ctx context.Context, q agent.
 		NewGrep(w),
 		NewGlob(w),
 		NewLs(w),
+		NewPatch(w),
 		NewTodo(state.Todo),
 		NewAsk(ask),
 	}

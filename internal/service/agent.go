@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
@@ -54,13 +55,17 @@ type AgentService struct {
 	question func(ctx context.Context, q agent.Question) (string, error)
 	states   map[string]*tools.States // session-scoped tool state
 	mcp      []*mcp.Server            // launched MCP servers
+	memories map[string]*tools.Memory // workspace-scoped long-term memory
+	memRoot  string
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
 func New(dataDir string) (*AgentService, error) {
 	s := &AgentService{
-		path:   filepath.Join(dataDir, "settings.json"),
-		states: map[string]*tools.States{},
+		path:     filepath.Join(dataDir, "settings.json"),
+		states:   map[string]*tools.States{},
+		memories: map[string]*tools.Memory{},
+		memRoot:  filepath.Join(dataDir, "memory"),
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -126,13 +131,31 @@ func (s *AgentService) rewire() {
 					Tools:    tools.ReadOnly(workspace),
 				}, prompt)
 			})
-			all := append(tools.All(workspace, state, question), task)
+			all := append(tools.All(workspace, state, question), task,
+				tools.NewMemoryTool(s.memoryFor(workspace)))
+			wfProvider := providerFor(cfg)
+			wfModel := cfg.Model
+			wfPerms := permissionFor(s, sessionID)
+			wfAsk := s.ask
+			all = append(all, tools.NewWorkflow(func(ctx context.Context, steps []agent.WorkflowStep) ([]agent.StepResult, error) {
+				return agent.RunWorkflow(ctx, agent.WorkflowConfig{
+					Provider:    wfProvider,
+					Model:       wfModel,
+					System:      prompt.System(workspace),
+					ReadOnly:    tools.ReadOnly(workspace),
+					Editable:    tools.All(workspace, state, question),
+					Permissions: wfPerms,
+					Ask:         wfAsk,
+				}, steps)
+			}))
 			for _, server := range s.mcpServers() {
 				all = append(all, mcp.AgentTools(server)...)
 			}
 			return all
 		},
-		System:   prompt.System,
+		System: func(workspace string) string {
+			return prompt.System(workspace) + s.memoryFor(workspace).Section()
+		},
 		Ask:      s.ask,
 		Question: s.question,
 	})
@@ -164,10 +187,14 @@ func (s *AgentService) resolve() settings {
 
 // providerFor builds the provider matching the configured API dialect.
 func providerFor(cfg settings) ai.Provider {
-	if cfg.API == "openai" {
+	switch cfg.API {
+	case "openai":
 		return ai.NewOpenAI(cfg.BaseURL, cfg.APIKey)
+	case "gemini":
+		return ai.NewGemini(cfg.BaseURL, cfg.APIKey)
+	default:
+		return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
 	}
-	return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
 }
 
 // loadSettings reads the settings file; a missing file is first run.
@@ -207,7 +234,7 @@ func (s *AgentService) SaveSettings(api, baseURL, apiKey, model string) (Setting
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg := s.settings
-	if api == "openai" || api == "anthropic" {
+	if api == "openai" || api == "anthropic" || api == "gemini" {
 		cfg.API = api
 	}
 	if baseURL != "" {
@@ -332,6 +359,24 @@ func (s *AgentService) PlanMode(id string, on bool) error {
 	}
 	sess.SetPlanMode(on)
 	return nil
+}
+
+// memoryFor returns (creating) the workspace's memory store.
+func (s *AgentService) memoryFor(workspace string) *tools.Memory {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mem, ok := s.memories[workspace]
+	if !ok {
+		mem = tools.NewMemory(tools.MemoryPath(s.memRoot, workspace))
+		s.memories[workspace] = mem
+	}
+	return mem
+}
+
+// permissionFor returns the session's permission service for workflow
+// inheritance. Callers hold s.mu.
+func permissionFor(s *AgentService, sessionID string) *permission.Service {
+	return s.mgr.SessionPermissions(sessionID)
 }
 
 // mcpServers snapshots the launched servers. Callers hold s.mu.

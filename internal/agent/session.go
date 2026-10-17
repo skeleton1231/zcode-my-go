@@ -433,6 +433,17 @@ func (m *Manager) New(workspace string) (*Session, error) {
 	return s, nil
 }
 
+// SessionPermissions returns a session's permission service, or nil.
+func (m *Manager) SessionPermissions(id string) *permission.Service {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return nil
+	}
+	return s.permissions
+}
+
 // Get returns a session by id.
 func (m *Manager) Get(id string) (*Session, bool) {
 	m.mu.Lock()

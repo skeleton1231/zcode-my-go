@@ -41,8 +41,14 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   保留，连续失败熔断，也可 `Ctrl+K` 手动压缩。
 - **任务清单与提问**：todo 工具跟踪计划（会话级状态）；ask 工具把只有
   用户能答的问题送达界面。
-- **终端模式**：`zgo -p "任务"` 在工作区直接跑（ZCode zcode-cli print
-  模式的 Go 等价）。
+- **终端三形态**：`zgo -p "任务"` print 模式、行式 REPL（/compact /plan
+  /new）、`zgo -t` 全屏 TUI（ANSI 备用屏 + 流式刷新）。
+- **多文件补丁**：apply_patch 工具（Add/Update/Delete，上下文唯一匹配）。
+- **长期记忆**：workspace 级记忆跨会话存活，自动注入系统提示。
+- **子代理与工作流**：task 工具派发只读研究；workflow 工具编排多步计划，
+  edit 步骤继承权限门与会话规则。
+- **MCP**：settings 配置 stdio MCP 服务器，其工具以 mcp_ 前缀接入。
+- **三协议**：Anthropic 兼容 / OpenAI / Gemini，设置里一键切换。
 
 ## 快速开始
 

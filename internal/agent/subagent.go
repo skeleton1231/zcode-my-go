@@ -5,18 +5,21 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 )
 
 // SubtaskConfig wires a nested agent run (ZCode's subagent): its own loop,
 // an ephemeral transcript, and typically a read-only toolset.
 type SubtaskConfig struct {
-	Provider  ai.Provider
-	Model     string
-	System    string
-	Tools     []Tool
-	MaxTurns  int
-	MaxTokens int
+	Provider    ai.Provider
+	Model       string
+	System      string
+	Tools       []Tool
+	MaxTurns    int
+	MaxTokens   int
+	Permissions *permission.Service // edit 侧传入：工作流步骤同受权限门
+	Ask         func(AskRequest) AskResponse
 }
 
 // SubtaskResult is the nested run's outcome.
@@ -47,13 +50,15 @@ func RunSubtask(ctx context.Context, cfg SubtaskConfig, prompt string) (SubtaskR
 	}
 	turns := 0
 	loop := NewLoop(LoopConfig{
-		Provider:  cfg.Provider,
-		Model:     cfg.Model,
-		System:    cfg.System,
-		Tools:     cfg.Tools,
-		MaxTokens: cfg.MaxTokens,
-		MaxTurns:  maxTurns,
-		History:   func() []ai.Message { return history },
+		Provider:    cfg.Provider,
+		Model:       cfg.Model,
+		System:      cfg.System,
+		Tools:       cfg.Tools,
+		MaxTokens:   cfg.MaxTokens,
+		MaxTurns:    maxTurns,
+		History:     func() []ai.Message { return history },
+		Permissions: cfg.Permissions,
+		Ask:         cfg.Ask,
 	}, func(ev Event) {
 		if ev.Kind == EvTurnStart {
 			turns++

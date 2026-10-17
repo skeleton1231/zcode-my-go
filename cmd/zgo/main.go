@@ -22,6 +22,7 @@ import (
 func main() {
 	prompt := ""
 	workspace := ""
+	fullscreen := false
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
 		switch {
@@ -30,6 +31,8 @@ func main() {
 				i++
 				prompt = os.Args[i]
 			}
+		case arg == "-t" || arg == "--tui":
+			fullscreen = true
 		case arg == "-C" && i+1 < len(os.Args):
 			i++
 			workspace = os.Args[i]
@@ -38,6 +41,23 @@ func main() {
 				prompt = arg
 			}
 		}
+	}
+	if fullscreen {
+		if workspace == "" {
+			if cwd, err := os.Getwd(); err == nil {
+				workspace = cwd
+			}
+		}
+		dataDir, err := userDataDir()
+		if err != nil {
+			fatal(err)
+		}
+		svc, err := service.New(dataDir)
+		if err != nil {
+			fatal(err)
+		}
+		defer svc.Close()
+		os.Exit(runTUI(svc, workspace))
 	}
 	if prompt == "" {
 		os.Exit(repl(workspace))

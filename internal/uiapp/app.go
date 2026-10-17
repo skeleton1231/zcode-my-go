@@ -149,9 +149,12 @@ func (a *App) DeleteActive() {
 func (a *App) OpenSettings() {
 	v := a.svc.GetSettings()
 	a.settings = &v
-	if v.API == "openai" {
+	switch v.API {
+	case "openai":
 		a.setAPI = 1
-	} else {
+	case "gemini":
+		a.setAPI = 2
+	default:
 		a.setAPI = 0
 	}
 	a.setBaseURL = v.BaseURL
