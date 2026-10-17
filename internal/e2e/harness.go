@@ -21,8 +21,10 @@ import (
 
 // Turn is one scripted assistant turn: tool calls then a final text.
 type Turn struct {
-	ToolCalls []ToolCall
-	Text      string
+	ToolCalls      []ToolCall
+	Text           string
+	ErrorOnce      string
+	BlockAfterText bool
 }
 
 // ToolCall is one scripted call in a turn.
@@ -38,6 +40,7 @@ type Script struct {
 	mu       sync.Mutex
 	turns    []Turn
 	next     int
+	errOnce  map[int]bool
 	Requests []ai.Request
 
 	// PreStream, when set, runs synchronously right after a request is
@@ -47,8 +50,22 @@ type Script struct {
 	PreStream func(n int)
 }
 
+// failedOnce 注入并记录一次性错误；重试再次进入 Stream 时返回 true。
+func (s *Script) failedOnce(idx int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.errOnce == nil {
+		s.errOnce = map[int]bool{}
+	}
+	if s.errOnce[idx] {
+		return true
+	}
+	s.errOnce[idx] = true
+	return false
+}
+
 // Stream implements ai.Provider.
-func (s *Script) Stream(_ context.Context, req ai.Request) <-chan ai.StreamEvent {
+func (s *Script) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
 	s.mu.Lock()
 	s.Requests = append(s.Requests, req)
 	idx := s.next
@@ -64,6 +81,15 @@ func (s *Script) Stream(_ context.Context, req ai.Request) <-chan ai.StreamEvent
 		pre(n)
 	}
 
+	if turn.ErrorOnce != "" && !s.failedOnce(idx) {
+		out := make(chan ai.StreamEvent, 3)
+		out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopError,
+			ErrorMessage: turn.ErrorOnce, Retryable: true, RetryAfterMS: 1}
+		close(out)
+		return out
+	}
+
 	out := make(chan ai.StreamEvent, 16)
 	go func() {
 		defer close(out)
@@ -75,6 +101,11 @@ func (s *Script) Stream(_ context.Context, req ai.Request) <-chan ai.StreamEvent
 		}
 		if turn.Text != "" {
 			out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: turn.Text}
+		}
+		if turn.BlockAfterText {
+			<-ctx.Done()
+			out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopAborted}
+			return
 		}
 		stop := ai.StopEndTurn
 		if len(turn.ToolCalls) > 0 {

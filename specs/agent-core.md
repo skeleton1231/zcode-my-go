@@ -160,3 +160,8 @@ agent_end(stop_reason)
     下一条消息携带图片块；坏路径可读报错且不入队。
 16. 前缀缓存：三处稳定前缀各带一个 ephemeral 断点且总数 ≤4；最后一条
     （正在变动的）消息不带断点；空前缀零断点不崩。
+17. E2E 硬化：并行批次（被权限询问阻塞的 write 不拖累自动放行的
+    read）、流中途中止（text_delta 后挂住，Abort 后以 aborted 收尾且会话
+    可继续）、瞬态重试（首个尝试 429 重试，EvTurnRetry 可见，重放同一
+    提示后成功）。harness 的 Turn 增加 ErrorOnce 与 BlockAfterText 两个
+    脚本原语。

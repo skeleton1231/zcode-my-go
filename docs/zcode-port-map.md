@@ -118,6 +118,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    尾/滚动前缀（≤4），命中按缓存计价降本；兼容端点安全忽略。
 **zgo sessions CLI**：list（标题/时间/工作区/token 表格）、export（唯一
    前缀 + HTML/Markdown）、rm（前缀删除）——与 cron/doctor 同族的运维面。
+**E2E 硬化**：并行批次重叠（权限阻塞不拖累自动放行工具）、流中途中止、
+   瞬态重试三条全栈场景；harness 新增 ErrorOnce/BlockAfterText 原语。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
