@@ -43,7 +43,7 @@ func (w *Workflow) Parameters() map[string]any {
 			"items": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name": prop("string", "Unique step name; required on every step once after is used"),
+					"name":        prop("string", "Unique step name; required on every step once after is used"),
 					"description": prop("string", "What this step does, self-contained"),
 					"kind": map[string]any{
 						"type":        "string",

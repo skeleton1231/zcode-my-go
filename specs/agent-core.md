@@ -41,6 +41,11 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    失败后不再派发新步骤，已在跑的步骤跑完，未启动的依赖链在报告中记为跳过；
    出现 `after` 时全部步骤必须有唯一 `name`，引用不存在的名字或成环即拒绝。
 
+9. 工具 diff：edit/write（覆盖）在 ToolResult.Diff 携带统一 diff
+   （internal/textdiff：LCS 行级 diff，3 行上下文，输出上限 400 行，超规模
+   输入降级为整块替换）；Diff 随 EvToolExecutionEnd 事件透传给 UI 彩色渲染
+   （+绿/-红/@@强调），不进模型上下文（Content 仍是给模型的摘要）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
@@ -115,3 +120,5 @@ agent_end(stop_reason)
 8. 检查点回滚：git 工作区中一回合改了文件后「回滚最近一回合」，转录截断到
    该回合前且工作区文件（含该回合新建/删除的）回到回合前状态；分支与提交
    历史不变；ignored 文件保留。
+9. 工具 diff：edit/write 的工具块事件携带统一 diff —— 新建文件全为 + 行，
+   修改为 -旧/+新 配上下文行；desktop 工具块与终端 TUI 彩色渲染。

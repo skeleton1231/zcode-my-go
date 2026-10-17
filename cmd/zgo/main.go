@@ -160,6 +160,9 @@ func render(ev agent.Event) {
 		if ev.IsError {
 			fmt.Fprintf(os.Stderr, "[工具] ✕ %s：%s\n", ev.ToolName, firstLine(ev.ResultContent))
 		}
+		if ev.Diff != "" {
+			fmt.Fprint(os.Stderr, ev.Diff)
+		}
 	case agent.EvCompaction:
 		fmt.Fprintf(os.Stderr, "[压缩] %s\n", ev.Text)
 	case agent.EvTurnRetry:

@@ -38,6 +38,7 @@ type chatItem struct {
 	name    string
 	args    string
 	result  string
+	diff    string // 统一 diff（edit/write 覆盖时携带，展开见彩色渲染）
 	isError bool
 	running bool
 	open    bool // the collapsible card's state
@@ -99,6 +100,7 @@ func (s *chatState) apply(ev agent.Event) {
 		for i := len(s.items) - 1; i >= 0; i-- {
 			if s.items[i].kind == itemTool && s.items[i].callID == ev.ToolCallID {
 				s.items[i].result = ev.ResultContent
+				s.items[i].diff = ev.Diff
 				s.items[i].isError = ev.IsError
 				s.items[i].running = false
 				break
