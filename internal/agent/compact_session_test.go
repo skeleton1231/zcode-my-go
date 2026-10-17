@@ -9,97 +9,89 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 )
 
-// summaryProvider answers the summary request with fixed text.
-type summaryProvider struct{ reply string }
+// capturingProvider 记录每次请求的消息，返回一段固定摘要。
+type capturingProvider struct {
+	requests [][]ai.Message
+}
 
-func (p summaryProvider) Stream(_ context.Context, _ ai.Request) <-chan ai.StreamEvent {
+func (p *capturingProvider) Stream(_ context.Context, req ai.Request) <-chan ai.StreamEvent {
+	p.requests = append(p.requests, req.Messages)
 	out := make(chan ai.StreamEvent, 3)
-	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
-	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: p.reply}
+	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "摘要内容"}
 	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
 	close(out)
 	return out
 }
 
-// TestCompactReplacesHistoryAndPersists verifies the manual compaction:
-// summary message plus tail, replayed identically from the JSONL record.
-func TestCompactReplacesHistoryAndPersists(t *testing.T) {
-	dir := t.TempDir()
-	m, _ := NewManager(dir)
+// TestCompactSummarizesOnlyDroppedPrefix 验证摘要输入只含被丢弃的前缀，
+// 不含保留尾部（issue #57：尾部原样留在上下文，送摘要纯浪费 token 且
+// 摘要重复转述）。
+func TestCompactSummarizesOnlyDroppedPrefix(t *testing.T) {
+	m, _ := NewManager(t.TempDir())
+	cap := &capturingProvider{}
 	m.Wire(Wiring{
-		Provider: func() ai.Provider { return summaryProvider{reply: "这是摘要"} },
-		Model:    func() string { return "m" },
+		Provider: func() ai.Provider { return cap },
+		Model:    func() string { return "fake-model" },
 	})
 	s, _ := m.New("ws")
+	var msgs []ai.Message
 	for i := 0; i < 10; i++ {
 		role := ai.RoleUser
 		if i%2 == 1 {
 			role = ai.RoleAssistant
 		}
-		if err := s.Append(ai.Message{Role: role, Blocks: []ai.Block{
-			{Kind: ai.BlockText, Text: "old"}}}); err != nil {
+		msg := ai.Message{Role: role, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "m" + string(rune('0'+i))}}}
+		msgs = append(msgs, msg)
+		if err := s.Append(msg); err != nil {
 			t.Fatal(err)
 		}
 	}
-
 	if err := s.Compact(context.Background()); err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	got := s.Messages()
-	if len(got) != compact.DefaultKeepTail+1 {
-		t.Fatalf("messages after compact = %d, want %d", len(got), compact.DefaultKeepTail+1)
+	if len(cap.requests) != 1 {
+		t.Fatalf("provider calls = %d", len(cap.requests))
 	}
-	if !strings.Contains(got[0].Text(), "这是摘要") {
-		t.Fatalf("summary message = %q", got[0].Text())
+	req := cap.requests[0]
+	// 请求 = toSummarize(前 4 条) + 摘要 prompt（最后一条）。
+	if len(req) != 5 {
+		t.Fatalf("request messages = %d, want 4+prompt", len(req))
 	}
-
-	reloaded, err := NewManager(dir)
-	if err != nil {
-		t.Fatal(err)
+	for _, m := range req[:4] {
+		if m.Text() == "m9" || m.Text() == "m8" || m.Text() == "m7" {
+			t.Fatalf("kept tail sent to summary: %q", m.Text())
+		}
 	}
-	again, ok := reloaded.Get(s.Info().ID)
-	if !ok {
-		t.Fatal("session lost")
+	// 结果 = 摘要 + 保留尾部。
+	after := s.Messages()
+	if len(after) != compact.DefaultKeepTail+1 || after[0].Text() == "" {
+		t.Fatalf("after compact = %d messages", len(after))
 	}
-	if len(again.Messages()) != len(got) {
-		t.Fatalf("replayed = %d, want %d", len(again.Messages()), len(got))
-	}
-	if !strings.Contains(again.Messages()[0].Text(), "这是摘要") {
-		t.Fatalf("replayed summary = %q", again.Messages()[0].Text())
+	if !strings.Contains(after[0].Text(), "摘要内容") {
+		t.Fatalf("summary missing: %q", after[0].Text())
 	}
 }
 
-// TestCompactFailureCircuitBreaker verifies failed summaries count toward
-// the breaker and auto-compact gives up after the limit.
-func TestCompactFailureCircuitBreaker(t *testing.T) {
-	dir := t.TempDir()
-	m, _ := NewManager(dir)
-	// Provider whose summary calls fail: reply to nothing with an error end.
-	fail := failProvider{msg: "summary failed"}
-	m.Wire(Wiring{
-		Provider: func() ai.Provider { return fail },
-		Model:    func() string { return "m" },
-	})
-	s, _ := m.New("ws")
-	for i := 0; i < 4; i++ {
-		if err := s.Append(ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{
-			{Kind: ai.BlockText, Text: strings.Repeat("字", 170000)}}}); err != nil {
-			t.Fatal(err)
-		}
-	}
+// TestBoundedSummaryInput 验证裁剪：超预算时从最旧端丢起，摘要请求
+// 永远装得下（issue #57：近阈值时请求自身超限 → 400 → 三次熔断，
+// 压缩在最需要时死锁式停用）。
+func TestBoundedSummaryInput(t *testing.T) {
+	big := ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{
+		{Kind: ai.BlockText, Text: strings.Repeat("字", 10_000)}}} // ~10k token
+	small := ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{
+		{Kind: ai.BlockText, Text: "短"}}}
 
-	// 三次失败进入熔断；压缩不阻塞 Chat，历史保持原样。
-	for i := 0; i < 4; i++ {
-		var events []Event
-		_ = s.Chat("继续", func(ev Event) { events = append(events, ev) })
+	// 预算只够两条短消息：最旧的大消息被丢掉。
+	got := boundedSummaryInput([]ai.Message{big, small, small}, 8192+4096+100)
+	if len(got) != 2 || got[0].Text() != "短" {
+		t.Fatalf("bounded = %+v", got)
 	}
-	s.mu.Lock()
-	failures := s.compactFailures
-	s.mu.Unlock()
-	if failures != 3 {
-		t.Fatalf("failures = %d, want breaker at 3", failures)
+	// 全部超预算：返回空（Compact 报 nothing to compact）。
+	if got := boundedSummaryInput([]ai.Message{big}, 8192+4096+100); len(got) != 0 {
+		t.Fatalf("oversized kept: %+v", got)
 	}
-	if len(s.Messages()) == 0 {
-		t.Fatal("history lost")
+	// 宽预算：原样。
+	if got := boundedSummaryInput([]ai.Message{small, small}, 200_000); len(got) != 2 {
+		t.Fatalf("loose budget trimmed: %+v", got)
 	}
 }
