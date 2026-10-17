@@ -54,8 +54,14 @@ func (t *Task) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	if err != nil {
 		return errResult("subtask failed: %v", err)
 	}
-	return agent.ToolResult{Content: res.Text + "\n\n（子代理 " + itoa2(res.Turns) + " 轮）"}
+	// 子代理报告常含大段代码引用，必须截断后进入主对话（AGENTS.md：
+	// 工具输出必须截断；issue #21：task 曾是唯一无上限的工具）。
+	return agent.ToolResult{Content: truncateBytes([]byte(res.Text), taskHeadTail, taskHeadTail) +
+		"\n\n（子代理 " + itoa2(res.Turns) + " 轮）"}
 }
+
+// taskHeadTail 是子代理报告的 head/tail 截断上限。
+const taskHeadTail = 8 << 10
 
 func itoa2(n int) string {
 	if n == 0 {
