@@ -634,6 +634,17 @@ func (s *AgentService) TodoPlan(sessionID string) []tools.TodoTask {
 	return state.Todo.Snapshot()
 }
 
+// ExportSessionMarkdown writes the transcript as Markdown.
+func (s *AgentService) ExportSessionMarkdown(id, dest string) error {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	info := sess.Info()
+	doc := exporthtml.Markdown(sess.Messages(), info.Title, s.resolve().Model, info.Workspace)
+	return os.WriteFile(dest, []byte(doc), 0o644)
+}
+
 // Abort cancels a session's running loop.
 func (s *AgentService) Abort(sessionID string) {
 	if sess, ok := s.mgr.Get(sessionID); ok {

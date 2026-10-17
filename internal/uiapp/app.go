@@ -519,9 +519,10 @@ func (a *App) Editing() (int, bool) {
 	return a.editingIndex, a.editingIndex >= 0
 }
 
-// Export writes the open session as a standalone HTML file. The save
-// dialog blocks, so it runs off the main thread.
-func (a *App) Export() {
+// Export writes the open session as a standalone HTML file; useMarkdown
+// picks the Markdown renderer instead. The save dialog blocks, so it
+// runs off the main thread.
+func (a *App) Export(useMarkdown bool) {
 	if a.activeID == "" {
 		return
 	}
@@ -533,11 +534,15 @@ func (a *App) Export() {
 			break
 		}
 	}
+	ext := ".html"
+	if useMarkdown {
+		ext = ".md"
+	}
 	parent := a.win
 	go func() {
 		dest, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 			Parent:      parent,
-			DefaultPath: sanitizeFilename(title) + ".html",
+			DefaultPath: sanitizeFilename(title) + ext,
 		})
 		if err != nil || dest == "" {
 			if err != nil {
@@ -545,7 +550,11 @@ func (a *App) Export() {
 			}
 			return
 		}
-		err = a.svc.ExportSessionHTML(id, dest)
+		if useMarkdown {
+			err = a.svc.ExportSessionMarkdown(id, dest)
+		} else {
+			err = a.svc.ExportSessionHTML(id, dest)
+		}
 		a.update(func() {
 			if err != nil {
 				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
