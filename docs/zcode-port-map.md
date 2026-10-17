@@ -103,6 +103,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **patch 多文件 diff/预览**：apply_patch 的结果 Diff 与 PreviewDiff 按段
    聚合（--- 文件名分隔、400 行上限），预览试算不落盘——diff 子系统对
    edit/write/patch 全量闭环。
+**TUI 任务面板与回合导航**（桌面任务面的 TUI 对齐，spec 规则 18）：todo
+   工具落盘后 TUI 顶部固定计划块（`计划 · 完成/总数` 头 + ▶/✓/□ 标记、
+   超 6 条折叠 …+N、空计划隐藏、/new 清空）；transcript 视口默认尾随，
+   Ctrl+↑/↓ 在用户回合行间跳转（与桌面 jumpTurn 同语义：跳离末尾停尾
+   随、越过最新恢复尾随），PageUp/PageDown 半屏滚动（越界夹紧、滚到底
+   恢复尾随）；keyStream 派发 CSI 导航序列，其余转义照旧整段吞掉。
 **惰性会话装载**（ZCode conversation-projection-store）：启动只读 meta 行，
    首次触及转录再全量解析（同机对照 40×320KB 会话：全量 ~2s vs meta-only
    ~9ms）；列表/信息查询零解析。
@@ -133,6 +139,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    命令）。
 **/export 终端命令**：`/export [md] [路径]` 把会话导出带到 REPL/TUI/print
    ——导出子系统三面齐备（桌面菜单、sessions CLI、终端命令，同一导出器）。
+**zgo sessions search**：跨会话检索的 CLI 面（同一 SearchSessions）——
+   搜索子系统三面齐备（桌面弹窗、服务 API、终端命令）。
+**任务导航**（ZCode task-navigation）：Ctrl+↑/↓ 用户回合间跳转（居中、
+   停跟随、边界不动、随搜索过滤行走）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

@@ -95,6 +95,14 @@ func (a *App) chatView(c *ui.Context, t *ui.Theme) {
 		a.list.ScrollToEnd()
 		a.lastSearchKey = key
 	}
+	// 任务导航（ZCode task-navigation）：Ctrl+↑/↓ 在用户回合间跳转——跳离
+	// 末尾会停 FollowEnd，回到最新一轮恢复跟随。
+	if a.list.Shortcut(c, ui.Ctrl, ui.KeyUp) {
+		a.jumpTurn(-1)
+	}
+	if a.list.Shortcut(c, ui.Ctrl, ui.KeyDown) {
+		a.jumpTurn(1)
+	}
 	// 搜索时过滤为匹配项；正常视图渲染全部。
 	matches := a.SearchMatches()
 	rows := a.chat.items

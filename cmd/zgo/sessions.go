@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/skeleton1231/zcode-my-go/internal/service"
@@ -14,6 +15,7 @@ import (
 //	zgo sessions list                     表格：标题 · 时间 · 工作区 · token
 //	zgo sessions export <id> [--md] [-o f] 导出 HTML（默认）或 Markdown
 //	zgo sessions rm <id>                  删除
+//	zgo sessions search <关键词>          跨会话检索（标题/消息/工具参数）
 func runSessions(argv []string) int {
 	if len(argv) == 0 {
 		fmt.Fprintln(os.Stderr, "用法：zgo sessions <list|export|rm> …")
@@ -39,6 +41,8 @@ func runSessions(argv []string) int {
 		return sessionsExport(svc, rest)
 	case "rm":
 		return sessionsRm(svc, rest)
+	case "search":
+		return sessionsSearch(svc, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令 %q\n", cmd)
 		return 2
@@ -124,6 +128,33 @@ func sessionsRm(svc *service.AgentService, args []string) int {
 		return 1
 	}
 	fmt.Println("已删除", shortID(args[0]))
+	return 0
+}
+
+// sessionsSearch prints cross-session hits（桌面「搜索所有会话」的 CLI 面）.
+func sessionsSearch(svc *service.AgentService, args []string) int {
+	query := strings.Join(args, " ")
+	if strings.TrimSpace(query) == "" {
+		fmt.Fprintln(os.Stderr, "用法：zgo sessions search <关键词>")
+		return 2
+	}
+	hits := svc.SearchSessions(query)
+	if len(hits) == 0 {
+		fmt.Println("（没有匹配的会话）")
+		return 0
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(w, "会话	标题	片段")
+	for _, h := range hits {
+		title := h.Title
+		if title == "" {
+			title = "（未命名）"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", shortID(h.SessionID), title, h.Snippet)
+	}
+	w.Flush()
+	fmt.Println()
+	fmt.Println("zgo sessions export <前缀> 可导出命中的会话")
 	return 0
 }
 

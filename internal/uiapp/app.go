@@ -73,7 +73,8 @@ type App struct {
 	editingIndex int
 	editDraft    string
 
-	cross crossSearchState
+	cross  crossSearchState
+	navRow int // 任务导航当前所在行（-1 = 未定位）
 
 	// in-session search: filter the transcript to matching items.
 	searchOpen    bool
@@ -188,6 +189,7 @@ func (a *App) OpenSession(id string) { a.open(id) }
 
 func (a *App) open(id string) {
 	a.activeID = id
+	a.navRow = -1 // 任务导航未定位
 	// 搜索状态不跨会话（issue #46）：旧查询过滤新会话，刚打开就
 	// "没有匹配"；搜索词跨会话泄漏。
 	a.searchOpen = false
@@ -617,6 +619,39 @@ func (a *App) answerQuestion(answer string) {
 		a.qCh <- answer
 		a.qCh = nil
 	}
+}
+
+// jumpTurn scrolls the transcript to the previous/next user turn
+// （Ctrl+↑/↓）。跳到末尾恢复 FollowEnd 跟随；其余位置居中显示该轮。
+func (a *App) jumpTurn(dir int) {
+	if len(a.chat.items) == 0 {
+		return
+	}
+	matches := a.SearchMatches()
+	rows := matches
+	if rows == nil {
+		for i := range a.chat.items {
+			rows = append(rows, i)
+		}
+	}
+	// 行 → 聊天项索引（rows 存的是可见行对应的 items 下标）。
+	at := a.navRow
+	if at < 0 || at >= len(rows) {
+		at = len(rows) - 1
+	}
+	// 从当前行向上/向下找下一个 itemUser。
+	for {
+		at += dir
+		if at < 0 || at >= len(rows) {
+			return // 边界：不动
+		}
+		if a.chat.items[rows[at]].kind == itemUser {
+			break
+		}
+	}
+	a.navRow = at
+	a.list.FollowEnd = false
+	a.list.ScrollTo(at, ui.Center)
 }
 
 // ForkFrom branches the conversation before this user turn (ZCode's
