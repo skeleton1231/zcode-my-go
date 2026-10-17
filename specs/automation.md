@@ -24,6 +24,10 @@ Zgo 的定时自动化（ZCode automation-experience 的调度核心）：按 cr
    rm <id>、run <id>（立即触发一次，不等计划）、enable/disable <id>。
    直接读写 jobs.json。
 6. 桌面应用启动时启动调度器（service.StartScheduler）；进程退出即停。
+7. 桌面任务面板（菜单「定时任务…」）：任务列表（启用状态点、计划、下次
+   到期、上次运行与状态），行内操作 ▶ 立即运行（异步，完成后刷新）、
+   启用/停用、删除；新建表单（计划/提示/工作区（可浏览选择）/模型），
+   计划与服务端同一校验。运行中的 agent 回合期间面板不可打开。
 
 ## 状态所有者
 
@@ -44,3 +48,5 @@ Zgo 的定时自动化（ZCode automation-experience 的调度核心）：按 cr
    任务状态变为 ok 且摘要为末条回答。
 5. CLI：add 写入 jobs.json；list 展示；rm/enable/disable 生效；run 立即
    执行一次并输出摘要。
+6. 面板：打开即列出任务；坏计划在表单内报错不入库；启停/删除经服务生效；
+   「▶ 运行」异步执行，运行中显示状态、完成后列表刷新。

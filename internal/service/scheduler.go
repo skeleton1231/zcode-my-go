@@ -70,6 +70,28 @@ func (s *AgentService) StopScheduler() {
 	}
 }
 
+// Jobs lists the automation jobs（面板数据源）.
+func (s *AgentService) Jobs() ([]schedule.Job, error) { return s.JobStore().List() }
+
+// UpsertJob adds or replaces a job, validating the schedule up front.
+func (s *AgentService) UpsertJob(j schedule.Job) error {
+	if _, err := schedule.ParseCron(j.Schedule); err != nil {
+		return err
+	}
+	if strings.TrimSpace(j.Prompt) == "" || strings.TrimSpace(j.Workspace) == "" {
+		return fmt.Errorf("任务需要提示与工作区")
+	}
+	return s.JobStore().Upsert(j)
+}
+
+// RemoveJob drops a job by ID.
+func (s *AgentService) RemoveJob(id string) (bool, error) { return s.JobStore().Remove(id) }
+
+// ToggleJob flips a job's enabled switch.
+func (s *AgentService) ToggleJob(id string, on bool) (bool, error) {
+	return s.JobStore().SetEnabled(id, on)
+}
+
 // RunJobNow fires one job immediately (zgo cron run) and returns its
 // summary.
 func (s *AgentService) RunJobNow(ctx context.Context, id string) (string, error) {

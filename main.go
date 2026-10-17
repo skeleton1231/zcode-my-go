@@ -53,6 +53,11 @@ func main() {
 						win.Update(func() { a.OpenRename() })
 					}
 				}},
+				{Label: "定时任务…", Click: func(*mygo.MenuItem, *mygo.Window) {
+					if win := a.Window(); win != nil {
+						win.Update(func() { a.OpenJobs() })
+					}
+				}},
 				{Label: "回滚最近一回合（含工作区）", Click: func(*mygo.MenuItem, *mygo.Window) {
 					if win := a.Window(); win != nil {
 						win.Update(func() { a.RewindLatest() })

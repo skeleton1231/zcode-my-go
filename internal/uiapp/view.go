@@ -32,6 +32,7 @@ func (a *App) View(c *ui.Context) {
 	a.askModal(c, t)
 	a.questionModal(c, t)
 	a.settingsModal(c, t)
+	a.jobsModal(c, t)
 }
 
 // sidebarView lists sessions under the brand, with the actions below.

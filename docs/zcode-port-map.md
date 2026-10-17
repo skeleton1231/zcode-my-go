@@ -83,7 +83,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **定时自动化**（ZCode automation-experience 的调度核心，specs/automation.md）：
    internal/schedule（五字段 cron 解析/Next、jobs.json 热重载、分钟调度器、
    防重叠与结果记账）+ 服务调度接线（桌面随启动开、退出即停）+ zgo cron
-   CLI（list/add/rm/run/enable/disable）。桌面任务面板为后续。
+   CLI（list/add/rm/run/enable/disable）+ 桌面任务面板（列表/行内启停/立即
+   运行/删除/新建表单，specs/automation.md 规则 7）。
 待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录
