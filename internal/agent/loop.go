@@ -7,6 +7,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -52,6 +53,10 @@ type LoopConfig struct {
 	MaxTurns  int // <=0 means DefaultMaxTurns
 	// Thinking selects the reasoning effort handed to the provider.
 	Thinking ai.ThinkingLevel
+	// Hooks observe and shape every tool call (pi's beforeToolCall /
+	// afterToolCall): before runs after the permission gate and may block
+	// or terminate the run; after may rewrite the result before it lands.
+	Hooks Hooks
 	// ToolExecution picks the batch mode; empty means sequential. A batch
 	// containing any serial-only tool (ask, todo) always runs sequentially,
 	// whatever this says.
@@ -88,6 +93,18 @@ type Loop struct {
 	// 确认通道（桌面 modal、终端 stdin）都是单实例，并发会互相覆盖
 	// 或把答案错配给另一个请求。
 	askMu sync.Mutex
+
+	terminateOnce sync.Once
+	terminated    bool
+	terminateMsg  string
+}
+
+// setTerminate records a hook's request to end the run after the batch.
+func (l *Loop) setTerminate(reason string) {
+	l.terminateOnce.Do(func() {
+		l.terminated = true
+		l.terminateMsg = reason
+	})
 }
 
 // NewLoop builds a loop that reports through emit.
@@ -171,11 +188,14 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 		// every tool call in the message may carry truncated arguments: fail
 		// them all instead of executing potentially borked calls (pi's
 		// failToolCallsFromTruncatedMessage).
-		results := l.executeBatch(ctx, turn, calls, end.stop)
+		results := l.executeBatch(ctx, turn, msg, calls, end.stop)
 		if err := appendMessage(ai.Message{Role: ai.RoleToolResult, Blocks: results}); err != nil {
 			return stopInfo{stop: ai.StopError, usage: total, err: err.Error()}
 		}
 		l.emit(Event{Kind: EvTurnEnd, TurnIndex: turn})
+		if l.terminated { // hook 请求终止：批次结果已入账，运行到此为止
+			return stopInfo{stop: ai.StopEndTurn, usage: total, err: l.terminateMsg}
+		}
 	}
 }
 
@@ -226,7 +246,7 @@ func retryWait(retryAfterMS int, base time.Duration, retries int) time.Duration 
 
 // execute runs one tool call and reports its outcome through events. The
 // permission gate runs first: a denial never reaches the tool.
-func (l *Loop) execute(ctx context.Context, turn int, call ai.Block) ToolResult {
+func (l *Loop) execute(ctx context.Context, turn int, msg ai.Message, call ai.Block) ToolResult {
 	l.emit(Event{Kind: EvToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name,
 		Args: call.Arguments, TurnIndex: turn})
 
@@ -235,6 +255,8 @@ func (l *Loop) execute(ctx context.Context, turn int, call ai.Block) ToolResult 
 	if !ok {
 		result = ToolResult{IsError: true, Content: "error: unknown tool " + call.Name}
 	} else if blocked := l.gate(call, tool); blocked != nil {
+		result = *blocked
+	} else if blocked := l.beforeHook(msg, call); blocked != nil {
 		result = *blocked
 	} else {
 		args := strings.TrimSpace(call.Arguments)
@@ -245,6 +267,7 @@ func (l *Loop) execute(ctx context.Context, turn int, call ai.Block) ToolResult 
 		if result.Content == "" && !result.IsError {
 			result.Content = "(no output)"
 		}
+		result = l.afterHook(msg, call, result)
 	}
 
 	l.emit(Event{Kind: EvToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name,
@@ -255,25 +278,25 @@ func (l *Loop) execute(ctx context.Context, turn int, call ai.Block) ToolResult 
 // executeBatch runs one turn's tool calls and returns the result blocks
 // in source order (pi's executor: sequential by default; parallel lets
 // concurrent-safe tools overlap, end events in completion order).
-func (l *Loop) executeBatch(ctx context.Context, turn int, calls []ai.Block, stop ai.StopReason) []ai.Block {
+func (l *Loop) executeBatch(ctx context.Context, turn int, msg ai.Message, calls []ai.Block, stop ai.StopReason) []ai.Block {
 	if l.cfg.ToolExecution == ParallelExecution && batchIsParallelizable(l.cfg.Tools, calls) {
-		return l.executeBatchParallel(ctx, turn, calls, stop)
+		return l.executeBatchParallel(ctx, turn, msg, calls, stop)
 	}
 	blocks := make([]ai.Block, 0, len(calls))
 	for _, call := range calls {
-		blocks = append(blocks, l.executeOne(ctx, turn, call, stop))
+		blocks = append(blocks, l.executeOne(ctx, turn, msg, call, stop))
 	}
 	return blocks
 }
 
 // executeOne runs a single call, wrapping its outcome as a result block.
-func (l *Loop) executeOne(ctx context.Context, turn int, call ai.Block, stop ai.StopReason) ai.Block {
+func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai.Block, stop ai.StopReason) ai.Block {
 	var result ToolResult
 	if stop == ai.StopLength {
 		result = ToolResult{IsError: true, Content: "error: the response hit the token " +
 			"limit before the tool arguments finished; re-issue the call in full"}
 	} else {
-		result = l.execute(ctx, turn, call)
+		result = l.execute(ctx, turn, msg, call)
 	}
 	return ai.Block{Kind: ai.BlockToolResult, ToolCallID: call.ID,
 		Text: result.Content, IsError: result.IsError}
@@ -282,14 +305,14 @@ func (l *Loop) executeOne(ctx context.Context, turn int, call ai.Block, stop ai.
 // executeBatchParallel overlaps the batch's execution: each tool emits its
 // own end event when it finishes (completion order, as pi documents),
 // while the blocks assemble by source order for the transcript.
-func (l *Loop) executeBatchParallel(ctx context.Context, turn int, calls []ai.Block, stop ai.StopReason) []ai.Block {
+func (l *Loop) executeBatchParallel(ctx context.Context, turn int, msg ai.Message, calls []ai.Block, stop ai.StopReason) []ai.Block {
 	blocks := make([]ai.Block, len(calls))
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
 		go func(i int, call ai.Block) {
 			defer wg.Done()
-			blocks[i] = l.executeOne(ctx, turn, call, stop)
+			blocks[i] = l.executeOne(ctx, turn, msg, call, stop)
 		}(i, call)
 	}
 	wg.Wait()
@@ -309,6 +332,45 @@ func batchIsParallelizable(tools []Tool, calls []ai.Block) bool {
 		}
 	}
 	return true
+}
+
+// beforeHook runs the BeforeToolCall hook; a non-nil result is the
+// blocked outcome. Terminate asks the run to stop after this batch.
+func (l *Loop) beforeHook(msg ai.Message, call ai.Block) *ToolResult {
+	if l.cfg.Hooks.BeforeToolCall == nil {
+		return nil
+	}
+	args := strings.TrimSpace(call.Arguments)
+	if args == "" {
+		args = "{}"
+	}
+	res := l.cfg.Hooks.BeforeToolCall(BeforeToolCallContext{
+		AssistantMessage: msg, ToolCall: call, Args: json.RawMessage(args)})
+	if res.Terminate {
+		l.setTerminate(res.Reason)
+	}
+	if !res.Block {
+		return nil
+	}
+	reason := res.Reason
+	if reason == "" {
+		reason = "blocked by preToolUse hook"
+	}
+	return &ToolResult{IsError: true,
+		Content: "error: hook blocked the call — " + reason}
+}
+
+// afterHook runs the AfterToolCall hook and applies its rewrite.
+func (l *Loop) afterHook(msg ai.Message, call ai.Block, result ToolResult) ToolResult {
+	if l.cfg.Hooks.AfterToolCall == nil {
+		return result
+	}
+	res := l.cfg.Hooks.AfterToolCall(AfterToolCallContext{
+		AssistantMessage: msg, ToolCall: call, Result: result})
+	if !res.Changed {
+		return result
+	}
+	return ToolResult{Content: res.Content, IsError: res.IsError}
 }
 
 // gate checks the permission system for a call. A nil result means the call
