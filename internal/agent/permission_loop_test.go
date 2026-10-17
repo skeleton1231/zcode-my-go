@@ -290,6 +290,51 @@ func TestLoopDoesNotRetryPermanentErrors(t *testing.T) {
 	}
 }
 
+// TestLoopAssemblesInterleavedToolCallDeltas 验证按 ToolCallID 装配交错
+// 分片（issue #28：曾「粘到最后一个 Start」，call_A 参数全丢、call_B
+// 拿到交错垃圾 JSON——垃圾重组成功时错误参数被静默执行）。
+func TestLoopAssemblesInterleavedToolCallDeltas(t *testing.T) {
+	provider := &fakeProvider{turns: []fakeTurn{{
+		events: []ai.StreamEvent{
+			{Kind: ai.EvToolCallStart, ToolCallID: "call_A", ToolCallName: "read"},
+			{Kind: ai.EvToolCallStart, ToolCallID: "call_B", ToolCallName: "write"},
+			{Kind: ai.EvToolCallDelta, ToolCallID: "call_A", ToolCallArgs: `{"pa`},
+			{Kind: ai.EvToolCallDelta, ToolCallID: "call_B", ToolCallArgs: `{"pa`},
+			{Kind: ai.EvToolCallDelta, ToolCallID: "call_A", ToolCallArgs: `th":"a.txt"}`},
+			{Kind: ai.EvToolCallDelta, ToolCallID: "call_B", ToolCallArgs: `th":"b.txt"}`},
+			{Kind: ai.EvMessageEnd, StopReason: ai.StopToolUse},
+		},
+	}, {
+		// 第二轮收尾：装配断言只看第一轮的 assistant 消息。
+		events: []ai.StreamEvent{
+			{Kind: ai.EvTextDelta, TextDelta: "done"},
+			{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn},
+		},
+	}}}
+	c := &collector{}
+	loop := NewLoop(LoopConfig{
+		Provider: provider,
+		History:  func() []ai.Message { return c.messages },
+	}, c.emit)
+	loop.Run(context.Background(), c.append)
+
+	var read, write string
+	for _, b := range c.messages[0].Blocks {
+		if b.Kind != ai.BlockToolCall {
+			continue
+		}
+		switch b.ID {
+		case "call_A":
+			read = b.Arguments
+		case "call_B":
+			write = b.Arguments
+		}
+	}
+	if read != `{"path":"a.txt"}` || write != `{"path":"b.txt"}` {
+		t.Fatalf("read = %q write = %q", read, write)
+	}
+}
+
 // thinkingTurn emits thinking deltas then a final answer.
 func thinkingTurn(t *testing.T, think, answer string) fakeTurn {
 	t.Helper()

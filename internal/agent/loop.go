@@ -298,7 +298,19 @@ func (l *Loop) streamAssistant(ctx context.Context, turn int) (ai.Message, endIn
 				ToolName: ev.ToolCallName, TurnIndex: turn})
 		case ai.EvToolCallDelta:
 			if len(calls) > 0 {
+				// 按调用 ID 装配（issue #28）：并行调用的参数分片按 index
+				// 交错下发，「粘到最后一个 Start」会让 call_A 参数全丢、
+				// call_B 拿到交错垃圾 JSON。无 ID 的 provider 回退最后
+				// 一个调用（顺序流安全）。
 				c := &calls[len(calls)-1]
+				if ev.ToolCallID != "" {
+					for j := range calls {
+						if calls[j].id == ev.ToolCallID {
+							c = &calls[j]
+							break
+						}
+					}
+				}
 				c.args.WriteString(ev.ToolCallArgs)
 				l.emit(Event{Kind: EvToolCallDelta, ToolCallID: c.id,
 					ArgsDelta: ev.ToolCallArgs, TurnIndex: turn})

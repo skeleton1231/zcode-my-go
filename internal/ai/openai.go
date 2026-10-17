@@ -121,10 +121,24 @@ func (a *OpenAI) parseSSE(ctx context.Context, body io.Reader, out chan<- Stream
 	usage := Usage{}
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	ended := false
+	// tool_calls[].index → 调用 ID：并行调用的 arguments 分片按 index
+	// 交错下发，delta 必须携带所属调用的 ID 才能正确装配（issue #28）。
+	var callIDs []string
+	finished := ""
+	emittedEnd := false
 	emitEnd := func(reason StopReason, message string) {
+		if emittedEnd {
+			return
+		}
+		emittedEnd = true
 		out <- StreamEvent{Kind: EvMessageEnd, StopReason: reason,
 			ErrorMessage: message, Usage: usage}
+	}
+	stopOrEnd := func() StopReason {
+		if finished == "" {
+			return StopEndTurn
+		}
+		return mapFinishReason(finished)
 	}
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -133,8 +147,7 @@ func (a *OpenAI) parseSSE(ctx context.Context, body io.Reader, out chan<- Stream
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			emitEnd(StopEndTurn, "")
-			ended = true
+			emitEnd(stopOrEnd(), "")
 			return
 		}
 		var chunk openaiChunk
@@ -153,19 +166,24 @@ func (a *OpenAI) parseSSE(ctx context.Context, body io.Reader, out chan<- Stream
 			out <- StreamEvent{Kind: EvTextDelta, TextDelta: choice.Delta.Content}
 		}
 		for _, call := range choice.Delta.ToolCalls {
+			for len(callIDs) <= call.Index {
+				callIDs = append(callIDs, "")
+			}
 			if call.ID != "" {
+				callIDs[call.Index] = call.ID
 				out <- StreamEvent{Kind: EvToolCallStart,
 					ToolCallID: call.ID, ToolCallName: call.Function.Name}
 			}
 			if call.Function.Arguments != "" {
 				out <- StreamEvent{Kind: EvToolCallDelta,
-					ToolCallArgs: call.Function.Arguments}
+					ToolCallArgs: call.Function.Arguments, ToolCallID: callIDs[call.Index]}
 			}
 		}
 		if choice.FinishReason != "" {
-			emitEnd(mapFinishReason(choice.FinishReason), "")
-			ended = true
-			return
+			// 不在此处结束：include_usage 的标准行为是 finish 后再发
+			// 一个 usage-only 尾块，提前 return 会把 usage 丢成全零
+			// （issue #28 附带发现）。读到 [DONE] 或流末再 emitEnd。
+			finished = choice.FinishReason
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -176,9 +194,7 @@ func (a *OpenAI) parseSSE(ctx context.Context, body io.Reader, out chan<- Stream
 		emitEnd(StopError, fmt.Sprintf("stream broke: %v", err))
 		return
 	}
-	if !ended {
-		emitEnd(StopEndTurn, "")
-	}
+	emitEnd(stopOrEnd(), "")
 }
 
 func mapFinishReason(reason string) StopReason {
