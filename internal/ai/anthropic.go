@@ -342,11 +342,13 @@ type wireCacheControl struct {
 }
 
 // wireSystemBlocks carries the system prompt as blocks so the cache
-// breakpoint can sit at its end.
+// breakpoint can sit at its end. Text 是缓存前缀（带断点）；Blocks 携带
+// 不缓存的易变尾部（issue #139）。
 type wireSystemBlocks struct {
 	Type         string            `json:"type"`
 	Text         string            `json:"text"`
 	CacheControl *wireCacheControl `json:"cache_control,omitempty"`
+	Blocks       []wireBlock       `json:"content,omitempty"`
 }
 
 // wireCachedTool is a tool declaration with an optional trailing cache
@@ -429,8 +431,14 @@ func applyCacheBreakpoints(w *wireRequest, req Request) {
 		tools[len(tools)-1].CacheControl = mark
 		w.Tools = tools
 	}
-	if req.System != "" {
+	if req.System != "" || req.SystemVolatile != "" {
+		// 稳定块带断点，易变块（git dirty 等）不带（issue #139：混在前缀
+		// 里会让编辑会话的 system 缓存每轮 miss）。
 		w.System = &wireSystemBlocks{Type: "text", Text: req.System, CacheControl: mark}
+		if req.SystemVolatile != "" {
+			w.System.Blocks = append(w.System.Blocks,
+				wireBlock{Type: "text", Text: req.SystemVolatile})
+		}
 	}
 	// 倒数第二条消息（最后一条通常是刚产生的 toolResult/user，恰是变动的
 	// 尾部；它前面才是可缓存的滚动前缀）。
