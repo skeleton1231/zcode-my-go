@@ -136,3 +136,62 @@ func TestAppendTruncatesHugeBlocks(t *testing.T) {
 		t.Fatal("truncation marker missing")
 	}
 }
+
+// TestAppendTrimsImageBudget 验证图片总量预算（issue #105：多张 5MB 图
+// 拼一条消息曾让 JSONL 行超读取上限，重载时整条消息连图静默消失）。
+func TestAppendTrimsImageBudget(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire(m)
+	s, err := m.New("ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("i", 3<<20) // 3MB base64/块
+	msg := ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{
+		{Kind: ai.BlockText, Text: "看这些图"},
+		{Kind: ai.BlockImage, Media: "image/png", Data: big},
+		{Kind: ai.BlockImage, Media: "image/png", Data: big},
+		{Kind: ai.BlockImage, Media: "image/png", Data: big},
+	}}
+	if err := s.Append(msg); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	// 内存中的消息：图片总量受预算约束，且带丢弃说明。
+	kept := s.Messages()[0]
+	total := 0
+	dropped := false
+	for _, b := range kept.Blocks {
+		if b.Kind == ai.BlockImage {
+			total += len(b.Data)
+		}
+		if b.Kind == ai.BlockText && strings.Contains(b.Text, "未持久化") {
+			dropped = true
+		}
+	}
+	if total > maxImageTotal {
+		t.Fatalf("image total = %d, want <= %d", total, maxImageTotal)
+	}
+	if !dropped {
+		t.Fatal("drop notice missing")
+	}
+	// 重载后消息仍在（含文本与保留的图）。
+	again, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, ok := again.Get(s.Info().ID)
+	if !ok {
+		t.Fatal("session lost on reload")
+	}
+	msgs := s2.Messages()
+	if len(msgs) == 0 || !strings.Contains(msgs[0].Text(), "看这些图") {
+		t.Fatal("reloaded message lost")
+	}
+	if !strings.Contains(msgs[0].Text(), "未持久化") {
+		t.Fatal("drop notice lost on reload")
+	}
+}

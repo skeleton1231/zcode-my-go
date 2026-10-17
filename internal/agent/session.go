@@ -467,6 +467,10 @@ type regenerateRecord struct {
 const (
 	maxBlockText = 1 << 20 // 1MB per text block
 	maxLoadLine  = 16 << 20
+	// maxImageTotal 是单条消息图片块（base64）的总量预算（issue #105）：
+	// 多张 5MB 图拼一条消息曾让 JSONL 行超读取上限，重载时整条消息连图
+	// 静默消失。超预算的尾部图片被丢弃并留说明——丢图远好过丢整条消息。
+	maxImageTotal = 6 << 20
 )
 
 // truncateMessage 把超大文本块截断到 maxBlockText（退到 rune 边界）并
@@ -487,10 +491,50 @@ func truncateMessage(m ai.Message) ai.Message {
 		blocks[i] = b
 	}
 	if !capped {
+		// 文本未超限时仍要检查图片预算：丢弃发生在尾部，说明文本块注明。
+		if trimmed, dropped := trimImageBudget(blocks); dropped > 0 {
+			trimmed = append(trimmed, ai.Block{Kind: ai.BlockText,
+				Text: fmt.Sprintf("[图片总量超过 %dMB，%d 张未持久化]",
+					maxImageTotal>>20, dropped)})
+			m.Blocks = trimmed
+			return m
+		}
 		return m
+	}
+	if trimmed, dropped := trimImageBudget(blocks); dropped > 0 {
+		blocks = append(trimmed, ai.Block{Kind: ai.BlockText,
+			Text: fmt.Sprintf("[图片总量超过 %dMB，%d 张未持久化]",
+				maxImageTotal>>20, dropped)})
 	}
 	m.Blocks = blocks
 	return m
+}
+
+// trimImageBudget 把图片块（base64）总量压到 maxImageTotal 内：保留
+// 最靠前的图片，丢弃超预算的尾部，返回剩余块与丢弃张数。
+func trimImageBudget(blocks []ai.Block) ([]ai.Block, int) {
+	total := 0
+	for _, b := range blocks {
+		if b.Kind == ai.BlockImage {
+			total += len(b.Data)
+		}
+	}
+	if total <= maxImageTotal {
+		return blocks, 0
+	}
+	out := make([]ai.Block, 0, len(blocks))
+	total, dropped := 0, 0
+	for _, b := range blocks {
+		if b.Kind == ai.BlockImage {
+			if total+len(b.Data) > maxImageTotal {
+				dropped++
+				continue
+			}
+			total += len(b.Data)
+		}
+		out = append(out, b)
+	}
+	return out, dropped
 }
 
 // writeLine appends one message record. Called with s.mu held.
