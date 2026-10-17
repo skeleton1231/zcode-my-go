@@ -335,6 +335,57 @@ func (a *App) Editing() (int, bool) {
 	return a.editingIndex, a.editingIndex >= 0
 }
 
+// Export writes the open session as a standalone HTML file. The save
+// dialog blocks, so it runs off the main thread.
+func (a *App) Export() {
+	if a.activeID == "" {
+		return
+	}
+	id := a.activeID
+	title := "会话"
+	for _, s := range a.sessions {
+		if s.ID == id && s.Title != "" {
+			title = s.Title
+			break
+		}
+	}
+	parent := a.win
+	go func() {
+		dest, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+			Parent:      parent,
+			DefaultPath: sanitizeFilename(title) + ".html",
+		})
+		if err != nil || dest == "" {
+			if err != nil {
+				log.Printf("export dialog: %v", err)
+			}
+			return
+		}
+		err = a.svc.ExportSessionHTML(id, dest)
+		a.update(func() {
+			if err != nil {
+				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+					text: "导出失败：" + err.Error()})
+				return
+			}
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: "已导出：" + dest})
+		})
+	}()
+}
+
+func sanitizeFilename(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r >= 0x4e00 && r <= 0x9fff, r == '-', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
+}
+
 // Retry regenerates the last answer.
 func (a *App) Retry() {
 	if a.activeID == "" || a.chat.running {
