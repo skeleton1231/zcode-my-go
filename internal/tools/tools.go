@@ -61,6 +61,7 @@ func AllW(w Workspace, state *States, ask func(ctx context.Context, q agent.Ques
 		NewLs(w),
 		NewPatch(w),
 		NewTodo(state.Todo),
+		NewDispatch(nil), // service 重接（带 provider）
 		NewAsk(ask),
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -86,4 +87,33 @@ func SubtaskSystem() string {
 	return "You are a research subagent. Investigate the assigned question " +
 		"with the read-only tools, then answer concisely in the user's " +
 		"language. Report findings and file paths; do not modify anything."
+}
+
+// MaxParallelSubtasks caps concurrency (ZCode's subagent fan-out limit).
+const MaxParallelSubtasks = 4
+
+// RunSubtasks runs read-only subagents concurrently over the prompts
+// (ZCode's parallel subagents): a worker pool of MaxParallelSubtasks,
+// results in prompt order; one failure fails only its own entry.
+func RunSubtasks(ctx context.Context, cfg SubtaskConfig, prompts []string) []SubtaskResult {
+	results := make([]SubtaskResult, len(prompts))
+	sem := make(chan struct{}, MaxParallelSubtasks)
+	var wg sync.WaitGroup
+	for i, prompt := range prompts {
+		wg.Add(1)
+		go func(i int, prompt string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			// 每个子代理独立转录：共享 cfg 是只读的，provider 逐流实例化。
+			res, err := RunSubtask(ctx, cfg, prompt)
+			if err != nil {
+				results[i] = SubtaskResult{Text: "error: " + err.Error(), Turns: 0}
+				return
+			}
+			results[i] = res
+		}(i, prompt)
+	}
+	wg.Wait()
+	return results
 }
