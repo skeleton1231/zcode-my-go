@@ -147,7 +147,11 @@ type StreamEvent struct {
 
 	StopReason   StopReason `json:"stopReason,omitempty"`   // EvMessageEnd
 	ErrorMessage string     `json:"errorMessage,omitempty"` // EvMessageEnd with StopError
-	Usage        Usage      `json:"usage,omitempty"`        // EvMessageStart/End
+	// EvMessageEnd with StopError: whether the failure is transient (a
+	// retry may succeed) and how long the provider asked us to wait.
+	Retryable    bool  `json:"retryable,omitempty"`
+	RetryAfterMS int   `json:"retryAfterMs,omitempty"`
+	Usage        Usage `json:"usage,omitempty"` // EvMessageStart/End
 }
 
 // Provider streams assistant turns. The contract, like pi's StreamFn: never

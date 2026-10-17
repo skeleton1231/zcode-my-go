@@ -59,6 +59,13 @@ func (s *chatState) apply(ev agent.Event) {
 	case agent.EvCompaction:
 		s.items = append(s.items, chatItem{kind: itemNotice, text: ev.Text})
 
+	case agent.EvTurnRetry:
+		// 重试：丢弃残缺的流式输出，notice 说明原因；新回合会重新开始。
+		if n := len(s.items); n > 0 && s.items[n-1].kind == itemAssistant && s.items[n-1].streaming {
+			s.items = s.items[:n-1]
+		}
+		s.items = append(s.items, chatItem{kind: itemNotice, text: "重试：" + ev.Text})
+
 	case agent.EvMessageStart:
 		s.items = append(s.items, chatItem{kind: itemAssistant, streaming: true})
 

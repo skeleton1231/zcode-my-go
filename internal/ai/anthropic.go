@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -140,7 +141,9 @@ func (a *Anthropic) parseSSE(ctx context.Context, body io.Reader, out chan<- Str
 		ended, err := handleSSEData(strings.TrimPrefix(line, "data: "), event, &usage, out)
 		switch {
 		case err != nil:
-			out <- StreamEvent{Kind: EvMessageEnd, StopReason: StopError, ErrorMessage: err.Error()}
+			var re *retryableError
+			out <- StreamEvent{Kind: EvMessageEnd, StopReason: StopError, ErrorMessage: err.Error(),
+				Retryable: errors.As(err, &re)}
 			return
 		case ended:
 			return
