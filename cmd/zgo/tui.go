@@ -50,6 +50,8 @@ type tuiState struct {
 	width   int
 	height  int
 	redraw  chan struct{}
+
+	attach attachments // /attach 攒图，随下一条消息发送
 }
 
 // runTUI drives the interactive full-screen interface. It returns the
@@ -124,7 +126,8 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 	go func() {
 		handled, quit := runSlashCommand(&commandEnv{
 			svc: svc, info: info, workspace: workspace,
-			out: func(msg string) { s.push(msg) },
+			out:    func(msg string) { s.push(msg) },
+			attach: &s.attach,
 		}, line)
 		if quit {
 			s.finish(os.Stdout)
@@ -141,7 +144,7 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 	s.setStatus("运行中…", true)
 	go func() {
 		var last string
-		err := svc.Chat(info.ID, line, func(ev agent.Event) { s.applyEvent(ev, &last) })
+		err := svc.ChatMedia(info.ID, line, s.attach.take(), func(ev agent.Event) { s.applyEvent(ev, &last) })
 		s.mu.Lock()
 		s.running = false
 		s.status = "就绪"

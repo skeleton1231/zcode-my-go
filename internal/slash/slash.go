@@ -24,6 +24,10 @@ type Env struct {
 	SetSession func(agent.SessionInfo)
 	// Out receives command feedback.
 	Out func(string)
+
+	// Attach queues an image for the next message（终端表面的 /attach；
+	// 桌面走自己的 📎，不填即不可用）.
+	Attach func(path string) string
 }
 
 // Run dispatches one line; handled reports whether it was a command,
@@ -36,6 +40,20 @@ func Run(env *Env, line string) (handled, quit bool) {
 	name = strings.ToLower(name)
 	if quitAliases[name] {
 		return true, true
+	}
+	if name == "/attach" {
+		// 附件是表面状态（各终端攒 pending，随下一条消息发送）：由表面
+		// 提供回调；未提供的表面明确报不支持。
+		if env.Attach == nil {
+			env.Out("/attach 在此表面不可用")
+			return true, false
+		}
+		if args == "" {
+			env.Out("用法：/attach <图片路径>")
+			return true, false
+		}
+		env.Out(env.Attach(args))
+		return true, false
 	}
 	if name == "/help" {
 		env.Out(helpText())
