@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,12 +28,11 @@ type Memory struct {
 }
 
 // MemoryPath names a workspace's memory file inside memRoot.
+// SHA-256 前 16 字节做文件名（issue #20）：31 进制哈希可数学构造碰撞，
+// 碰撞的工作区会互相读到并污染对方记忆（"aa"/"bB" 一对就撞）。
 func MemoryPath(memRoot, workspace string) string {
-	sum := 0
-	for _, r := range workspace {
-		sum = sum*31 + int(r)
-	}
-	return filepath.Join(memRoot, fmt.Sprintf("ws_%x.md", uint32(sum)))
+	sum := sha256.Sum256([]byte(workspace))
+	return filepath.Join(memRoot, fmt.Sprintf("ws_%x.md", sum[:16]))
 }
 
 // NewMemory builds the store over a workspace memory file.
