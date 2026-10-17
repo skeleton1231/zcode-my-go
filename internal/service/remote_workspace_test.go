@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/remotetest"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
@@ -101,4 +103,72 @@ func TestSSHWorkspaceToolsRoundTrip(t *testing.T) {
 	if res := execTool(t, toolByName(t, svc, info.ID, "read"), `{"path":"../../etc/passwd"}`); !res.IsError {
 		t.Fatalf("jail escape accepted: %+v", res)
 	}
+}
+
+// TestRewindGuardedWhileRunning 验证运行守卫先于文件恢复（issue #110：
+// restoreCheckpoint 曾在运行检查前执行——活回合的工作树被抽走而转录
+// 全保留；cron 后台会话是现实触发方）。
+func TestRewindGuardedWhileRunning(t *testing.T) {
+	dir := t.TempDir()
+	ws := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	blocking := make(chan struct{})
+	svc.UseProviderForTesting(func() ai.Provider {
+		return svcBlockProvider{until: blocking}
+	})
+	info, err := svc.NewSession(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- svc.Chat(info.ID, "start", func(agent.Event) {}) }()
+	waitSvcRunning(t, svc, info.ID)
+	marker := filepath.Join(ws, "live-marker.txt")
+	if err := os.WriteFile(marker, []byte("untouched"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RewindLatest(info.ID); err == nil {
+		t.Fatal("rewind during run accepted")
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil || string(data) != "untouched" {
+		t.Fatalf("worktree touched during run: %v %q", err, data)
+	}
+	close(blocking)
+	<-done
+}
+
+// svcBlockProvider 阻塞到 until 关闭才结束回合（服务层内联版）。
+type svcBlockProvider struct{ until chan struct{} }
+
+func (p svcBlockProvider) Stream(ctx context.Context, _ ai.Request) <-chan ai.StreamEvent {
+	out := make(chan ai.StreamEvent, 1)
+	go func() {
+		defer close(out)
+		select {
+		case <-p.until:
+			out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+		case <-ctx.Done():
+		}
+	}()
+	return out
+}
+
+// waitSvcRunning 轮询会话进入运行态。
+func waitSvcRunning(t *testing.T, svc *AgentService, id string) {
+	t.Helper()
+	for i := 0; i < 400; i++ {
+		if svc.SessionRunning(id) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("session never started running")
 }
