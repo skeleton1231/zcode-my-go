@@ -123,6 +123,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **zgo memory CLI**：工作区长期记忆的运维面——list（概况表）、show
    （全文）、add（带时间戳追加）、clear（幂等清空）；--workspace 接受
    路径或会话前缀。
+**zgo models CLI**：模型目录表（--api 过滤、当前标记、未知模型告警）+
+   --check 离线校验（目录/家族前缀）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
