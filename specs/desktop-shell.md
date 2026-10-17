@@ -75,6 +75,9 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 18. /rewind [n]（终端三端）：无参回滚最近一轮、n 回滚到第 n 轮之前——
    与桌面 ⟲ 同语义（检查点 + 转录截断）；非 git 工作区降级为仅回退转录；
    坏参数给用法、越界给失败说明。
+19. /export [md] [路径]（终端三端）：导出当前会话——默认自包含 HTML，
+   md 走 Markdown；缺省文件名 zgo-export-时间戳；显式路径优先；失败给
+   [导出失败] 说明。与桌面导出菜单、zgo sessions export 同一导出器。
 ## 状态所有者
 
 | 状态     | 所有者           | 说明                              |
@@ -117,3 +120,5 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
     带 ← 当前；--check 对目录与家族变体 ✓、对未知 ⚠、空 ID 拒绝。
 16. /rewind：默认与显式轮次两级回滚生效（转录反映）；坏参数与越界可读
     报错；/help 收录。
+17. /export：默认 HTML、md 变体、显式路径三形态落盘且内容完整；
+    /help 收录。
