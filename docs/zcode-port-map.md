@@ -128,14 +128,6 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **任意回合回滚**：RewindTo(n) 撤掉第 n..末轮（检查点 seq=n-1 + 转录截断，
    与编辑重发同语义）；桌面每轮用户消息「⟲ 回滚到此」——检查点子系统
    从"只回滚最近一回合"补齐到任意回合。
-=======
-**/export 终端命令**：`/export [md] [路径]` 把会话导出带到 REPL/TUI/print
-   ——导出子系统三面齐备（桌面菜单、sessions CLI、终端命令，同一导出器）。
->>>>>>> 7c1b8af (feat: /export — session export from the terminal)
-=======
-**zgo sessions search**：跨会话检索的 CLI 面（同一 SearchSessions）——
-   搜索子系统三面齐备（桌面弹窗、服务 API、终端命令）。
->>>>>>> a129f5d (feat: zgo sessions search — cross-session search from the terminal)
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
