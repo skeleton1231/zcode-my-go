@@ -39,13 +39,12 @@ type SessionInfo struct {
 // The transcript's only writer is Append (the loop appends through it);
 // nothing rewrites history.
 type Session struct {
-	mu         sync.Mutex
-	info       SessionInfo
-	messages   []ai.Message
-	path       string
-	metaTitle  string // title as last written to disk
-	cancel     context.CancelFunc
-	usageTotal ai.Usage
+	mu        sync.Mutex
+	info      SessionInfo
+	messages  []ai.Message
+	path      string
+	metaTitle string // title as last written to disk
+	cancel    context.CancelFunc
 
 	// wiring, installed by the manager
 	provider   func() ai.Provider
@@ -70,13 +69,6 @@ func (s *Session) Messages() []ai.Message {
 	return append([]ai.Message(nil), s.messages...)
 }
 
-// UsageTotal returns the session's cumulative token usage.
-func (s *Session) UsageTotal() ai.Usage {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.usageTotal
-}
-
 // Append adds a message to the transcript and persists it. It is the single
 // write path of the history.
 func (s *Session) Append(m ai.Message) error {
@@ -96,13 +88,6 @@ func (s *Session) Append(m ai.Message) error {
 		return s.writeMetaLocked()
 	}
 	return nil
-}
-
-// AddUsage accumulates turn usage into the session totals.
-func (s *Session) AddUsage(u ai.Usage) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.usageTotal = s.usageTotal.Add(u)
 }
 
 // Chat appends the user message and runs the loop, streaming events through

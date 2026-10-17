@@ -3,6 +3,8 @@
 <div align="center"><strong>Zgo — 属于你的开源桌面 Coding Agent</strong></div>
 <div align="center">Go 后端 · mygo 桌面壳 · React 前端 · Anthropic 兼容协议</div>
 
+<p align="center">简体中文 | <a href="README.en.md">English</a></p>
+
 ---
 
 Zgo 是一个开源的桌面 coding agent：
