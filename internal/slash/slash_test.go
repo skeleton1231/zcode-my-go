@@ -82,3 +82,27 @@ func TestRunModelRenameStatusPlan(t *testing.T) {
 		t.Fatal("plan off not applied")
 	}
 }
+
+func TestMatchForHints(t *testing.T) {
+	all := Match("/")
+	if len(all) < 6 {
+		t.Fatalf("all commands = %d", len(all))
+	}
+	// 前缀过滤。
+	m := Match("/mo")
+	if len(m) != 1 || m[0].Usage != "/model <模型ID>" {
+		t.Fatalf("/mo = %+v", m)
+	}
+	// 完整命令名（含参数提示）也算命中。
+	if m := Match("/plan on"); len(m) != 1 || m[0].Usage != "/plan [on|off]" {
+		t.Fatalf("/plan on = %+v", m)
+	}
+	// 非命令前缀返回空。
+	if m := Match("普通"); m != nil {
+		t.Fatalf("plain = %+v", m)
+	}
+	// 上限截断。
+	if got := len(Match("/")); got > 8 {
+		t.Fatalf("cap exceeded: %d", got)
+	}
+}

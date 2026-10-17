@@ -6,6 +6,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/skeleton1231/zcode-my-go/internal/slash"
+
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
@@ -332,6 +334,7 @@ func (a *App) planView(c *ui.Context, t *ui.Theme) {
 // composerView is the input row: Enter sends, Shift+Enter breaks the line,
 // the button stops a run in progress.
 func (a *App) composerView(c *ui.Context, t *ui.Theme) {
+	a.slashHintsView(c, t)
 	ui.Row(c).Gap(8).Padding(10, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
 		AlignItems(ui.End).Children(func() {
 		area := ui.TextArea(c, &a.input).Placeholder("描述任务…（Shift+Enter 换行）").Grow(1).Lines(1, 8)
@@ -357,6 +360,31 @@ func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 			Disabled(a.activeID == "" || strings.TrimSpace(a.input) == "").Clicked() {
 			a.Send()
 		}
+	})
+}
+
+// slashHintsView floats matching commands above the composer while the
+// input is a /-prefix (ZCode's command autocomplete): computed per
+// frame, zero extra state; picking a hint fills the composer.
+func (a *App) slashHintsView(c *ui.Context, t *ui.Theme) {
+	if a.activeID == "" || a.chat.running {
+		return
+	}
+	hints := slash.Match(a.input)
+	if len(hints) == 0 {
+		return
+	}
+	ui.Column(c).Padding(4, 24).Children(func() {
+		ui.Column(c).Gap(2).Padding(6, 8).Radius(8).
+			Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
+			for _, h := range hints {
+				usage := h.Usage
+				help := h.Help
+				if ui.Button(c, usage+"　—　"+help).Grow(1).Clicked() {
+					a.input = strings.SplitN(usage, " ", 2)[0] + " "
+				}
+			}
+		})
 	})
 }
 
