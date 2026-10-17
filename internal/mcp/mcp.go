@@ -20,13 +20,16 @@ const handshakeTimeout = 20 * time.Second
 
 // Server is one launched MCP server process.
 type Server struct {
-	Name    string
-	cmd     *exec.Cmd
-	stdin   chan<- []byte
-	mu      sync.Mutex
-	pending map[int64]chan json.RawMessage
-	nextID  int64
-	tools   []ToolDef
+	Name string
+	// Signature identifies the config this server was started from (set
+	// by the caller): hot reload compares it to stop-and-restart.
+	Signature string
+	cmd       *exec.Cmd
+	stdin     chan<- []byte
+	mu        sync.Mutex
+	pending   map[int64]chan json.RawMessage
+	nextID    int64
+	tools     []ToolDef
 }
 
 // ToolDef is a tool an MCP server advertises.

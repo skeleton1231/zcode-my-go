@@ -11,6 +11,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -84,21 +86,80 @@ func New(dataDir string) (*AgentService, error) {
 	return s, nil
 }
 
-// startMCP launches the configured MCP servers; failures are logged and
-// skipped, never fatal (ZCode treats dead MCP servers as degraded).
-func (s *AgentService) startMCP() {
-	for name, cfg := range s.settings.MCPServers {
-		if cfg.Command == "" {
+// syncMCP reconciles running servers with the configured set (hot
+// reload): stopped-and-restarted for changed signatures, closed for
+// removed ones, started for additions; failures degrade, never block.
+func (s *AgentService) syncMCP() {
+	s.mu.Lock()
+	current := map[string]*mcp.Server{}
+	for _, srv := range s.mcp {
+		current[srv.Name] = srv
+	}
+	desired := s.settings.MCPServers
+	keep := map[string]bool{}
+	type pending struct {
+		name string
+		cfg  mcp.Config
+		sig  string
+	}
+	var toStart []pending
+	for name, cfg := range desired {
+		sig := mcpSignature(cfg)
+		if srv, ok := current[name]; ok && srv.Signature == sig {
+			keep[name] = true
 			continue
 		}
-		server, err := mcp.Start(context.Background(), name, cfg)
+		if srv, ok := current[name]; ok {
+			srv.Close() // 配置变了：先停旧的
+		}
+		if cfg.Command != "" {
+			toStart = append(toStart, pending{name: name, cfg: cfg, sig: sig})
+			keep[name] = true
+		}
+	}
+	s.mcp = nil // 重建列表：保留未变的 + 待启动的稍后补
+	for name, srv := range current {
+		if keep[name] {
+			s.mcp = append(s.mcp, srv)
+		}
+	}
+	s.mu.Unlock()
+
+	// 启动在锁外（握手最长 20s），成功后再入表。
+	for _, p := range toStart {
+		server, err := mcp.Start(context.Background(), p.name, p.cfg)
 		if err != nil {
-			log.Printf("mcp %s: %v", name, err)
+			log.Printf("mcp reload: %v", err)
 			continue
 		}
+		server.Signature = p.sig
+		s.mu.Lock()
 		s.mcp = append(s.mcp, server)
+		s.mu.Unlock()
 	}
 }
+
+// mcpSignature serializes a config's identity: command, args, env.
+func mcpSignature(cfg mcp.Config) string {
+	keys := make([]string, 0, len(cfg.Env))
+	for k := range cfg.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString(cfg.Command + "|")
+	for _, a := range cfg.Args {
+		b.WriteString(a + "|")
+	}
+	for _, k := range keys {
+		b.WriteString(k + "=" + cfg.Env[k] + "|")
+	}
+	return b.String()
+}
+
+// startMCP is syncMCP over an empty set (first run); kept as the
+// constructor's entry point.
+func (s *AgentService) startMCP() { s.syncMCP() }
 
 // Close shuts down MCP servers and every session's background jobs.
 func (s *AgentService) Close() {
@@ -283,6 +344,7 @@ func (s *AgentService) SaveSettings(api, baseURL, apiKey, model, thinking string
 	}
 	s.settings = cfg
 	s.rewire()
+	s.syncMCP() // 配置变更热重载（内部锁外启动）
 	return s.view(), nil
 }
 
