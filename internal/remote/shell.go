@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -49,6 +50,17 @@ func (c *Client) Shell() (*ShellConn, error) {
 		pw.Close()
 		sess.Close()
 		return nil, err
+	}
+	// 真 SSH 服务器的 shell 落在登录 home（issue #125：注释曾称 in
+	// the client's root 而实现无任何落地处理，与本地终端和标题栏不
+	// 符）。Shell 请求无法携带命令，PTY 起来后经 stdin 注入一次 cd
+	// ——远端 shell 会执行它；注入失败视为会话失败。
+	if _, werr := stdin.Write([]byte("cd " + quote(c.cfg.Root) + "\n")); werr != nil {
+		pr.Close()
+		pw.Close()
+		stdin.Close()
+		sess.Close()
+		return nil, fmt.Errorf("cd into workspace root: %w", werr)
 	}
 	go func() {
 		sess.Wait()
