@@ -42,6 +42,11 @@ type LoopConfig struct {
 	// History returns the transcript to send; called once per turn so
 	// steering messages queued between turns are picked up.
 	History func() []ai.Message
+	// Steering drains user messages queued while the run is in flight
+	// (pi's getSteeringMessages, queue mode "all"): each turn start
+	// injects them into the transcript, and a queued message keeps the
+	// loop running past an end_turn. Nil means no steering.
+	Steering func() []ai.Message
 	// SessionID labels AskRequests with the run's session.
 	SessionID string
 	// RetryBackoff overrides the exponential base for transient-failure
@@ -97,6 +102,17 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 			return stopInfo{stop: ai.StopEndTurn, usage: total,
 				err: "reached the turn limit; stopping for a new instruction"}
 		}
+		// Drain steering queued while the run is in flight: the messages
+		// enter the transcript silently — the surface already showed them
+		// optimistically when the user hit send (pi emits message events;
+		// our UI folds both views onto the same history).
+		if l.cfg.Steering != nil {
+			for _, m := range l.cfg.Steering() {
+				if err := appendMessage(m); err != nil {
+					return stopInfo{stop: ai.StopError, usage: total, err: err.Error()}
+				}
+			}
+		}
 		l.emit(Event{Kind: EvTurnStart, TurnIndex: turn})
 
 		msg, end := l.streamAssistantWithRetry(ctx, turn)
@@ -114,6 +130,19 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 			return stopInfo{stop: end.stop, usage: total, err: end.err}
 		case len(calls) == 0:
 			l.emit(Event{Kind: EvTurnEnd, TurnIndex: turn})
+			// pi's inner-loop condition: end_turn only ends the run when
+			// nothing was queued meanwhile — a queued message enters the
+			// transcript here and keeps the loop going.
+			if l.cfg.Steering != nil {
+				if queued := l.cfg.Steering(); len(queued) > 0 {
+					for _, m := range queued {
+						if err := appendMessage(m); err != nil {
+							return stopInfo{stop: ai.StopError, usage: total, err: err.Error()}
+						}
+					}
+					continue
+				}
+			}
 			return stopInfo{stop: ai.StopEndTurn, usage: total}
 		}
 

@@ -21,8 +21,13 @@ type fakeTurn struct {
 }
 
 func (p *fakeProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
-	out := make(chan ai.StreamEvent, len(p.turns[p.calls].events)+1)
-	for _, ev := range p.turns[p.calls].events {
+	// steering 等场景会追加轮次：越界时重复最后一条脚本。
+	idx := p.calls
+	if idx >= len(p.turns) {
+		idx = len(p.turns) - 1
+	}
+	out := make(chan ai.StreamEvent, len(p.turns[idx].events)+1)
+	for _, ev := range p.turns[idx].events {
 		out <- ev
 	}
 	p.calls++
