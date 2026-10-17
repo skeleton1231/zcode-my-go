@@ -18,6 +18,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
@@ -410,6 +411,18 @@ func (s *AgentService) ModelSuggestions() []string {
 		out = append(out, m.ID)
 	}
 	return out
+}
+
+// ExportSessionHTML writes a session's transcript as a standalone HTML
+// file to dest.
+func (s *AgentService) ExportSessionHTML(id, dest string) error {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	info := sess.Info()
+	doc := exporthtml.HTML(sess.Messages(), info.Title, s.resolve().Model, info.Workspace)
+	return os.WriteFile(dest, []byte(doc), 0o644)
 }
 
 // Abort cancels a session's running loop.
