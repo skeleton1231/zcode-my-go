@@ -17,12 +17,16 @@ type fakeRunner struct {
 	block   chan struct{}
 	fail    bool
 	summary string
+	entered chan struct{} // 非空时每次进入 run 发信号（Stop 排空测试）
 }
 
 func (f *fakeRunner) Run(ctx context.Context, job Job) (string, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, job.ID)
 	f.mu.Unlock()
+	if f.entered != nil {
+		f.entered <- struct{}{}
+	}
 	if f.block != nil {
 		<-f.block
 	}
@@ -254,5 +258,40 @@ func TestSummaryRuneSafe(t *testing.T) {
 	}
 	if !utf8.ValidString(long) {
 		t.Fatal("byte truncation produced invalid UTF-8")
+	}
+}
+
+// TestStopDrainsInflightFire 验证 Stop 排空在飞 fire（issue #134：曾只
+// 等 tick 循环——record 落盘晚于关闭，最后一条记录丢失且与 TempDir 清
+// 理竞争）。
+func TestStopDrainsInflightFire(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Upsert(Job{ID: "slow", Schedule: "* * * * *", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{}, 4)
+	block := make(chan struct{})
+	s := NewScheduler(store, &fakeRunner{block: block,
+		summary: "慢结果", entered: entered})
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.Local)
+	if err := store.Upsert(job("slow", "* * * * *", true, now.Add(-2*time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	s.now = func() time.Time { return now }
+	s.Start()
+	s.tick(context.Background()) // 直接触发一轮，免等分钟边界
+	<-entered                    // run 已在飞
+	go func() { time.Sleep(20 * time.Millisecond); s.Stop() }()
+	time.Sleep(60 * time.Millisecond) // 让首个 Stop 先 cancel（run 仍在飞）
+	close(block)
+	s.Stop() // 幂等：排空后返回，record 已落盘
+	jobs, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range jobs {
+		if j.ID == "slow" && j.LastSummary != "慢结果" {
+			t.Fatalf("in-flight record lost on Stop: %+v", j)
+		}
 	}
 }
