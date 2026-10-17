@@ -57,19 +57,20 @@ type SettingsView struct {
 
 // AgentService is the application service the UI calls.
 type AgentService struct {
-	mu       sync.Mutex
-	settings settings
-	path     string
-	mgr      *agent.Manager
-	ask      func(agent.AskRequest) agent.AskResponse
-	question func(ctx context.Context, q agent.Question) (string, error)
-	states   map[string]*tools.States // session-scoped tool state
-	mcp      []*mcp.Server            // launched MCP servers
-	memories map[string]*tools.Memory // workspace-scoped long-term memory
-	memRoot  string
-	wsCache  map[string]tools.Workspace // sessionID → (possibly remote) workspace
-	wsClose  map[string]func()          // sessionID → dial cleanup
-	askMu    sync.Mutex                 // asker 单槽串行化（issue #79）
+	mu               sync.Mutex
+	settings         settings
+	path             string
+	mgr              *agent.Manager
+	ask              func(agent.AskRequest) agent.AskResponse
+	question         func(ctx context.Context, q agent.Question) (string, error)
+	states           map[string]*tools.States // session-scoped tool state
+	mcp              []*mcp.Server            // launched MCP servers
+	memories         map[string]*tools.Memory // workspace-scoped long-term memory
+	memRoot          string
+	wsCache          map[string]tools.Workspace // sessionID → (possibly remote) workspace
+	wsClose          map[string]func()          // sessionID → dial cleanup
+	askMu            sync.Mutex                 // asker 单槽串行化（issue #79）
+	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -191,7 +192,12 @@ func (s *AgentService) Close() {
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.mgr.Wire(agent.Wiring{
-		Provider: func() ai.Provider { return providerFor(cfg, s.persistOAuth) },
+		Provider: func() ai.Provider {
+			if s.providerOverride != nil {
+				return s.providerOverride()
+			}
+			return providerFor(cfg, s.persistOAuth)
+		},
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
 		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
@@ -799,6 +805,15 @@ func (s *AgentService) Steer(sessionID, text string) error {
 		return fmt.Errorf("no session %s", sessionID)
 	}
 	return sess.Steer(text)
+}
+
+// UseProviderForTesting swaps the provider factory (e2e only). 覆盖是
+// 实例字段而非包级全局（review #87：全局会让未来任何并行测试静默互踩）。
+func (s *AgentService) UseProviderForTesting(fn func() ai.Provider) {
+	s.mu.Lock()
+	s.providerOverride = fn
+	s.mu.Unlock()
+	s.rewire()
 }
 
 // Abort cancels a session's running loop.
