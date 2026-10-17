@@ -8,14 +8,18 @@ package remotetest
 // rooted at a temp dir. The module's whole test bed — no protocol mocks.
 
 import (
+	"bytes"
+	"strings"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
 	"os/exec"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/pkg/sftp"
@@ -28,6 +32,46 @@ type Server struct {
 	Address  string
 	KeyPEM   string // client private key (PEM) for remote.Config.Key
 	Root     string // workspace root on disk
+
+	firstShellMu sync.Mutex
+	firstShell   string // 交互 shell 收到的首行（客户端 cd 注入探针）
+}
+
+// FirstShellLine 返回交互 shell 收到的首行输入（无则空）。真 SSH 服务
+// 器的 shell 落在登录 home，客户端必须注入 cd 才能落到工作区根
+// （issue #125）；测试服务器把 cwd 设为 root 掩盖了差异，记录首行让
+// 注入可断言。
+func (s *Server) FirstShellLine() string {
+	s.firstShellMu.Lock()
+	defer s.firstShellMu.Unlock()
+	return s.firstShell
+}
+
+// teeFirstLine 把首行（到换行）镜像进 Server，其余原样通过。
+func (s *Server) teeFirstLine(r io.Reader) io.Reader {
+	return &firstLineTee{srv: s, r: r}
+}
+
+type firstLineTee struct {
+	srv    *Server
+	r      io.Reader
+	buffer []byte
+	done   bool
+}
+
+func (t *firstLineTee) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	if n > 0 && !t.done {
+		t.buffer = append(t.buffer, p[:n]...)
+		if i := bytes.IndexByte(t.buffer, '\n'); i >= 0 {
+			t.srv.firstShellMu.Lock()
+			t.srv.firstShell = strings.TrimRight(string(t.buffer[:i]), "\r ")
+			t.srv.firstShellMu.Unlock()
+			t.done = true
+			t.buffer = nil
+		}
+	}
+	return n, err
 }
 
 // Start boots the server on an ephemeral loopback port.
@@ -78,7 +122,7 @@ func Start(t *testing.T) *Server {
 			if err != nil {
 				return
 			}
-			go serveConn(conn, cfg, root)
+			go serveConn(srv, conn, cfg, root)
 		}
 	}()
 	t.Cleanup(func() { ln.Close() })
@@ -86,7 +130,7 @@ func Start(t *testing.T) *Server {
 }
 
 // serveConn handles one SSH connection's channels.
-func serveConn(conn net.Conn, cfg *ssh.ServerConfig, root string) {
+func serveConn(srv *Server, conn net.Conn, cfg *ssh.ServerConfig, root string) {
 	sconn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {
 		conn.Close()
@@ -103,12 +147,12 @@ func serveConn(conn net.Conn, cfg *ssh.ServerConfig, root string) {
 		if err != nil {
 			continue
 		}
-		go serveSession(channel, requests, root)
+		go serveSession(srv, channel, requests, root)
 	}
 }
 
 // serveSession answers exec and sftp-subsystem requests.
-func serveSession(channel ssh.Channel, requests <-chan *ssh.Request, root string) {
+func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request, root string) {
 	defer channel.Close()
 	for req := range requests {
 		switch req.Type {
@@ -135,7 +179,7 @@ func serveSession(channel ssh.Channel, requests <-chan *ssh.Request, root string
 			req.Reply(true, nil)
 			cmd := interactiveShell()
 			cmd.Dir = root
-			cmd.Stdin = channel
+			cmd.Stdin = srv.teeFirstLine(channel)
 			cmd.Stdout = channel
 			cmd.Stderr = channel
 			runErr := cmd.Run()
