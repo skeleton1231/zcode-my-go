@@ -207,7 +207,11 @@ func runDAG(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep, deps 
 		prompt := dagPrompt(steps, results, state, deps[i], i)
 		sub := subConfigFor(cfg, steps[i])
 		go func() {
-			res, err := RunSubtask(ctx, sub, prompt)
+			// in-flight 步骤脱离取消跑完当前步骤（issue #96：注释承诺
+			// completion beats cancellation——abort 当场杀掉执行中的编辑
+			// 恰是注释自警的半成品风险）。失控由步骤自身的 MaxTurns 与
+			// 工具超时兜底；新派发仍被 abort/failedAt 挡住。
+			res, err := RunSubtask(context.WithoutCancel(ctx), sub, prompt)
 			finished <- completion{i, StepResult{Step: steps[i], Text: res.Text, Failed: err != nil}, err}
 		}()
 	}

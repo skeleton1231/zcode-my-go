@@ -401,3 +401,65 @@ func TestTruncateRuneSafe(t *testing.T) {
 		t.Fatal("short string mangled")
 	}
 }
+
+// abortGateProvider 阻塞到 release 放行才结束回合，started 计数进入
+// in-flight 的步骤。
+type abortGateProvider struct {
+	mu      sync.Mutex
+	started int
+	release chan struct{}
+}
+
+func (p *abortGateProvider) Stream(_ context.Context, _ ai.Request) <-chan ai.StreamEvent {
+	p.mu.Lock()
+	p.started++
+	p.mu.Unlock()
+	out := make(chan ai.StreamEvent, 2)
+	go func() {
+		defer close(out)
+		<-p.release
+		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "答案"}
+		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	}()
+	return out
+}
+
+// TestDAGAbortLetsInflightFinish 验证 abort 后 in-flight 步骤跑完当前
+// 步骤（issue #96：注释承诺 completion beats cancellation，实现却把
+// 同一 ctx 传进步骤——abort 当场杀掉正在执行的编辑，恰是注释自警的
+// 半成品风险）。步骤自身的 MaxTurns/工具超时兜底失控。
+func TestDAGAbortLetsInflightFinish(t *testing.T) {
+	p := &abortGateProvider{release: make(chan struct{})}
+	steps := []WorkflowStep{
+		{Name: "a", Kind: StepResearch, Description: "研究一"},
+		{Name: "b", Kind: StepResearch, Description: "研究二"},
+		{Name: "c", Kind: StepResearch, Description: "汇总", After: []string{"a"}},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var results []StepResult
+	var werr error
+	go func() {
+		defer close(done)
+		results, werr = RunWorkflow(ctx, WorkflowConfig{Provider: p, Model: "m"}, steps)
+	}()
+	// 两个步骤都进入 in-flight 后 abort，再放行——步骤应完成而非被杀。
+	for {
+		p.mu.Lock()
+		n := p.started
+		p.mu.Unlock()
+		if n >= 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	close(p.release)
+	<-done
+	if werr != nil {
+		t.Fatalf("workflow error: %v", werr)
+	}
+	if len(results) != 3 || results[0].Failed || results[1].Failed || results[2].Failed {
+		t.Fatalf("in-flight steps killed by abort: %+v", results)
+	}
+}
