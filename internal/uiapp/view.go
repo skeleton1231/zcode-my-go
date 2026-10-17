@@ -367,6 +367,13 @@ func (a *App) statusView(c *ui.Context, t *ui.Theme) {
 		}
 		ui.Text(c, model).TextColor(t.TextMuted).FontSize(12)
 		ui.Spacer(c)
+		if b := a.budget; b != nil && b.Window > 0 {
+			pct := 100 * b.Used / b.Window
+			ui.Meter(c, float64(b.Used), 0, float64(b.Window), &ui.MeterLevels{
+				Warning:  float64(b.Threshold) * 0.8,
+				Critical: float64(b.Threshold),
+			}).Label("上下文 " + itoa(pct) + "%").Width(110)
+		}
 		ui.Text(c, formatUsage(a.chat)).TextColor(t.TextMuted).FontSize(12)
 	})
 }
