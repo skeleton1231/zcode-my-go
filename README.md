@@ -1,70 +1,61 @@
 # Zgo
 
 <div align="center"><strong>Zgo — 属于你的开源桌面 Coding Agent</strong></div>
-<div align="center">Go 后端 · mygo 桌面壳 · React 前端 · Anthropic 兼容协议</div>
+<div align="center">纯 Go · mygo native UI · 零 Webview · 零前端工具链</div>
 
 <p align="center">简体中文 | <a href="README.en.md">English</a></p>
 
 ---
 
-Zgo 是一个开源的桌面 coding agent：
+Zgo 是一个开源的桌面 coding agent，**纯 Go 单二进制**：
 
-- **一个 Go 二进制**：基于 [mygo](https://github.com/egoist/mygo) 桌面框架
-  （系统 WebView，无 cgo，跨平台单一可执行文件），内嵌完整 agent 核心。
-- **agent 架构源自 pi**（[earendil-works/pi](https://github.com/earendil-works/pi)）
-  的分层设计：provider 抽象、双层 agent loop、类型化事件流、工具执行引擎。
+- 基于 [mygo](https://github.com/egoist/mygo) 的 **native UI**（package `ui`，
+  Metal / Direct3D 11 / OpenGL 上由 Go 自绘）：无 HTML、无 JavaScript、无
+  webview 进程、无 Bun/Node —— 开发与运行都只要 Go。
+- **agent 架构源自 pi**（[earendil-works/pi](https://github.com/earendil-works/pi)）：
+  provider 抽象、工具调用循环、类型化事件流、截断调用保护。
 - **工程规范源自 ZCode**：spec 先行（`specs/`）、架构治理
   （`architecture-policy.yaml`）、领域词汇（`CONTEXT.md`）、UI 设计规范
   （`DESIGN.md`）。
 
 ```
-frontend (React)  ──mygo typed IPC──▶  AgentService  ──▶  agent loop
-                                                       ├─▶ ai (provider 流式)
-                                                       └─▶ tools (read/write/edit/bash/grep/glob/ls)
+native UI (package ui)  ──▶  AgentService  ──▶  agent loop
+   纯 Go 自绘视图              设置 · 会话         ├─▶ ai（Anthropic 兼容 SSE）
+   win.Update 跨线程           生命周期           └─▶ tools（read/write/edit/bash/grep/glob/ls）
 ```
 
 ## 特性
 
-- **流式对话**：SSE 流式回复，类型化事件（text_delta / tool_call / usage）直达前端。
-- **工具执行**：读 / 写 / 精确编辑 / shell（Windows 走 PowerShell）/ grep / glob / ls，
-  path jail 限制在 workspace 内，输出自动截断。
+- **流式对话**：SSE 流式回复，text_delta / 工具调用 / usage 事件经
+  `win.Update` 直达自绘界面（Markdown 流式渲染）。
+- **工具执行**：读 / 写 / 精确编辑 / shell（Windows 走 PowerShell）/ grep /
+  glob / ls，path jail 限制在 workspace 内，输出自动截断。
 - **会话持久化**：JSONL 追加式历史，重启恢复。
 - **多 Provider**：任何 Anthropic 兼容端点 —— Anthropic 官方、智谱 GLM
   （`https://open.bigmodel.cn/api/anthropic`）、Kimi 等。
-- **中止安全**：随时 Stop，LLM 流与运行中工具一并取消。
+- **中止安全**：随时停止，LLM 流与运行中工具一并取消，会话可继续。
+- **即时启动**：无 webview 进程，窗口秒开、内存占用小。
 
 ## 快速开始
 
-依赖：Go 1.27+、Bun（仅前端开发）、Node.js 22+。
+只依赖 Go 1.27+：
 
 ```bash
-# 1. 前端依赖
-bun install
-
-# 2. 开发模式（热重载）
-bun run dev
-
-# 3. 或直接跑 Go（构建前端后）
-bun run --cwd frontend build:web
-go run .
+go tool mygo dev      # 开发模式（热重载）
+go test ./...         # 全部测试（含无窗口视图测试）
+go tool mygo build    # 打包（.exe 安装器 / .dmg / .deb）
 ```
 
-首次启动后在设置面板填入：
+首次启动后在设置弹窗填入：
 
-| 配置     | 示例                                        | 说明                       |
-| -------- | ------------------------------------------- | -------------------------- |
-| Base URL | `https://api.anthropic.com`                 | 或 GLM / Kimi 兼容端点     |
-| API Key  | `sk-...`                                    | 只存本地，不进日志与会话   |
-| Model    | `claude-sonnet-4-5` / `glm-5.2` …          | 端点支持的任意模型 ID      |
+| 配置     | 示例                              | 说明                     |
+| -------- | --------------------------------- | ------------------------ |
+| Base URL | `https://api.anthropic.com`       | 或 GLM / Kimi 兼容端点   |
+| API Key  | `sk-...`                          | 只存本地，不回显         |
+| Model    | `claude-sonnet-4-5` / `glm-5.2` …| 端点支持的任意模型 ID    |
 
 也可用环境变量：`ANTHROPIC_BASE_URL`、`ANTHROPIC_API_KEY`、`ZGO_MODEL`
 （env 优先于设置文件）。
-
-## 打包
-
-```bash
-bun run build   # 产出安装包（.exe 安装器 / .dmg / .deb，见 mygo 分发文档）
-```
 
 ## 工程文档
 

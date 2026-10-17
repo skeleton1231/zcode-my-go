@@ -1,14 +1,14 @@
 # Zgo 架构
 
-一个二进制的桌面 coding agent：mygo 桌面壳（系统 WebView，无 cgo）包着 Go
-agent 核心，前端是 Vite + React 静态产物。
+一个纯 Go 二进制的桌面 coding agent：mygo native UI（package `ui`，无
+webview、无前端构建）包着 Go agent 核心。
 
 ```
-┌─ frontend (React) ────────────────────────────────────────────┐
-│  App → agent.ts reducer（事件流 → 视图模型）                    │
-│        ↕ mygo typed IPC（生成客户端 frontend/src/mygo.ts）       │
-├─ internal/service AgentService（mygo.Bind；前端唯一入口）─────────┤
-│        ↓ Chat(sessionID, text, Channel[Event])                 │
+┌─ internal/uiapp ── native UI（package ui）─────────────────────┐
+│  App（视图状态）· chatState（事件流折叠）· View 每帧构建        │
+│        ↓ 直接方法调用（App.update → win.Update 回主线程）        │
+├─ internal/service AgentService（UI 唯一入口）───────────────────┤
+│        ↓ Chat(sessionID, text, emit func(Event))               │
 ├─ internal/agent ──────────────────────────────────────────────┤
 │  Session（JSONL 持久化、abort）→ Loop（回合循环、事件流）        │
 │        ↓ Provider 接口               ↓ Tool 接口               │
@@ -34,9 +34,11 @@ agent 核心，前端是 Vite + React 静态产物。
   `Workspace.Resolve` 的 path jail；所有输出有上限
   （`tools.go` 的常量表）；bash 在 Windows 走 PowerShell，带超时。
 - `service`：设置解析（env > 设置文件 > 默认值，key 不出 Go 侧）、
-  会话生命周期、`mygo.Channel` 事件转发；页面断开时中止运行。
-- `frontend`：只 import 生成客户端；`agent.ts` 是纯函数 reducer，
-  把事件流折叠成视图模型（`agent.test.ts` 覆盖）。
+  会话生命周期、`Chat` 以回调转发事件；`PickWorkspace` 用系统对话框。
+- `uiapp`：native UI 层。`chatState` 是事件流的纯函数折叠（视图状态，
+  不落库）；`App.View` 每帧由状态构建。线程模型：视图与状态修改都在主
+  线程，agent 回合 / 对话框 / 设置保存在独立 goroutine，经 `App.update`
+  （有窗口时 `win.Update`，测试时直接执行）回到主线程。
 
 ## 持久化
 
@@ -46,12 +48,23 @@ agent 核心，前端是 Vite + React 静态产物。
 
 ## 线程模型
 
-mygo 的绑定方法各跑在独立 goroutine；`Session` 以 mutex 保护
-历史与运行标志（锁序 Manager → Session，无环）。abort 通过
-`context.CancelFunc` 贯穿 provider 流与工具执行。
+视图函数跑在主线程，每帧重建；跨 goroutine 的状态变更必须走
+`win.Update`。`Session` 以 mutex 保护历史与运行标志（锁序
+Manager → Session，无环）。abort 通过 `context.CancelFunc` 贯穿
+provider 流与工具执行。
 
-## 已知边界（v0.1）
+## 测试
+
+- `internal/agent`、`internal/ai`、`internal/tools`：单元测试
+  （fake provider、httptest SSE、临时目录）。
+- `internal/uiapp`：`chatState` 折叠的单元测试 + `ui.NewTester`
+  无窗口视图测试（打开会话→发送→终止、设置弹窗保存）。
+- 真实端点冒烟：`ZGO_SMOKE_BASE_URL/KEY/MODEL` 驱动
+  `TestSmokeRealProvider`（CI 默认跳过）。
+
+## 已知边界（v0.2）
 
 - 工具按序执行（sequential）；并行执行与 steering 队列是接口预留。
 - 上下文无 compaction：超长会话需新建会话。
 - GLM 兼容端点流式响应不报 input_tokens（message_delta 兼容补报已加）。
+- 工具块删除会话无确认对话框（菜单触发，后续可加 `ui.Modal` 确认）。

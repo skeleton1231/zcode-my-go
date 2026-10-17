@@ -1,10 +1,10 @@
-// Package service is the boundary between the frontend and the agent core:
-// it owns settings, the session manager, and the mygo-bound AgentService.
-// The frontend never touches agent, ai or tools directly (specs/desktop-shell.md).
+// Package service is the boundary between the UI and the agent core: it
+// owns settings, the session manager, and the workspace dialog. The UI
+// (native, package ui) never touches agent, ai or tools directly
+// (specs/desktop-shell.md).
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,9 +19,6 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
-// SessionsChanged fires in every window whenever the session index changes.
-var SessionsChanged = mygo.NewEvent[[]agent.SessionInfo]("agent:sessions-changed")
-
 // DefaultBaseURL is the Anthropic Messages API; GLM and other compatible
 // endpoints override it in settings.
 const DefaultBaseURL = "https://api.anthropic.com"
@@ -33,7 +30,7 @@ type settings struct {
 	Model   string `json:"model"`
 }
 
-// SettingsView is what the frontend sees: the key never crosses to the page.
+// SettingsView is what the UI sees: the key never crosses to it in full.
 type SettingsView struct {
 	BaseURL   string `json:"baseUrl"`
 	Model     string `json:"model"`
@@ -41,7 +38,7 @@ type SettingsView struct {
 	KeyHint   string `json:"keyHint"` // e.g. "sk-…abcd", for display only
 }
 
-// AgentService is bound as "Agent" and is the frontend's only entry point.
+// AgentService is the application service the UI calls.
 type AgentService struct {
 	mu       sync.Mutex
 	settings settings
@@ -105,7 +102,7 @@ func (s *AgentService) loadSettings() error {
 	return json.Unmarshal(data, &s.settings)
 }
 
-// view projects the resolved settings for the frontend.
+// view projects the resolved settings for the UI.
 func (s *AgentService) view() SettingsView {
 	cfg := s.resolve()
 	v := SettingsView{BaseURL: cfg.BaseURL, Model: cfg.Model, HasAPIKey: cfg.APIKey != ""}
@@ -117,8 +114,6 @@ func (s *AgentService) view() SettingsView {
 	return v
 }
 
-// --- bound methods -------------------------------------------------------
-
 // GetSettings returns the resolved settings, without the API key.
 func (s *AgentService) GetSettings() SettingsView {
 	s.mu.Lock()
@@ -127,7 +122,7 @@ func (s *AgentService) GetSettings() SettingsView {
 }
 
 // SaveSettings stores the configuration. An empty apiKey keeps the stored
-// key, so the page never needs to echo it back.
+// key, so the UI never needs to echo it back.
 func (s *AgentService) SaveSettings(baseURL, apiKey, model string) (SettingsView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,10 +149,10 @@ func (s *AgentService) SaveSettings(baseURL, apiKey, model string) (SettingsView
 	return s.view(), nil
 }
 
-// PickWorkspace asks the user for a workspace directory.
-func (s *AgentService) PickWorkspace(ctx context.Context) (string, error) {
+// PickWorkspace asks the user for a workspace directory. parent may be nil.
+func (s *AgentService) PickWorkspace(parent *mygo.Window) (string, error) {
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-		Parent:    mygo.CallerWindow(ctx),
+		Parent:    parent,
 		Directory: true,
 		Title:     "选择工作区",
 	})
@@ -183,7 +178,6 @@ func (s *AgentService) NewSession(workspace string) (agent.SessionInfo, error) {
 	if err != nil {
 		return agent.SessionInfo{}, err
 	}
-	SessionsChanged.Broadcast(s.mgr.List())
 	return sess.Info(), nil
 }
 
@@ -194,11 +188,7 @@ func (s *AgentService) ListSessions() []agent.SessionInfo {
 
 // DeleteSession removes a session.
 func (s *AgentService) DeleteSession(id string) error {
-	if err := s.mgr.Delete(id); err != nil {
-		return err
-	}
-	SessionsChanged.Broadcast(s.mgr.List())
-	return nil
+	return s.mgr.Delete(id)
 }
 
 // Messages returns a session's transcript for replay.
@@ -210,23 +200,15 @@ func (s *AgentService) Messages(id string) ([]ai.Message, error) {
 	return sess.Messages(), nil
 }
 
-// Chat sends a user message and streams the run's events to the calling
-// page. It returns when the run ends; the channel is closed after.
-func (s *AgentService) Chat(ctx context.Context, sessionID, text string, out *mygo.Channel[agent.Event]) error {
+// Chat sends a user message and calls emit for every event of the run, on
+// the caller's goroutine. The UI wraps emit in Window.Update and calls Chat
+// off the main thread.
+func (s *AgentService) Chat(sessionID, text string, emit func(agent.Event)) error {
 	sess, ok := s.mgr.Get(sessionID)
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
 	}
-	defer func() {
-		out.Close()
-		SessionsChanged.Broadcast(s.mgr.List())
-	}()
-	return sess.Chat(text, func(ev agent.Event) {
-		// A page that went away stops the run, not the session.
-		if err := out.Send(ev); err != nil {
-			sess.Abort()
-		}
-	})
+	return sess.Chat(text, emit)
 }
 
 // Abort cancels a session's running loop.

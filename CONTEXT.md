@@ -13,6 +13,9 @@
 | Provider        | LLM API 适配器（Anthropic 兼容协议：Anthropic / GLM / Kimi…）     |
 | Workspace       | 工具的文件访问根目录（path jail 边界）                            |
 | StopReason      | 一轮结束原因：end_turn / tool_use / length / error / aborted      |
-| Steering        | agent 运行中插入的用户消息（排队，下一 drain 点注入）             |
+| chatState       | uiapp 中事件流折叠出的视图状态（派生数据，不落库）                |
+| chatItem        | chatState 的一行：用户消息 / assistant 消息 / 工具块              |
 | Settings        | 用户配置：baseURL / apiKey / model；env 优先于文件                |
-| Channel         | mygo 的 Go→页面流式通道（`mygo.Channel[T]`）                       |
+| View            | native UI 的视图函数：每帧由状态构建（package ui）                |
+| Frame           | 一次视图构建；`ui.Tester.Frame()` 在测试中驱动                    |
+| win.Update      | 跨 goroutine 把状态变更排回主线程重绘的机制                       |

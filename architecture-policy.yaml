@@ -2,10 +2,10 @@ version: 1
 
 # 模块依赖治理。所有模块 managed: true；新增模块必须登记。
 # 依赖方向（tools 只依赖 agent 的 Tool 接口，接口定义在消费方）：
-#   service → agent → (ai, prompt)；tools → agent(接口)；main → service
+#   uiapp → service → agent → (ai, prompt)；tools → agent(接口)；main → service, uiapp
 # 审查规则：
 #   - import 出现 policy 之外的路径 → 架构违规
-#   - frontend 只允许 import ./mygo（生成客户端）与前端自身模块
+#   - uiapp 不允许 import agent/ai/tools（只经 service）
 modules:
   - id: ai
     roots: [internal/ai]
@@ -27,11 +27,11 @@ modules:
     roots: [internal/service]
     managed: true
     requires: [agent, ai, tools, prompt]
+  - id: uiapp
+    roots: [internal/uiapp]
+    managed: true
+    requires: [service, agent] # agent 仅事件/会话类型
   - id: shell
     roots: [main.go]
     managed: true
-    requires: [service]
-  - id: frontend
-    roots: [frontend/src]
-    managed: true
-    requires: [frontend/src/mygo.ts]
+    requires: [service, uiapp]

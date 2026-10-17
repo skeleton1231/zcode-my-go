@@ -1,16 +1,16 @@
 # Build outputs
 build/
 dist/
-*.exe
-*.app
 
 # mygo dev artifacts
 .mygo/
+mygo_windows_*.syso
 
-# Node
+# Node (only if the web UI route is ever revived)
 node_modules/
 
 # Go
+*.exe
 *.test
 *.out
 coverage.*

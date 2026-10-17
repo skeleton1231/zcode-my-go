@@ -1,0 +1,228 @@
+package uiapp
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown"
+)
+
+// View builds the window: a session sidebar, the chat, the composer and a
+// status bar. Runs on the main thread for every frame.
+func (a *App) View(c *ui.Context) {
+	t := c.Theme()
+	a.md.Reveal = &markdown.Reveal{Unit: markdown.ByWord}
+
+	ui.Row(c).Fill().Children(func() {
+		a.sidebarView(c, t)
+		ui.Column(c).Grow(1).Children(func() {
+			a.chatView(c, t)
+			a.composerView(c, t)
+			a.statusView(c, t)
+		})
+	})
+
+	a.settingsModal(c, t)
+}
+
+// sidebarView lists sessions under the brand, with the actions below.
+func (a *App) sidebarView(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Width(232).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Row(c).Padding(14, 16).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "Zgo").Bold().FontSize(15)
+			ui.Spacer(c)
+			if ui.Button(c, "设置…").Clicked() {
+				a.OpenSettings()
+			}
+		})
+		choice := a.activeID
+		sb := ui.Sidebar(c, &choice, func() {
+			ui.SidebarSection(c, "会话", nil, func() {
+				for _, s := range a.sessions {
+					label := s.Title
+					if label == "" {
+						label = "（未命名）"
+					}
+					if s.Running {
+						label = "▶ " + label
+					}
+					ui.SidebarItem(c, s.ID, nil, label)
+				}
+			})
+		}).Grow(1)
+		if sb.Changed() {
+			a.open(choice)
+		}
+		ui.Row(c).Padding(10, 12).Children(func() {
+			if ui.Button(c, "＋ 新会话…").Grow(1).Clicked() {
+				a.NewSession()
+			}
+		})
+	})
+}
+
+// chatView streams the conversation, following its end.
+func (a *App) chatView(c *ui.Context, t *ui.Theme) {
+	if a.activeID == "" {
+		a.welcomeView(c, t)
+		return
+	}
+	a.list.Key = func(i int) any { return i } // append-only rows
+	a.list.FollowEnd = true
+	a.list.FollowAnimation = &ui.Smooth
+	ui.List(c, &a.list, len(a.chat.items), func(i int) {
+		a.itemView(c, t, &a.chat.items[i])
+	}).Grow(1).Padding(16, 24).Gap(14).Justify(ui.End).Children(func() {
+		if len(a.chat.items) == 0 {
+			ui.Text(c, "把任务交给 agent：读代码、改文件、跑命令。").TextColor(t.TextMuted).Margin(ui.Auto)
+		}
+	})
+	if a.chat.endErr != "" {
+		// 终止错误以横幅形式钉在消息区底部。
+		ui.Row(c).Padding(6, 24).Children(func() {
+			ui.Text(c, a.chat.endErr).TextColor(t.Danger).FontSize(12)
+		})
+	}
+}
+
+// welcomeView is the empty state before any session is chosen.
+func (a *App) welcomeView(c *ui.Context, t *ui.Theme) {
+	needsSetup := a.settings != nil && (!a.settings.HasAPIKey || a.settings.Model == "")
+	ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
+		ui.Text(c, "Zgo").FontSize(30).Bold()
+		ui.Text(c, "开源桌面 coding agent · 纯 Go").TextColor(t.TextMuted)
+		if needsSetup {
+			ui.Text(c, "尚未配置 API Key 或模型：先点「设置…」完成配置。").TextColor(t.Warning)
+		}
+		if ui.PrimaryButton(c, "选择工作区开始…").Clicked() {
+			a.NewSession()
+		}
+		ui.Text(c, "Enter 发送 · Shift+Enter 换行").TextColor(t.TextMuted).FontSize(12)
+	})
+}
+
+// itemView renders one chat row: the user's in a bubble, the assistant's as
+// Markdown, tool calls as collapsible blocks.
+func (a *App) itemView(c *ui.Context, t *ui.Theme, item *chatItem) {
+	switch item.kind {
+	case itemUser:
+		ui.Row(c).Children(func() {
+			ui.Spacer(c)
+			ui.Text(c, item.text).Selectable().Padding(8, 12).Radius(12).
+				Background(t.Surface).MaxWidth(520)
+		})
+
+	case itemAssistant:
+		ui.Column(c).MaxWidth(760).Grow(1).Children(func() {
+			if item.streaming {
+				markdown.Stream(c, item.text, &a.md)
+			} else {
+				markdown.View(c, item.text, &a.md)
+			}
+			if item.errMsg != "" {
+				ui.Text(c, item.errMsg).TextColor(t.Danger).FontSize(12)
+			}
+		})
+
+	case itemTool:
+		a.toolView(c, t, item)
+	}
+}
+
+// toolView is a collapsible card: status mark · name · argument summary,
+// the full output below when open.
+func (a *App) toolView(c *ui.Context, t *ui.Theme, item *chatItem) {
+	label := fmt.Sprintf("%s %s · %s", statusMark(item), item.name, summarizeArgs(item.args))
+	ui.Column(c).MaxWidth(760).Grow(1).Children(func() {
+		ui.Collapsible(c, label, &item.open, func() {
+			ui.Scroll(c).MaxHeight(300).Children(func() {
+				ui.Text(c, outputOf(item)).Font("monospace").FontSize(12).
+					TextColor(t.TextMuted).Selectable()
+			})
+		})
+	})
+}
+
+func statusMark(item *chatItem) string {
+	switch {
+	case item.running:
+		return "▶"
+	case item.isError:
+		return "✕"
+	default:
+		return "✓"
+	}
+}
+
+func outputOf(item *chatItem) string {
+	if item.result != "" {
+		return item.result
+	}
+	if item.running {
+		return "运行中…"
+	}
+	return "（无输出）"
+}
+
+// summarizeArgs flattens the tool's JSON arguments to one short line.
+func summarizeArgs(args string) string {
+	args = strings.TrimSpace(args)
+	if args == "" || args == "{}" {
+		return ""
+	}
+	// 常见形状是 {"k":"v",…}：剥掉大括号与引号，截断即可。
+	trimmed := strings.TrimSuffix(strings.TrimPrefix(args, "{"), "}")
+	trimmed = strings.ReplaceAll(trimmed, "\"", "")
+	if len([]rune(trimmed)) > 60 {
+		trimmed = string([]rune(trimmed)[:59]) + "…"
+	}
+	return trimmed
+}
+
+// composerView is the input row: Enter sends, Shift+Enter breaks the line,
+// the button stops a run in progress.
+func (a *App) composerView(c *ui.Context, t *ui.Theme) {
+	ui.Row(c).Gap(8).Padding(10, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
+		AlignItems(ui.End).Children(func() {
+		area := ui.TextArea(c, &a.input).Placeholder("描述任务…（Shift+Enter 换行）").Grow(1).Lines(1, 8)
+		area.OnTextKey(func(k ui.TextKey) bool {
+			switch {
+			case k.Key == ui.KeyEnter && k.Mods == 0:
+				if a.activeID != "" && !a.chat.running {
+					a.Send()
+					k.SetText("")
+				}
+				return true // 不插入换行
+			case k.Key == ui.KeyUp && k.Mods == 0 && k.Text() == "" && a.lastSent != "":
+				k.SetText(a.lastSent)
+				return true
+			}
+			return false
+		})
+		if a.chat.running {
+			if ui.Button(c, "停止").Clicked() {
+				a.Stop()
+			}
+		} else if ui.PrimaryButton(c, "发送").
+			Disabled(a.activeID == "" || strings.TrimSpace(a.input) == "").Clicked() {
+			a.Send()
+		}
+	})
+}
+
+// statusView shows the model and the run's token usage.
+func (a *App) statusView(c *ui.Context, t *ui.Theme) {
+	ui.Row(c).Padding(4, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		model := "未配置模型"
+		if a.settings != nil && a.settings.Model != "" {
+			model = a.settings.Model
+		}
+		if a.chat.running {
+			model = "● " + model
+		}
+		ui.Text(c, model).TextColor(t.TextMuted).FontSize(12)
+		ui.Spacer(c)
+		ui.Text(c, formatUsage(a.chat)).TextColor(t.TextMuted).FontSize(12)
+	})
+}
