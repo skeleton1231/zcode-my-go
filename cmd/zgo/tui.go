@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -14,7 +15,11 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
+
+// planMaxRows 是任务面板固定块最多渲染的任务条数（超出折叠 …+N）。
+const planMaxRows = 6
 
 // ANSI 前景码：颜色只加在最终字符串外层（wrap 已完成），不参与宽度计算。
 const (
@@ -52,6 +57,16 @@ type tuiState struct {
 	redraw  chan struct{}
 
 	attach attachments // /attach 攒图，随下一条消息发送
+
+	// 回合导航（ZCode task-navigation 的 TUI 面）：topIdx 是视口首行的绝
+	// 对下标，-1 表示尾随最新（零值 0 会钉在转录顶部，构造方必须显式置
+	// -1）；turns 登记用户回合行下标，turnCur 是回合游标（-1 表示在最新）。
+	topIdx  int
+	turns   []int
+	turnCur int
+
+	plan   []tools.TodoTask     // 任务面板：todo 工具落盘后刷新
+	onPlan func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
 }
 
 // runTUI drives the interactive full-screen interface. It returns the
@@ -65,7 +80,7 @@ func runTUI(svc *service.AgentService, workspace string) int {
 	}
 	defer term.Restore(fd, original)
 
-	s := &tuiState{status: "就绪", redraw: make(chan struct{}, 1)}
+	s := &tuiState{status: "就绪", redraw: make(chan struct{}, 1), topIdx: -1, turnCur: -1}
 	s.resize()
 	s.push(fmt.Sprintf("zgo 全屏模式 · 工作区 %s · Ctrl+C 退出 · Enter 发送", workspace))
 	s.push("命令：/exit 退出 · /compact 压缩 · /plan 计划模式 · /new 新会话")
@@ -75,6 +90,8 @@ func runTUI(svc *service.AgentService, workspace string) int {
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		return 1
 	}
+	// 闭包按引用捕获 info：/new 经 SetSession 换 ID 后面板读到新会话。
+	s.onPlan = func() []tools.TodoTask { return svc.TodoPlan(info.ID) }
 	svc.SetAsker(stdinAsker)
 	svc.SetQuestion(stdinQuestion)
 
@@ -103,7 +120,7 @@ func runTUI(svc *service.AgentService, workspace string) int {
 			if line == "" {
 				return
 			}
-			s.push(ansi(ansiCyan, "你 > ") + line)
+			s.pushTurn(line)
 			s.handleLine(line, svc, &info, workspace)
 		}) {
 		case keyQuit:
@@ -124,6 +141,7 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 	// 命令在后台执行（/compact 等是网络调用，同步会卡住输入循环——
 	// 原 TUI 实现即为异步）；push 自带锁。
 	go func() {
+		prevID := info.ID
 		handled, quit := runSlashCommand(&commandEnv{
 			svc: svc, info: info, workspace: workspace,
 			out:    func(msg string) { s.push(msg) },
@@ -134,6 +152,9 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 			os.Exit(0)
 		}
 		if handled {
+			if info.ID != prevID { // /new 换了会话：旧回合锚点与计划作废
+				s.resetSessionView()
+			}
 			s.requestRedraw()
 		}
 	}()
@@ -177,6 +198,10 @@ func (s *tuiState) applyEvent(ev agent.Event, last *string) {
 	case agent.EvToolExecutionStart:
 		s.lines = append(s.lines, ansi(ansiGray, "  ⚙ "+ev.ToolName+" "+oneLine(ev.Args)))
 	case agent.EvToolExecutionEnd:
+		// 任务面板（规则 18）：todo 落盘即刷新计划快照。
+		if ev.ToolName == "todo" && s.onPlan != nil {
+			s.plan = s.onPlan()
+		}
 		if ev.IsError {
 			s.lines = append(s.lines, ansi(ansiRed, "  ✕ "+firstLine(ev.ResultContent)))
 		}
@@ -214,6 +239,125 @@ func (s *tuiState) push(line string) {
 	s.requestRedraw()
 }
 
+// pushTurn 记录一个用户回合行并登记回合导航锚点；新回合即回到最新。
+func (s *tuiState) pushTurn(line string) {
+	s.mu.Lock()
+	s.lines = append(s.lines, wrap(ansi(ansiCyan, "你 > ")+line, s.width))
+	s.turns = append(s.turns, len(s.lines)-1)
+	s.turnCur = -1
+	s.mu.Unlock()
+	s.requestRedraw()
+}
+
+// resetSessionView 清空回合锚点与计划（/new 换会话后旧数据不再有意义）；
+// 转录行保留（跨会话历史本就同屏滚动）。
+func (s *tuiState) resetSessionView() {
+	s.mu.Lock()
+	s.turns, s.turnCur, s.topIdx, s.plan = nil, -1, -1, nil
+	s.mu.Unlock()
+	s.requestRedraw()
+}
+
+// bodyRows 是转录可用行数（扣状态行与输入行；调用方持锁或独占）。
+func (s *tuiState) bodyRows() int {
+	body := s.height - 2
+	if body < 1 {
+		body = 1
+	}
+	return body
+}
+
+// jumpTurn 在用户回合间跳转（桌面 Ctrl+↑/↓ 同语义）：从尾随态首次向上
+// 跳到最后一轮；到最早回合再向上不动；向下越过最新一轮恢复尾随。
+func (s *tuiState) jumpTurn(dir int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.turns) == 0 {
+		return
+	}
+	at := s.turnCur
+	if at < 0 || at >= len(s.turns) {
+		at = len(s.turns) // 游标在「最新（尾随）」位
+	}
+	at += dir
+	if at < 0 || at > len(s.turns) {
+		return // 边界：不动
+	}
+	if at == len(s.turns) { // 越过最新 → 恢复尾随
+		s.topIdx, s.turnCur = -1, -1
+		s.requestRedraw()
+		return
+	}
+	s.turnCur = at
+	body := s.bodyRows()
+	top := s.turns[at]
+	if top+body > len(s.lines) {
+		top = len(s.lines) - body
+	}
+	if top < 0 {
+		top = 0
+	}
+	s.topIdx = top
+	s.requestRedraw()
+}
+
+// pageScroll 半屏滚动（PageUp/PageDown）；滚到底恢复尾随，其余夹紧。
+func (s *tuiState) pageScroll(dir int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	body := s.bodyRows()
+	if len(s.lines) <= body {
+		return
+	}
+	top := s.topIdx
+	if top < 0 {
+		top = len(s.lines) - body // 尾随态的窗口顶
+	}
+	top += dir * body / 2
+	if top < 0 {
+		top = 0
+	}
+	if top > len(s.lines)-body {
+		if dir > 0 { // 向下滚到底 → 尾随
+			s.topIdx = -1
+			s.requestRedraw()
+			return
+		}
+		top = len(s.lines) - body
+	}
+	s.topIdx = top
+	s.requestRedraw()
+}
+
+// planLines 渲染任务面板固定块（标记与桌面 planView 同一套：▶/✓/□）。
+func planLines(plan []tools.TodoTask, maxRows int) []string {
+	if len(plan) == 0 {
+		return nil
+	}
+	done := 0
+	for _, t := range plan {
+		if t.Status == tools.TodoDone {
+			done++
+		}
+	}
+	lines := []string{ansi(ansiBlue, fmt.Sprintf("计划 · %d/%d", done, len(plan)))}
+	for i, t := range plan {
+		if i == maxRows {
+			lines = append(lines, ansi(ansiGray, fmt.Sprintf("  …+%d", len(plan)-maxRows)))
+			break
+		}
+		mark := "□"
+		switch t.Status {
+		case tools.TodoInProgress:
+			mark = "▶"
+		case tools.TodoDone:
+			mark = "✓"
+		}
+		lines = append(lines, ansi(ansiGray, "  "+mark+" "+t.Content))
+	}
+	return lines
+}
+
 func (s *tuiState) requestRedraw() {
 	select {
 	case s.redraw <- struct{}{}:
@@ -229,8 +373,9 @@ func (s *tuiState) resize() {
 	}
 }
 
-// draw renders the alternate screen: transcript, status, input.
-func (s *tuiState) draw(out *os.File) {
+// draw renders the alternate screen: plan block, transcript, status, input.
+// out 收 io.Writer 以便无终端测试。
+func (s *tuiState) draw(out io.Writer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	w, h := s.width, s.height
@@ -239,10 +384,32 @@ func (s *tuiState) draw(out *os.File) {
 	}
 	var b strings.Builder
 	b.WriteString("\x1b[?1049h\x1b[2J\x1b[H") // 备用屏 + 清屏 + 回起点
-	body := h - 2                             // 状态行 + 输入行
-	visible := s.lines
-	if len(visible) > body {
-		visible = visible[len(visible)-body:]
+	plan := planLines(s.plan, planMaxRows)
+	for _, line := range plan {
+		b.WriteString(line + "\x1b[K\n")
+	}
+	body := h - 2 - len(plan) // 状态行 + 输入行 + 计划块
+	if body < 1 {
+		body = 1
+	}
+	var visible []string
+	if s.topIdx >= 0 { // 回合导航/滚动：绝对下标窗口，夹紧防越界
+		top := s.topIdx
+		if maxTop := len(s.lines) - body; top > maxTop {
+			top = maxTop
+		}
+		if top < 0 {
+			top = 0
+		}
+		end := top + body
+		if end > len(s.lines) {
+			end = len(s.lines)
+		}
+		visible = s.lines[top:end]
+	} else if len(s.lines) > body { // 尾随：贴底窗口
+		visible = s.lines[len(s.lines)-body:]
+	} else {
+		visible = s.lines
 	}
 	for _, line := range visible {
 		b.WriteString(line + "\x1b[K\n")
@@ -259,7 +426,7 @@ func (s *tuiState) draw(out *os.File) {
 	}
 	b.WriteString("\x1b[7m " + status + strings.Repeat(" ", max(0, w-2-len([]rune(plain)))) + " \x1b[0m\n")
 	b.WriteString("> " + string(s.input) + "\x1b[K")
-	out.WriteString(b.String())
+	io.WriteString(out, b.String())
 }
 
 // finish restores the primary screen.

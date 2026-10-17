@@ -16,6 +16,15 @@ const (
 	keyNone = 0
 )
 
+// 导航序列（CSI）：Ctrl+↑/↓ 跳用户回合（tuiState.jumpTurn），PageUp/
+// PageDown 半屏滚动（tuiState.pageScroll）；其余转义序列照旧整段吞掉。
+const (
+	seqCtrlUp   = "\x1b[1;5A"
+	seqCtrlDown = "\x1b[1;5B"
+	seqPageUp   = "\x1b[5~"
+	seqPageDown = "\x1b[6~"
+)
+
 // keyStream 持有跨 Read 的未完成序列。
 type keyStream struct {
 	buf []byte
@@ -49,11 +58,12 @@ func (k *keyStream) feedWith(s *tuiState, p []byte, onLine func(string)) int {
 				s.input = s.input[:n-1]
 			}
 			s.mu.Unlock()
-		case b == 0x1b: // 转义序列：整段吞掉，不完整则等下一段
+		case b == 0x1b: // 转义序列：导航键派发，其余整段吞掉；不完整等下段
 			n := escLen(k.buf)
 			if n == 0 {
 				return keyNone
 			}
+			k.dispatchNav(s, string(k.buf[:n]))
 			k.buf = k.buf[n:]
 		case b < 0x80:
 			k.buf = k.buf[1:]
@@ -74,6 +84,20 @@ func (k *keyStream) appendInput(s *tuiState, r rune) {
 	s.mu.Lock()
 	s.input = append(s.input, r)
 	s.mu.Unlock()
+}
+
+// dispatchNav 把识别出的导航序列派发到视口状态；未识别的序列无操作。
+func (k *keyStream) dispatchNav(s *tuiState, seq string) {
+	switch seq {
+	case seqCtrlUp:
+		s.jumpTurn(-1)
+	case seqCtrlDown:
+		s.jumpTurn(1)
+	case seqPageUp:
+		s.pageScroll(-1)
+	case seqPageDown:
+		s.pageScroll(1)
+	}
 }
 
 // escLen 返回 buf 开头转义序列的长度（含 ESC），0 表示不完整。

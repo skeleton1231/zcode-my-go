@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -76,4 +77,49 @@ func inputText(s *tuiState) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return string(s.input)
+}
+
+// TestKeyStreamNavigationKeys 验证 Ctrl+↑/↓ 与 PageUp/PageDown 序列驱动
+// 视口导航且不进输入区（其余转义序列照旧整段吞掉）。
+func TestKeyStreamNavigationKeys(t *testing.T) {
+	s := &tuiState{width: 40, height: 12, topIdx: -1, turnCur: -1}
+	s.pushTurn("q1")
+	s.push("r1")
+	s.pushTurn("q2")
+	for i := 0; i < 28; i++ {
+		s.push(fmt.Sprintf("filler %d", i))
+	}
+	k := &keyStream{}
+
+	k.feed(s, []byte(seqCtrlUp))
+	if s.topIdx != 2 { // 最后一轮 q2 在第 2 行
+		t.Fatalf("ctrlUp: topIdx=%d, want 2", s.topIdx)
+	}
+	k.feed(s, []byte(seqCtrlDown))
+	k.feed(s, []byte(seqCtrlDown))
+	if s.topIdx != -1 {
+		t.Fatalf("ctrlDown to tail: topIdx=%d, want -1", s.topIdx)
+	}
+
+	k.feed(s, []byte(seqPageUp))
+	if s.topIdx != 16 { // 31 行、body=10：尾随窗顶 21，半屏上移 5
+		t.Fatalf("pageUp: topIdx=%d, want 16", s.topIdx)
+	}
+	k.feed(s, []byte(seqPageDown))
+	if s.topIdx != 21 { // 回到窗顶 21（== len-body，再向下即到底恢复尾随）
+		t.Fatalf("pageDown: topIdx=%d, want 21", s.topIdx)
+	}
+
+	// 跨 Read 拆开的序列也要能拼接识别。
+	k2 := &keyStream{}
+	k2.feed(s, []byte{0x1b, '['})
+	k2.feed(s, []byte{'1', ';', '5'})
+	k2.feed(s, []byte{'A'})
+	if s.topIdx != 2 {
+		t.Fatalf("split seq: topIdx=%d, want 2", s.topIdx)
+	}
+
+	if got := inputText(s); got != "" {
+		t.Fatalf("nav keys leaked into input: %q", got)
+	}
 }
