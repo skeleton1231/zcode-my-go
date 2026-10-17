@@ -152,6 +152,10 @@ type ExecResult struct {
 }
 
 // Exec runs one command line in the workspace root.
+// execOutputCap 限制一次远程命令读入内存的输出（AGENTS.md：工具输出
+// 必须截断；远程 cat 大日志是模型可直达路径，issue #84）。
+const execOutputCap = 1 << 20 // 1MB
+
 func (c *Client) Exec(command string) (ExecResult, error) {
 	session, err := c.conn.NewSession()
 	if err != nil {
@@ -166,12 +170,29 @@ func (c *Client) Exec(command string) (ExecResult, error) {
 	}
 	session.Stdout = pw
 	session.Stderr = pw
+	// 并发排水（issue #84 的根因）：Run 返回后才读管道时，输出超过
+	// 管道缓冲（~64KB）会让 ssh 写端阻塞、Run 永不返回，只能等超时。
+	// 读取与 Run 并行，且经 LimitReader 封顶防大日志撑爆内存。
+	outCh := make(chan struct {
+		data      []byte
+		truncated bool
+	}, 1)
+	go func() {
+		// 前 cap 字节保留；其后继续排水到 EOF——读满即停会让 ssh 写端
+		// 阻塞在满管道上，Run 永不返回（大输出死锁的另一半）。
+		data, _ := io.ReadAll(io.LimitReader(pr, execOutputCap))
+		n, _ := io.Copy(io.Discard, pr)
+		outCh <- struct {
+			data      []byte
+			truncated bool
+		}{data, n > 0}
+	}()
 	done := make(chan error, 1)
 	go func() { done <- session.Run("cd " + quote(c.cfg.Root) + " && " + command) }()
 	select {
 	case err := <-done:
-		pw.Close()
-		out, _ := io.ReadAll(pr)
+		pw.Close() // 写端关闭 → 排水 goroutine 收到 EOF 收尾
+		res := <-outCh
 		pr.Close()
 		code := 0
 		if err != nil {
@@ -182,9 +203,18 @@ func (c *Client) Exec(command string) (ExecResult, error) {
 				code = exitErr.ExitStatus()
 			}
 		}
-		return ExecResult{Output: string(out), ExitCode: code}, nil
+		output := string(res.data)
+		if res.truncated {
+			output = "…[输出超过 1MB，已截断保留头部]\n" + output
+		}
+		return ExecResult{Output: output, ExitCode: code}, nil
 	case <-time.After(execTimeout):
 		session.Close()
+		// 收尾管道（issue #84：曾泄漏一对 fd）：关写端让排水收 EOF，
+		// 等它退出后再关读端。
+		pw.Close()
+		<-outCh
+		pr.Close()
 		return ExecResult{}, fmt.Errorf("command timed out after %s", execTimeout)
 	}
 }
