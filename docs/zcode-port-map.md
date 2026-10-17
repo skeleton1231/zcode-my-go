@@ -93,6 +93,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **审批 diff 预览**：PreviewDiffer（edit/write）在权限询问时只读试算待执行
    改动的统一 diff（不落盘），AskRequest.Diff 随桌面弹窗彩色渲染、终端
    打印——批准前所见即所得。
+**patch 多文件 diff/预览**：apply_patch 的结果 Diff 与 PreviewDiff 按段
+   聚合（--- 文件名分隔、400 行上限），预览试算不落盘——diff 子系统对
+   edit/write/patch 全量闭环。
 待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录

@@ -10,6 +10,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
+	"github.com/skeleton1231/zcode-my-go/internal/textdiff"
 )
 
 // Patch applies one multi-file patch in Claude Code / ZCode's ApplyPatch
@@ -62,16 +63,91 @@ func (p *Patch) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 	if len(ops) == 0 {
 		return errResult("patch has no file sections")
 	}
-	var report []string
+	var report, diffs []string
 	for _, op := range ops {
+		if d, ok := p.previewOp(op); ok {
+			diffs = append(diffs, "--- "+op.Path+"\n"+d)
+		}
 		line, isErr := p.apply(op)
 		if isErr {
 			return agent.ToolResult{IsError: true, Content: fmt.Sprintf(
-				"error: %s\n已应用的改动：\n%s", line, strings.Join(report, "\n"))}
+				"error: %s\n已应用的改动：\n%s", line, strings.Join(report, "\n")),
+				Diff: capPatchDiff(strings.Join(diffs, "\n"))}
 		}
 		report = append(report, line)
 	}
-	return agent.ToolResult{Content: strings.Join(report, "\n")}
+	return agent.ToolResult{Content: strings.Join(report, "\n"),
+		Diff: capPatchDiff(strings.Join(diffs, "\n"))}
+}
+
+// patchDiffCapLines bounds the aggregated multi-file diff（每文件已各有
+// textdiff 的输出上限，聚合再设一道）。
+const patchDiffCapLines = 400
+
+func capPatchDiff(diff string) string {
+	if diff == "" {
+		return ""
+	}
+	lines := strings.Split(diff, "\n")
+	if len(lines) <= patchDiffCapLines {
+		return diff
+	}
+	return strings.Join(lines[:patchDiffCapLines], "\n") + "\n… patch diff 截断 …"
+}
+
+// previewOp computes one section's unified diff against the current
+// content without writing（Execute 与 PreviewDiff 共用）.
+func (p *Patch) previewOp(op PatchOp) (string, bool) {
+	abs, err := p.ws.Resolve(op.Path)
+	if err != nil {
+		return "", false
+	}
+	read := func() []byte {
+		if p.ws.IsRemote() {
+			d, _ := p.ws.Remote.ReadFile(remoteRel(p.ws, abs))
+			return d
+		}
+		d, _ := os.ReadFile(abs)
+		return d
+	}
+	switch op.Kind {
+	case PatchAdd:
+		return textdiff.Unified(nil, []byte(strings.Join(op.Add, "\n")+"\n")), true
+	case PatchDelete:
+		return textdiff.Unified(read(), nil), true
+	default:
+		data := read()
+		updated, _, err := ApplyHunks(string(data), op.Hunks)
+		if err != nil {
+			return "", false
+		}
+		return textdiff.Unified(data, []byte(updated)), true
+	}
+}
+
+// PreviewDiff implements agent.PreviewDiffer: the whole patch's upcoming
+// change, section by section, nothing written（与 Execute 同序，遇无法
+// 试算的段即止——与执行的首错停止语义一致）.
+func (p *Patch) PreviewDiff(args json.RawMessage) string {
+	var a struct {
+		Patch string `json:"patch"`
+	}
+	if err := decodeArgs(args, &a); err != nil {
+		return ""
+	}
+	ops, err := ParsePatch(a.Patch)
+	if err != nil {
+		return ""
+	}
+	var diffs []string
+	for _, op := range ops {
+		d, ok := p.previewOp(op)
+		if !ok {
+			break
+		}
+		diffs = append(diffs, "--- "+op.Path+"\n"+d)
+	}
+	return capPatchDiff(strings.Join(diffs, "\n"))
 }
 
 // apply runs one section and returns its report line.
