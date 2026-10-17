@@ -27,6 +27,13 @@ type Tool interface {
 	Execute(ctx context.Context, args json.RawMessage) ToolResult
 }
 
+// SerialOnly marks tools that must never overlap with others in a
+// parallel batch (pi's allowed-tools rule): interactive tools and tools
+// whose state is one shared conversation.
+type SerialOnly interface {
+	SerialOnly() bool
+}
+
 // Capabler lets a tool declare its permission posture (ZCode's
 // PermissionToolCapability): read-only tools skip approval, alwaysAsk tools
 // confirm every call. Undeclared tools get the default (ask when the

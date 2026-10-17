@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
@@ -29,6 +30,18 @@ const (
 	retryBackoffCap   = 30 * time.Second
 )
 
+// ToolExecutionMode controls how a batch of tool calls runs (pi's
+// ToolExecutionMode): sequential runs each call to completion before the
+// next; parallel lets concurrent-safe tools overlap — end events fire in
+// completion order, result blocks still assemble in source order.
+type ToolExecutionMode string
+
+// Tool execution modes.
+const (
+	SequentialExecution ToolExecutionMode = "sequential"
+	ParallelExecution   ToolExecutionMode = "parallel"
+)
+
 // LoopConfig wires one run of the loop.
 type LoopConfig struct {
 	Provider  ai.Provider
@@ -39,6 +52,10 @@ type LoopConfig struct {
 	MaxTurns  int // <=0 means DefaultMaxTurns
 	// Thinking selects the reasoning effort handed to the provider.
 	Thinking ai.ThinkingLevel
+	// ToolExecution picks the batch mode; empty means sequential. A batch
+	// containing any serial-only tool (ask, todo) always runs sequentially,
+	// whatever this says.
+	ToolExecution ToolExecutionMode
 	// History returns the transcript to send; called once per turn so
 	// steering messages queued between turns are picked up.
 	History func() []ai.Message
@@ -67,6 +84,10 @@ type LoopConfig struct {
 type Loop struct {
 	cfg  LoopConfig
 	emit func(Event)
+	// askMu 串行化权限确认：并行批次的 gate 可能同时要求用户确认，
+	// 确认通道（桌面 modal、终端 stdin）都是单实例，并发会互相覆盖
+	// 或把答案错配给另一个请求。
+	askMu sync.Mutex
 }
 
 // NewLoop builds a loop that reports through emit.
@@ -150,19 +171,7 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 		// every tool call in the message may carry truncated arguments: fail
 		// them all instead of executing potentially borked calls (pi's
 		// failToolCallsFromTruncatedMessage).
-		results := make([]ai.Block, 0, len(calls))
-		for _, call := range calls {
-			var result ToolResult
-			if end.stop == ai.StopLength {
-				result = ToolResult{IsError: true, Content: "error: the response hit the token " +
-					"limit before the tool arguments finished; re-issue the call in full"}
-			} else {
-				result = l.execute(ctx, turn, call)
-			}
-			results = append(results, ai.Block{
-				Kind: ai.BlockToolResult, ToolCallID: call.ID,
-				Text: result.Content, IsError: result.IsError})
-		}
+		results := l.executeBatch(ctx, turn, calls, end.stop)
 		if err := appendMessage(ai.Message{Role: ai.RoleToolResult, Blocks: results}); err != nil {
 			return stopInfo{stop: ai.StopError, usage: total, err: err.Error()}
 		}
@@ -243,6 +252,65 @@ func (l *Loop) execute(ctx context.Context, turn int, call ai.Block) ToolResult 
 	return result
 }
 
+// executeBatch runs one turn's tool calls and returns the result blocks
+// in source order (pi's executor: sequential by default; parallel lets
+// concurrent-safe tools overlap, end events in completion order).
+func (l *Loop) executeBatch(ctx context.Context, turn int, calls []ai.Block, stop ai.StopReason) []ai.Block {
+	if l.cfg.ToolExecution == ParallelExecution && batchIsParallelizable(l.cfg.Tools, calls) {
+		return l.executeBatchParallel(ctx, turn, calls, stop)
+	}
+	blocks := make([]ai.Block, 0, len(calls))
+	for _, call := range calls {
+		blocks = append(blocks, l.executeOne(ctx, turn, call, stop))
+	}
+	return blocks
+}
+
+// executeOne runs a single call, wrapping its outcome as a result block.
+func (l *Loop) executeOne(ctx context.Context, turn int, call ai.Block, stop ai.StopReason) ai.Block {
+	var result ToolResult
+	if stop == ai.StopLength {
+		result = ToolResult{IsError: true, Content: "error: the response hit the token " +
+			"limit before the tool arguments finished; re-issue the call in full"}
+	} else {
+		result = l.execute(ctx, turn, call)
+	}
+	return ai.Block{Kind: ai.BlockToolResult, ToolCallID: call.ID,
+		Text: result.Content, IsError: result.IsError}
+}
+
+// executeBatchParallel overlaps the batch's execution: each tool emits its
+// own end event when it finishes (completion order, as pi documents),
+// while the blocks assemble by source order for the transcript.
+func (l *Loop) executeBatchParallel(ctx context.Context, turn int, calls []ai.Block, stop ai.StopReason) []ai.Block {
+	blocks := make([]ai.Block, len(calls))
+	var wg sync.WaitGroup
+	for i, call := range calls {
+		wg.Add(1)
+		go func(i int, call ai.Block) {
+			defer wg.Done()
+			blocks[i] = l.executeOne(ctx, turn, call, stop)
+		}(i, call)
+	}
+	wg.Wait()
+	return blocks
+}
+
+// batchIsParallelizable reports whether every call's tool may overlap.
+func batchIsParallelizable(tools []Tool, calls []ai.Block) bool {
+	for _, call := range calls {
+		for _, t := range tools {
+			if t.Name() == call.Name {
+				if s, ok := t.(SerialOnly); ok && s.SerialOnly() {
+					return false
+				}
+				break
+			}
+		}
+	}
+	return true
+}
+
 // gate checks the permission system for a call. A nil result means the call
 // may run; a non-nil one is the blocked outcome to report.
 func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
@@ -263,9 +331,11 @@ func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
 		if l.cfg.Ask == nil {
 			return blocked("no approval channel", "当前没有确认通道，保守起见拒绝执行")
 		}
+		l.askMu.Lock()
 		resp := l.cfg.Ask(AskRequest{
 			SessionID: l.cfg.SessionID, Tool: call.Name, Args: argsLine,
 			Reason: decision.Reason, Risk: decision.Risk})
+		l.askMu.Unlock()
 		if !resp.Deny {
 			if resp.Always {
 				l.cfg.Permissions.GrantSession(

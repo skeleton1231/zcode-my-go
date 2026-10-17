@@ -133,6 +133,10 @@ func (t *Todo) render() string {
 	return b.String()
 }
 
+// SerialOnly implements agent.SerialOnly: user interaction and the shared
+// plan must never overlap with other tools in a parallel batch.
+func (*Todo) SerialOnly() bool { return true }
+
 // Capability implements agent.Capabler: the plan is session state only.
 func (t *Todo) Capability() permission.Capability {
 	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
