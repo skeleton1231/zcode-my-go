@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // fakeRunner records runs and can block, fail, or answer.
@@ -190,5 +191,68 @@ func TestSummaryAndErrorRecording(t *testing.T) {
 	jobs, _ = store.List()
 	if len([]rune(jobs[0].LastSummary)) > SummaryCap+1 {
 		t.Fatalf("summary not capped: %d runes", len([]rune(jobs[0].LastSummary)))
+	}
+}
+
+// TestConcurrentRecordsBothPersist 验证并发完成的记录互不覆盖（issue
+// #117：recordWithTime 曾无锁 List→改→Save——后写覆盖先写，丢 LastRun
+// 的 job 下个 tick 双触发）。
+func TestConcurrentRecordsBothPersist(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Upsert(Job{ID: "a", Schedule: "*/5 * * * *", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Upsert(Job{ID: "b", Schedule: "*/5 * * * *", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = store.Update(func(jobs []Job) []Job {
+				for j := range jobs {
+					if jobs[j].ID == "a" {
+						jobs[j].LastRun = time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
+					}
+				}
+				return jobs
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			_ = store.Update(func(jobs []Job) []Job {
+				for j := range jobs {
+					if jobs[j].ID == "b" {
+						jobs[j].LastRun = time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)
+					}
+				}
+				return jobs
+			})
+		}()
+	}
+	wg.Wait()
+	jobs, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range jobs {
+		if j.ID == "a" && j.LastRun.Hour() != 9 {
+			t.Fatalf("a's record lost: %+v", j.LastRun)
+		}
+		if j.ID == "b" && j.LastRun.Hour() != 10 {
+			t.Fatalf("b's record lost: %+v", j.LastRun)
+		}
+	}
+}
+
+// TestSummaryRuneSafe 验证中文摘要截断保持合法 UTF-8（同类第 4 例）。
+func TestSummaryRuneSafe(t *testing.T) {
+	long := strings.Repeat("摘", 3*SummaryCap)
+	if r := []rune(long); len(r) > SummaryCap {
+		long = string(r[:SummaryCap]) + "…"
+	}
+	if !utf8.ValidString(long) {
+		t.Fatal("byte truncation produced invalid UTF-8")
 	}
 }

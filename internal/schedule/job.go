@@ -37,6 +37,7 @@ type Runner interface {
 // Store keeps the jobs file. The scheduler re-reads it every minute so CLI
 // edits take effect without a restart; saves are atomic (temp + rename).
 type Store struct {
+	mu   sync.Mutex
 	path string
 }
 
@@ -44,7 +45,17 @@ type Store struct {
 func NewStore(dir string) *Store { return &Store{path: filepath.Join(dir, "jobs.json")} }
 
 // List reads the jobs (missing file = empty, malformed file = error).
+// 持存储锁（issue #117）：读-改-写调用方（recordWithTime/Upsert）曾各
+// 自 List→改→Save 无锁竞争——并发完成的 job 互相覆盖，丢 LastRun 的
+// job 下个 tick 双触发。锁保护整个 RMW 序列，不只是单次读写。
 func (st *Store) List() ([]Job, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.listLocked()
+}
+
+// listLocked 是 List 的无锁体（已在锁内的 RMW 序列共用）。
+func (st *Store) listLocked() ([]Job, error) {
 	data, err := os.ReadFile(st.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -61,6 +72,13 @@ func (st *Store) List() ([]Job, error) {
 
 // Save writes the jobs atomically.
 func (st *Store) Save(jobs []Job) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.saveLocked(jobs)
+}
+
+// saveLocked 是 Save 的无锁体。
+func (st *Store) saveLocked(jobs []Job) error {
 	data, err := json.MarshalIndent(jobs, "", "  ")
 	if err != nil {
 		return err
@@ -73,63 +91,83 @@ func (st *Store) Save(jobs []Job) error {
 }
 
 // Upsert adds or replaces a job by ID.
-func (st *Store) Upsert(j Job) error {
-	jobs, err := st.List()
+// Update 在存储锁内原子地读-改-写（issue #117：各方法单独 List→改→
+// Save 的窗口里，并发完成的 record 会互相覆盖、面板编辑会被回滚——
+// 丢 LastRun 的 job 下个 tick 双触发）。mutate 返回 nil 表示无改动。
+func (st *Store) Update(mutate func(jobs []Job) []Job) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	jobs, err := st.listLocked()
 	if err != nil {
 		return err
 	}
-	replaced := false
-	for i := range jobs {
-		if jobs[i].ID == j.ID {
-			jobs[i] = j
-			replaced = true
-			break
+	if out := mutate(jobs); out != nil {
+		return st.saveLocked(out)
+	}
+	return nil
+}
+
+// UpdateResult 是带回执的 Update（found 语义）。
+func (st *Store) UpdateResult(mutate func(jobs []Job) ([]Job, bool)) (bool, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	jobs, err := st.listLocked()
+	if err != nil {
+		return false, err
+	}
+	out, found := mutate(jobs)
+	if found {
+		return true, st.saveLocked(out)
+	}
+	return false, nil
+}
+
+func (st *Store) Upsert(j Job) error {
+	return st.Update(func(jobs []Job) []Job {
+		for i := range jobs {
+			if jobs[i].ID == j.ID {
+				jobs[i] = j
+				return jobs
+			}
 		}
-	}
-	if !replaced {
-		jobs = append(jobs, j)
-	}
-	return st.Save(jobs)
+		return append(jobs, j)
+	})
 }
 
 // Remove drops a job by ID, reporting whether it existed.
 func (st *Store) Remove(id string) (bool, error) {
-	jobs, err := st.List()
-	if err != nil {
-		return false, err
-	}
-	out := jobs[:0]
-	found := false
-	for _, j := range jobs {
-		if j.ID == id {
-			found = true
-			continue
+	return st.UpdateResult(func(jobs []Job) ([]Job, bool) {
+		out := jobs[:0]
+		found := false
+		for _, j := range jobs {
+			if j.ID == id {
+				found = true
+				continue
+			}
+			out = append(out, j)
 		}
-		out = append(out, j)
-	}
-	if !found {
-		return false, nil
-	}
-	return true, st.Save(out)
+		if !found {
+			return nil, false
+		}
+		return out, true
+	})
 }
 
 // SetEnabled flips a job's switch by ID.
 func (st *Store) SetEnabled(id string, on bool) (bool, error) {
-	jobs, err := st.List()
-	if err != nil {
-		return false, err
-	}
-	found := false
-	for i := range jobs {
-		if jobs[i].ID == id {
-			jobs[i].Enabled = on
-			found = true
+	return st.UpdateResult(func(jobs []Job) ([]Job, bool) {
+		found := false
+		for i := range jobs {
+			if jobs[i].ID == id {
+				jobs[i].Enabled = on
+				found = true
+			}
 		}
-	}
-	if !found {
-		return false, nil
-	}
-	return true, st.Save(jobs)
+		if !found {
+			return nil, false
+		}
+		return jobs, true
+	})
 }
 
 // Scheduler fires due jobs on a minute tick. Results are recorded back to
@@ -260,21 +298,22 @@ func (s *Scheduler) record(id, status, summary string) {
 }
 
 func (s *Scheduler) recordWithTime(id, status, summary string, at time.Time) {
-	if len(summary) > SummaryCap {
-		summary = summary[:SummaryCap] + "…"
+	// 按 rune 截断（issue #117：字节截断让中文摘要在上限处乱码——同类
+	// 第 4 例，#12/#40/#99 均已 rune 安全化）。
+	if r := []rune(summary); len(r) > SummaryCap {
+		summary = string(r[:SummaryCap]) + "…"
 	}
-	jobs, err := s.store.List()
-	if err != nil {
-		return
-	}
-	for i := range jobs {
-		if jobs[i].ID == id {
-			jobs[i].LastRun = at.UTC()
-			jobs[i].LastStatus = status
-			jobs[i].LastSummary = strings.TrimSpace(summary)
+	trimmed := strings.TrimSpace(summary)
+	_ = s.store.Update(func(jobs []Job) []Job {
+		for i := range jobs {
+			if jobs[i].ID == id {
+				jobs[i].LastRun = at.UTC()
+				jobs[i].LastStatus = status
+				jobs[i].LastSummary = trimmed
+			}
 		}
-	}
-	_ = s.store.Save(jobs)
+		return jobs
+	})
 }
 
 // NextDue reports a job's next fire time (zero when it never matches).
