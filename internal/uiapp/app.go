@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 
@@ -46,6 +47,12 @@ type App struct {
 	jobRunning                                     string
 	jobFormErr                                     string
 	jobSchedule, jobPrompt, jobWorkspace, jobModel string
+
+	// terminal panel state（browser-workbench terminal-ui）.
+	termOpen bool
+	term     *terminal.Terminal
+	termDir  string
+	termErr  string
 
 	// composer attachments: image blocks sent with the next message
 	//（多模态输入，附件体验）.
@@ -170,6 +177,13 @@ func (a *App) open(id string) {
 	// "没有匹配"；搜索词跨会话泄漏。
 	a.searchOpen = false
 	a.searchQuery = ""
+	// 终端与工作区绑定：切换会话即重建（面板开着就换目录重开）。
+	if a.termOpen {
+		a.ensureTerminal()
+	} else {
+		a.closeTerminal()
+	}
+
 	messages, err := a.svc.Messages(id)
 	if err != nil {
 		log.Printf("loading session %s: %v", id, err)
@@ -413,7 +427,7 @@ func (a *App) Send() {
 const attachmentCapBytes = 5 << 20
 
 // attachmentTotalCapBytes bounds one message's total encoded images
-//（issue #105：多选附件拼一条消息曾让 JSONL 行超读取上限，重载时整条
+// （issue #105：多选附件拼一条消息曾让 JSONL 行超读取上限，重载时整条
 // 连图静默消失——session 层还有兜底预算，这里提前拒绝并提示分条发送）.
 const attachmentTotalCapBytes = 6 << 20
 

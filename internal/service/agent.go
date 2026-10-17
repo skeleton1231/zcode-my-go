@@ -577,6 +577,15 @@ func (s *AgentService) DeleteSession(id string) error {
 	return s.mgr.Delete(id)
 }
 
+// SessionWorkspace returns the session's workspace path ("" when the
+// session is unknown).
+func (s *AgentService) SessionWorkspace(sessionID string) string {
+	if sess, ok := s.mgr.Get(sessionID); ok {
+		return sess.Info().Workspace
+	}
+	return ""
+}
+
 // Messages returns a session's transcript for replay.
 func (s *AgentService) Messages(id string) ([]ai.Message, error) {
 	sess, ok := s.mgr.Get(id)

@@ -85,6 +85,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    防重叠与结果记账）+ 服务调度接线（桌面随启动开、退出即停）+ zgo cron
    CLI（list/add/rm/run/enable/disable）+ 桌面任务面板（列表/行内启停/立即
    运行/删除/新建表单，specs/automation.md 规则 7）。
+**终端面板**（ZCode browser-workbench 的 terminal-ui 半边）：底部抽屉跑
+   会话工作区的 shell（mygo terminal 插件/Ghostty libghostty-vt，库自动
+   获取）；会话切换重建、失败降级提示、退出回收 PTY。
 待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录
