@@ -27,7 +27,10 @@ func splitCommand(line string) []string {
 	if strings.Count(line, "\"")%2 != 0 || strings.Count(line, "'")%2 != 0 {
 		return []string{"\x00unparsable"} // 未闭合引号 → 非只读
 	}
-	repl := strings.NewReplacer("&&", "\x00", "||", "\x00", ";", "\x00", "|", "\x00")
+	// 换行与回车也是语句分隔（PowerShell/POSIX shell 均如此，issue #26：
+	// "ls\nRemove-Item …" 曾被当作单段而只检查 ls）。
+	repl := strings.NewReplacer("&&", "\x00", "||", "\x00", ";", "\x00", "|", "\x00",
+		"\r\n", "\x00", "\n", "\x00", "\r", "\x00")
 	parts := strings.Split(repl.Replace(line), "\x00")
 	var out []string
 	for _, p := range parts {
@@ -59,8 +62,10 @@ var readonlyGitSubs = map[string]bool{
 }
 
 // gitMutatingFlags turn an otherwise readonly git subcommand into a
-// writing one (branch -D, tag -d…).
-var gitMutatingFlags = []string{"-d", "-D", "-m", "-M", "--delete", "--force", "-f", "-e", "--edit", "--set", "--unset"}
+// writing one (branch -D, tag -d…). --output 让 log/show/diff 把结果写
+// 入任意路径（不受 path jail 约束，issue #26）。
+var gitMutatingFlags = []string{"-d", "-D", "-m", "-M", "--delete", "--force", "-f",
+	"-e", "--edit", "--set", "--unset", "--output", "--open-files-in-place"}
 
 func readonlySegment(segment string) bool {
 	fields := strings.Fields(segment)
@@ -81,6 +86,23 @@ func readonlySegment(segment string) bool {
 	}
 	if !readonlyHeads[head] {
 		return false
+	}
+	// find/env 的参数可携带执行或写语义（issue #26）。
+	switch head {
+	case "find":
+		for _, f := range fields[1:] {
+			if f == "-exec" || f == "-execdir" || f == "-ok" || f == "-okdir" ||
+				f == "-delete" || f == "-fls" || strings.HasPrefix(f, "-fprint") {
+				return false
+			}
+		}
+	case "env":
+		for _, f := range fields[1:] {
+			if strings.HasPrefix(f, "-") || strings.Contains(f, "=") {
+				continue // flag 与 VAR=val 前缀
+			}
+			return false // env CMD …：执行任意命令
+		}
 	}
 	if head != "git" {
 		return true
@@ -105,8 +127,8 @@ func readonlySegment(segment string) bool {
 	listOnly := sub == "branch" || sub == "tag" || sub == "remote"
 	for _, f := range fields[i+1:] {
 		for _, bad := range gitMutatingFlags {
-			if f == bad {
-				return false
+			if f == bad || strings.HasPrefix(f, bad+"=") {
+				return false // 覆盖 --output=<path> 形态
 			}
 		}
 		if listOnly && !strings.HasPrefix(f, "-") {
