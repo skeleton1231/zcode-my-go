@@ -121,3 +121,42 @@ func imageMediaType(name string) string {
 		return ""
 	}
 }
+
+// WorkspaceTree lists one directory of the session's workspace（文件树
+// 面板），目录优先。根目录用空串。
+func (s *AgentService) WorkspaceTree(sessionID, dir string) ([]tools.DirEntry, error) {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return nil, fmt.Errorf("no session %s", sessionID)
+	}
+	ws := s.workspaceFor(sessionID, sess.Info().Workspace)
+	return tools.ListIn(ws, dir)
+}
+
+// previewCap bounds the file preview（预览只读，非编辑）。
+const previewCap = 60 << 10
+
+// ReadWorkspaceFile reads a workspace file for the preview panel, capped;
+// binary files refuse with a clear error.
+func (s *AgentService) ReadWorkspaceFile(sessionID, rel string) (string, error) {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return "", fmt.Errorf("no session %s", sessionID)
+	}
+	ws := s.workspaceFor(sessionID, sess.Info().Workspace)
+	data, err := tools.ReadFileIn(ws, rel)
+	if err != nil {
+		return "", err
+	}
+	probe := data
+	if len(probe) > 8192 {
+		probe = probe[:8192]
+	}
+	if strings.IndexByte(string(probe), 0) >= 0 {
+		return "", fmt.Errorf("%s 是二进制文件，不支持预览", rel)
+	}
+	if len(data) > previewCap {
+		return string(data[:previewCap]) + "\n…（预览截断）", nil
+	}
+	return string(data), nil
+}

@@ -26,6 +26,7 @@ func (a *App) View(c *ui.Context) {
 			a.composerView(c, t)
 			a.statusView(c, t)
 		})
+		a.filesPanelView(c, t)
 	})
 
 	a.renameModal(c, t)
@@ -33,6 +34,7 @@ func (a *App) View(c *ui.Context) {
 	a.questionModal(c, t)
 	a.settingsModal(c, t)
 	a.jobsModal(c, t)
+	a.previewModal(c, t)
 }
 
 // sidebarView lists sessions under the brand, with the actions below.
@@ -41,6 +43,9 @@ func (a *App) sidebarView(c *ui.Context, t *ui.Theme) {
 		ui.Row(c).Padding(14, 16).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "Zgo").Bold().FontSize(15)
 			ui.Spacer(c)
+			if ui.Button(c, "文件").Clicked() {
+				a.ToggleFiles()
+			}
 			if ui.Button(c, "设置…").Clicked() {
 				a.OpenSettings()
 			}
