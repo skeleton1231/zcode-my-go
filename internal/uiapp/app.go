@@ -175,6 +175,8 @@ func (a *App) OpenSearch() {
 
 // SearchMatches returns the item indexes matching the query (every field
 // the transcript shows), case-insensitive; nil query matches everything.
+// 系统通知（itemNotice）不参与过滤（issue #54）：重命名失败、压缩失败
+// 等瞬态错误对用户必须可见，开着搜索也不得静默消失。
 func (a *App) SearchMatches() []int {
 	q := strings.ToLower(strings.TrimSpace(a.searchQuery))
 	if q == "" {
@@ -182,6 +184,10 @@ func (a *App) SearchMatches() []int {
 	}
 	var out []int
 	for i, item := range a.chat.items {
+		if item.kind == itemNotice {
+			out = append(out, i)
+			continue
+		}
 		// args 必须参与匹配（issue #42）：正在改的文件、正在跑的命令
 		// 都只在 args 里——"刚才改了哪个文件"恰是搜索高频用例。
 		hay := strings.ToLower(item.text + " " + item.think + " " +

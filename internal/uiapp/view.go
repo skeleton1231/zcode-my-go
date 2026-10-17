@@ -144,7 +144,14 @@ func (a *App) searchBarView(c *ui.Context, t *ui.Theme) {
 			}
 			return false
 		})
-		if n := len(a.SearchMatches()); a.searching() {
+		if a.searching() {
+			// 计数只统计真正匹配的行；通知恒可见（issue #54）不计入。
+			n := 0
+			for _, idx := range a.SearchMatches() {
+				if a.chat.items[idx].kind != itemNotice {
+					n++
+				}
+			}
 			ui.Text(c, fmt.Sprintf("%d 处", n)).TextColor(t.TextMuted).FontSize(12)
 		}
 		if ui.Button(c, "✕").Clicked() {
