@@ -10,6 +10,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 // waitIdle waits for the run Send started to end; the tester serializes
@@ -179,5 +180,43 @@ func TestQuestionModalRoundTrip(t *testing.T) {
 	}
 	if got := <-res; got != "B" {
 		t.Fatalf("answer = %q", got)
+	}
+}
+
+// TestPlanPanelShowsLivePlan verifies the panel renders the service's todo
+// snapshot and hides when the plan is empty.
+func TestPlanPanelShowsLivePlan(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.Init()
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.OpenSession(info.ID)
+	tt.Frame()
+	if tt.HasText("计划 ·") {
+		t.Fatal("panel visible with empty plan")
+	}
+
+	// 通过 todo 工具的同一状态管道注入计划：直接调 service 的 states。
+	a.plan = []tools.TodoTask{
+		{Content: "探索代码", Status: tools.TodoDone},
+		{Content: "写实现", Status: tools.TodoInProgress},
+	}
+	tt.Frame()
+	if !tt.HasText("计划 · 1/2") {
+		t.Fatalf("panel header missing: %q", tt.Texts())
+	}
+	if err := tt.Click("计划 · 1/2"); err != nil { // 展开折叠面板
+		t.Fatalf("opening panel: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("探索代码") || !tt.HasText("写实现") {
+		t.Fatalf("panel tasks missing: %q", tt.Texts())
 	}
 }

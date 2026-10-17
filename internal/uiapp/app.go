@@ -12,6 +12,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 // App is the window's state. Its View builds the interface from it, on the
@@ -34,6 +35,10 @@ type App struct {
 	// edit-in-progress state: the item index being edited and its draft.
 	editingIndex int
 	editDraft    string
+
+	// plan is the session's live todo snapshot (nil/empty hides the panel).
+	plan     []tools.TodoTask
+	planOpen bool
 
 	modelSuggestions []string
 
@@ -135,6 +140,16 @@ func (a *App) open(id string) {
 	}
 	a.chat = restoreChat(messages)
 	a.list = ui.ListState{} // a restored chat starts at its end
+	a.RefreshPlan()
+}
+
+// RefreshPlan reloads the session's todo plan for the panel.
+func (a *App) RefreshPlan() {
+	if a.activeID == "" {
+		a.plan = nil
+		return
+	}
+	a.plan = a.svc.TodoPlan(a.activeID)
 }
 
 // DeleteActive removes the open session.
@@ -205,7 +220,12 @@ func (a *App) Send() {
 	a.sending = true
 	go func() {
 		err := a.svc.Chat(id, text, func(ev agent.Event) {
-			a.update(func() { a.chat.apply(ev) })
+			a.update(func() {
+				a.chat.apply(ev)
+				if ev.Kind == agent.EvToolExecutionEnd && ev.ToolName == "todo" {
+					a.RefreshPlan()
+				}
+			})
 		})
 		a.update(func() {
 			a.sending = false
@@ -213,6 +233,7 @@ func (a *App) Send() {
 				a.chat.endErr = err.Error()
 			}
 			a.refreshSessions()
+			a.RefreshPlan()
 		})
 	}()
 }

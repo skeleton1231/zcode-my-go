@@ -33,6 +33,13 @@ type TodoState struct {
 	tasks []TodoTask
 }
 
+// Snapshot returns a copy of the current tasks (for the UI panel).
+func (t *TodoState) Snapshot() []TodoTask {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]TodoTask(nil), t.tasks...)
+}
+
 // Todo lets the model track its plan (ZCode/Claude-Code-style): read the
 // list, or replace it wholesale as work progresses.
 type Todo struct{ state *TodoState }

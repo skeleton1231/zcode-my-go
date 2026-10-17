@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+
 	"github.com/egoist/mygo/ui/markdown"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 // View builds the window: a session sidebar, the chat, the composer and a
@@ -18,6 +20,7 @@ func (a *App) View(c *ui.Context) {
 		a.sidebarView(c, t)
 		ui.Column(c).Grow(1).Children(func() {
 			a.chatView(c, t)
+			a.planView(c, t)
 			a.composerView(c, t)
 			a.statusView(c, t)
 		})
@@ -216,6 +219,39 @@ func summarizeArgs(args string) string {
 		trimmed = string([]rune(trimmed)[:59]) + "…"
 	}
 	return trimmed
+}
+
+func itoa(n int) string { return fmt.Sprintf("%d", n) }
+
+// planView shows the live todo plan (ZCode's task list panel): a
+// collapsible strip above the composer, hidden when the plan is empty.
+func (a *App) planView(c *ui.Context, t *ui.Theme) {
+	if len(a.plan) == 0 {
+		return
+	}
+	done := 0
+	for _, task := range a.plan {
+		if task.Status == tools.TodoDone {
+			done++
+		}
+	}
+	ui.Row(c).Padding(4, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Collapsible(c, "计划 · "+itoa(done)+"/"+itoa(len(a.plan)), &a.planOpen, func() {
+			ui.Column(c).Gap(2).Children(func() {
+				for _, task := range a.plan {
+					mark := " "
+					switch task.Status {
+					case tools.TodoInProgress:
+						mark = "▶"
+					case tools.TodoDone:
+						mark = "✓"
+					}
+					ui.Text(c, mark+" "+task.Content).FontSize(12).
+						TextColor(t.TextMuted)
+				}
+			})
+		}).Grow(1)
+	})
 }
 
 // composerView is the input row: Enter sends, Shift+Enter breaks the line,

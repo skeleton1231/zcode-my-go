@@ -425,6 +425,17 @@ func (s *AgentService) ExportSessionHTML(id, dest string) error {
 	return os.WriteFile(dest, []byte(doc), 0o644)
 }
 
+// TodoPlan returns the session's live task plan (the todo tool's state).
+func (s *AgentService) TodoPlan(sessionID string) []tools.TodoTask {
+	s.mu.Lock()
+	state, ok := s.states[sessionID]
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return state.Todo.Snapshot()
+}
+
 // Abort cancels a session's running loop.
 func (s *AgentService) Abort(sessionID string) {
 	if sess, ok := s.mgr.Get(sessionID); ok {
