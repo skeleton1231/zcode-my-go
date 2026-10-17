@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
@@ -40,6 +42,7 @@ type settings struct {
 	Thinking   string                `json:"thinking"` // off|low|medium|high
 	MCPServers map[string]mcp.Config `json:"mcpServers"`
 	Hooks      agent.CommandHooks    `json:"hooks"`
+	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
@@ -179,7 +182,7 @@ func (s *AgentService) Close() {
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.mgr.Wire(agent.Wiring{
-		Provider: func() ai.Provider { return providerFor(cfg) },
+		Provider: func() ai.Provider { return providerFor(cfg, s.persistOAuth) },
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
 		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
@@ -193,7 +196,7 @@ func (s *AgentService) rewire() {
 				s.states[sessionID] = state
 			}
 			s.mu.Unlock()
-			provider := func() ai.Provider { return providerFor(cfg) }
+			provider := func() ai.Provider { return providerFor(cfg, s.persistOAuth) }
 			model := cfg.Model
 			question := s.question
 			task := tools.NewTask(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
@@ -206,13 +209,13 @@ func (s *AgentService) rewire() {
 			})
 			all := append(tools.All(workspace, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)))
-			wfProvider := providerFor(cfg)
+			wfProvider := func() ai.Provider { return providerFor(cfg, s.persistOAuth) }
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
 			wfAsk := s.ask
 			all = append(all, tools.NewWorkflow(func(ctx context.Context, steps []agent.WorkflowStep) ([]agent.StepResult, error) {
 				return agent.RunWorkflow(ctx, agent.WorkflowConfig{
-					Provider:    wfProvider,
+					Provider:    wfProvider(),
 					Model:       wfModel,
 					System:      prompt.System(workspace),
 					ReadOnly:    tools.ReadOnly(workspace),
@@ -273,15 +276,98 @@ func thinkingLevelOf(v string) ai.ThinkingLevel {
 }
 
 // providerFor builds the provider matching the configured API dialect.
-func providerFor(cfg settings) ai.Provider {
+// An Anthropic subscription token (from /login) authenticates as Bearer
+// when no API key is set; an expired token refreshes synchronously
+// (best effort — a failed refresh falls back to the stale token).
+// persist（可空）在刷新成功后回写凭据：providerFor 的 cfg 是 rewire 时
+// 的快照，不回写会让每次构建 provider 都重新刷新（网络浪费），且
+// 服务端轮换 refresh token 后存储的旧凭据失效 → 长会话 401。
+func providerFor(cfg settings, persist func(aiAuth.Token)) ai.Provider {
 	switch cfg.API {
 	case "openai":
 		return ai.NewOpenAI(cfg.BaseURL, cfg.APIKey)
 	case "gemini":
 		return ai.NewGemini(cfg.BaseURL, cfg.APIKey)
 	default:
-		return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
+		client := ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
+		if cfg.APIKey == "" && cfg.OAuth.AccessToken != "" {
+			if cfg.OAuth.Expired() && cfg.OAuth.RefreshToken != "" {
+				if fresh, err := aiAuth.Refresh(context.Background(),
+					authTokenURL, cfg.OAuth.RefreshToken); err == nil {
+					cfg.OAuth = fresh
+					client.OAuthToken = fresh.AccessToken
+					if persist != nil {
+						persist(fresh)
+					}
+					return client
+				}
+			}
+			client.OAuthToken = cfg.OAuth.AccessToken
+		}
+		return client
 	}
+}
+
+// persistOAuth 回写订阅凭据：更新内存设置并落盘（0600，与 API key 同
+// 一安全边界）；失败只记日志，不影响本次运行。
+func (s *AgentService) persistOAuth(tok aiAuth.Token) {
+	s.mu.Lock()
+	cfg := s.settings
+	cfg.OAuth = tok
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err == nil {
+		err = os.WriteFile(s.path, data, 0o600)
+	}
+	if err == nil {
+		s.settings = cfg
+	}
+	s.mu.Unlock()
+	if err != nil {
+		log.Printf("persisting oauth token: %v", err)
+	}
+}
+
+// authTokenURL is the token endpoint (pi's constant).
+const authTokenURL = aiAuth.TokenURL
+
+// LoginStatus reports whether a subscription token is present.
+func (s *AgentService) LoginStatus() (ok bool, expiresAt time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tok := s.settings.OAuth
+	return tok.AccessToken != "", tok.ExpiresAt
+}
+
+// LoginStart runs the OAuth flow in the background: onURL receives the
+// browser link as soon as the callback server is up; the token lands in
+// settings when the browser round-trip completes. done reports success.
+func (s *AgentService) LoginStart(onURL func(string)) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		tok, err := aiAuth.Login(context.Background(), func(link string) {
+			if onURL != nil {
+				onURL(link)
+			}
+		}, authTokenURL)
+		if err != nil {
+			done <- err
+			return
+		}
+		s.mu.Lock()
+		cfg := s.settings
+		cfg.OAuth = tok
+		data, merr := json.MarshalIndent(cfg, "", "  ")
+		if merr == nil {
+			merr = os.WriteFile(s.path, data, 0o600)
+		}
+		if merr == nil {
+			s.settings = cfg
+		}
+		s.mu.Unlock()
+		s.rewire()
+		done <- merr
+	}()
+	return done
 }
 
 // loadSettings reads the settings file; a missing file is first run.

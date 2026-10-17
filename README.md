@@ -49,6 +49,8 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   edit 步骤继承权限门与会话规则。
 - **MCP**：settings 配置 stdio MCP 服务器，其工具以 mcp_ 前缀接入。
 - **三协议**：Anthropic 兼容 / OpenAI / Gemini，设置里一键切换。
+- **订阅登录**：`/login`（Claude Pro/Max OAuth，PKCE + 本地回调 + 自动刷新），
+  三端可用；无 API Key 时以订阅身份调用。
 
 ## 快速开始
 

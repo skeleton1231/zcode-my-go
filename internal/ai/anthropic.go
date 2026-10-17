@@ -22,7 +22,10 @@ const anthropicVersion = "2023-06-01"
 type Anthropic struct {
 	BaseURL string // e.g. https://api.anthropic.com
 	APIKey  string
-	HTTP    *http.Client
+	// OAuthToken, when set and APIKey is empty, authenticates as a
+	// subscription (Authorization: Bearer) instead of an API key.
+	OAuthToken string
+	HTTP       *http.Client
 }
 
 // NewAnthropic returns a client with sane timeouts. Streaming requests are
@@ -54,8 +57,8 @@ func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEv
 		out <- StreamEvent{Kind: EvMessageEnd, StopReason: reason, ErrorMessage: message,
 			Retryable: retryable, RetryAfterMS: afterMS}
 	}
-	if a.APIKey == "" {
-		end(StopError, "missing API key: set it in Settings or ANTHROPIC_API_KEY")
+	if a.APIKey == "" && a.OAuthToken == "" {
+		end(StopError, "missing API key: set it in Settings or ANTHROPIC_API_KEY, or /login")
 		return
 	}
 
@@ -91,9 +94,13 @@ func (a *Anthropic) stream(ctx context.Context, req Request, out chan<- StreamEv
 		return
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", a.APIKey)
-	httpReq.Header.Set("Authorization", "Bearer "+a.APIKey)
 	httpReq.Header.Set("anthropic-version", anthropicVersion)
+	if a.OAuthToken != "" && a.APIKey == "" {
+		httpReq.Header.Set("Authorization", "Bearer "+a.OAuthToken)
+	} else {
+		httpReq.Header.Set("x-api-key", a.APIKey)
+		httpReq.Header.Set("Authorization", "Bearer "+a.APIKey)
+	}
 
 	resp, err := a.HTTP.Do(httpReq)
 	if err != nil {

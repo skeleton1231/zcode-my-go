@@ -616,9 +616,13 @@ func (a *App) runSlash(line string) {
 			a.open(info.ID)
 		},
 		Out: func(msg string) {
-			if msg != "" {
-				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice, text: msg})
+			if msg == "" {
+				return
 			}
+			// /login 的完成通知来自后台 goroutine：跨线程走 update。
+			a.update(func() {
+				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice, text: msg})
+			})
 		},
 	}, line)
 	if quit {

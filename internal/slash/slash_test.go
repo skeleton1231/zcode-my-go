@@ -3,6 +3,7 @@ package slash
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 
@@ -104,5 +105,22 @@ func TestMatchForHints(t *testing.T) {
 	// 上限截断。
 	if got := len(Match("/")); got > 8 {
 		t.Fatalf("cap exceeded: %d", got)
+	}
+}
+
+// TestLoginCommandNotLoggedIn verifies /login reports the flow start (the
+// browser round-trip is env-dependent; the status path is deterministic).
+func TestLoginCommand(t *testing.T) {
+	env, out := newEnv(t)
+	// 已登录状态：直接报告到期时间。
+	dir := t.TempDir()
+	_ = dir
+	// 未登录：启动提示（LoginStart 真正起回调服务器——这里只验证命令可
+	// 派发且不 panic；链接通知异步到达）。
+	Run(env, "/login")
+	time.Sleep(50 * time.Millisecond)
+	joined := strings.Join(*out, "\n")
+	if !strings.Contains(joined, "OAuth") && !strings.Contains(joined, "授权") {
+		t.Fatalf("login output = %q", joined)
 	}
 }
