@@ -5,6 +5,7 @@ package slash
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
@@ -107,6 +108,31 @@ var commands = []command{
 				return "[压缩失败] " + err.Error()
 			}
 			return "[压缩] 会话已压缩"
+		},
+	},
+	{
+		name: "/rewind", usage: "/rewind [n]",
+		help: "回滚到第 n 轮之前（默认最近一轮；含工作区文件）",
+		run: func(env *Env, args string) string {
+			n := 0
+			if args != "" {
+				v, err := strconv.Atoi(strings.TrimSpace(args))
+				if err != nil || v < 1 {
+					return "[用法] /rewind [n]（n 为 1 起的轮次）"
+				}
+				n = v
+			}
+			id := env.SessionID()
+			if n == 0 {
+				if err := env.Svc.RewindLatest(id); err != nil {
+					return "[回滚失败] " + err.Error()
+				}
+				return "[回滚] 已撤销最近一轮（含工作区文件）"
+			}
+			if err := env.Svc.RewindTo(id, n); err != nil {
+				return "[回滚失败] " + err.Error()
+			}
+			return fmt.Sprintf("[回滚] 已回到第 %d 轮之前（含工作区文件）", n)
 		},
 	},
 	{
