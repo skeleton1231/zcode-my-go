@@ -151,13 +151,7 @@ func (l *Loop) streamAssistantWithRetry(ctx context.Context, turn int) (ai.Messa
 		if base <= 0 {
 			base = retryBackoffBase
 		}
-		wait := time.Duration(end.retryAfterMS) * time.Millisecond
-		if fallback := base << retries; wait < fallback {
-			wait = fallback
-		}
-		if wait > retryBackoffCap {
-			wait = retryBackoffCap
-		}
+		wait := retryWait(end.retryAfterMS, base, retries)
 		l.emit(Event{Kind: EvTurnRetry, TurnIndex: turn,
 			Text: fmt.Sprintf("第 %d 次重试（%s）：%s", retries, wait.Round(time.Millisecond), end.err)})
 		select {
@@ -168,6 +162,28 @@ func (l *Loop) streamAssistantWithRetry(ctx context.Context, turn int) (ai.Messa
 		msg, end = l.streamAssistant(ctx, turn)
 	}
 	return msg, end
+}
+
+// serverRetryCeiling 是服务端明确指示等待的独立宽上限（issue #59）：
+// 重度限流的 Retry-After 常见 60~120s，本地 30s cap 截短会让每次重试
+// 都提前砸在限流窗口内，把「稍等片刻」恶化成必然烧完重试预算。
+const serverRetryCeiling = 5 * time.Minute
+
+// retryWait 计算下一次重试的等待：服务端指示（Retry-After）用宽上限，
+// 否则本地指数退避用 30s cap。纯函数便于测试。
+func retryWait(retryAfterMS int, base time.Duration, retries int) time.Duration {
+	if retryAfterMS > 0 {
+		wait := time.Duration(retryAfterMS) * time.Millisecond
+		if wait > serverRetryCeiling {
+			wait = serverRetryCeiling
+		}
+		return wait
+	}
+	wait := base << retries
+	if wait > retryBackoffCap {
+		wait = retryBackoffCap
+	}
+	return wait
 }
 
 // execute runs one tool call and reports its outcome through events. The
