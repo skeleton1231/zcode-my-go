@@ -116,16 +116,22 @@ func runTUI(svc *service.AgentService, workspace string) int {
 
 // handleLine runs one submitted line (commands or a chat turn).
 func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agent.SessionInfo, workspace string) {
-	handled, quit := runSlashCommand(&commandEnv{
-		svc: svc, info: info, workspace: workspace,
-		out: func(msg string) { s.push(msg) },
-	}, line)
-	if quit {
-		s.finish(os.Stdout)
-		os.Exit(0)
-	}
-	if handled {
-		s.requestRedraw()
+	// 命令在后台执行（/compact 等是网络调用，同步会卡住输入循环——
+	// 原 TUI 实现即为异步）；push 自带锁。
+	go func() {
+		handled, quit := runSlashCommand(&commandEnv{
+			svc: svc, info: info, workspace: workspace,
+			out: func(msg string) { s.push(msg) },
+		}, line)
+		if quit {
+			s.finish(os.Stdout)
+			os.Exit(0)
+		}
+		if handled {
+			s.requestRedraw()
+		}
+	}()
+	if strings.HasPrefix(line, "/") {
 		return
 	}
 

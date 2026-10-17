@@ -40,6 +40,9 @@ var slashCommands = []command{
 		name: "/new", usage: "/new",
 		help: "开启新会话",
 		run: func(env *commandEnv, _ string) string {
+			// 旧 session 的 plan flag 随之清理（issue #39：全局 map 只增
+			// 不减，长会话缓慢泄漏且残留脏 flag）。
+			delete(planState, env.info.ID)
 			fresh, err := env.svc.NewSession(env.workspace)
 			if err != nil {
 				return err.Error()
