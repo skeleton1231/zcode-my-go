@@ -35,7 +35,8 @@ func main() {
 			{Label: "会话", Submenu: []*mygo.MenuItem{
 				{Label: "新建会话…", Accelerator: "CmdOrCtrl+N", Click: func(*mygo.MenuItem, *mygo.Window) { a.NewSession() }},
 				{Label: "压缩会话", Accelerator: "CmdOrCtrl+K", Click: func(*mygo.MenuItem, *mygo.Window) { a.Compact() }},
-				{Label: "导出会话 HTML…", Accelerator: "CmdOrCtrl+E", Click: func(*mygo.MenuItem, *mygo.Window) { a.Export() }},
+				{Label: "导出会话 HTML…", Accelerator: "CmdOrCtrl+E", Click: func(*mygo.MenuItem, *mygo.Window) { a.Export(false) }},
+				{Label: "导出会话 Markdown…", Click: func(*mygo.MenuItem, *mygo.Window) { a.Export(true) }},
 				{Label: "搜索会话…", Accelerator: "CmdOrCtrl+F", Click: func(*mygo.MenuItem, *mygo.Window) {
 					if win := a.Window(); win != nil {
 						win.Update(func() { a.OpenSearch() })
