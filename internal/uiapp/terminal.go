@@ -1,6 +1,7 @@
 package uiapp
 
 import (
+	"io"
 	"strings"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -15,6 +16,12 @@ type termFactory func(dir string) (*terminal.Terminal, error)
 // newTerminal is the production factory（测试注入替身，避免真拉 DLL）.
 var newTerminal termFactory = func(dir string) (*terminal.Terminal, error) {
 	return terminal.New(terminal.Options{Dir: dir})
+}
+
+// newTerminalConn is the remote factory: the terminal runs over an SSH
+// shell Conn（测试注入替身）.
+var newTerminalConn = func(conn io.ReadWriteCloser) (*terminal.Terminal, error) {
+	return terminal.New(terminal.Options{Conn: conn})
 }
 
 // terminalPanelView is the bottom drawer between chat and composer.
@@ -68,7 +75,27 @@ func (a *App) ensureTerminal() error {
 		return nil
 	}
 	if strings.HasPrefix(dir, "ssh://") {
-		a.termErr = "SSH 远程工作区的终端面板暂不支持"
+		conn, err := a.svc.TerminalConn(a.activeID)
+		if err != nil {
+			a.term = nil
+			a.termErr = err.Error()
+			return err
+		}
+		if conn == nil {
+			// 拨号失败退化为本地工作区：没有 shell 可接（workspaceFor 的
+			// 降级语义）。
+			a.termErr = "SSH 工作区连接失败，无法打开远程终端"
+			return nil
+		}
+		term, err := newTerminalConn(conn)
+		if err != nil {
+			conn.Close()
+			a.term = nil
+			a.termErr = err.Error()
+			return err
+		}
+		a.term, a.termDir, a.termErr = term, dir, ""
+		a.termConn = conn
 		return nil
 	}
 	term, err := newTerminal(dir)
@@ -85,6 +112,10 @@ func (a *App) closeTerminal() {
 	if a.term != nil {
 		a.term.Close()
 		a.term = nil
+	}
+	if a.termConn != nil {
+		a.termConn.Close()
+		a.termConn = nil
 	}
 }
 

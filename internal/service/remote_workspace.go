@@ -5,6 +5,8 @@ package service
 // Workspace — local, or dialed-over-SSH when the target is ssh://.
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -67,4 +69,20 @@ func (s *AgentService) openWorkspace(workspace string) (tools.Workspace, func(),
 		}
 	}
 	return tools.Workspace{Root: abs}, cleanup, nil
+}
+
+// TerminalConn opens an interactive shell on the session's SSH workspace
+// （终端面板的远程形态——mygo terminal 插件的 Conn）。本地会话返回
+// (nil, nil)，调用方走本地分支。
+func (s *AgentService) TerminalConn(sessionID string) (io.ReadWriteCloser, error) {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return nil, fmt.Errorf("no session %s", sessionID)
+	}
+	ws := s.workspaceFor(sessionID, sess.Info().Workspace)
+	client, ok := ws.Remote.(sshClient)
+	if !ok {
+		return nil, nil
+	}
+	return client.c.Shell()
 }
