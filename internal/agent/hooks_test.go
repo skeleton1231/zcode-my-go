@@ -98,7 +98,7 @@ func TestAfterHookRewrites(t *testing.T) {
 // 组合会丢 stdin，不能靠 payload 判定），策略由 env 决定。
 func TestHookPreHelper(t *testing.T) {
 	if os.Getenv("ZGO_HOOK_MODE") != "block" {
-		os.Exit(0)
+		return // 普通 go test 直跑：不是 hook 调用
 	}
 	os.Stderr.WriteString("该工具被策略禁止")
 	os.Exit(1)
@@ -106,7 +106,7 @@ func TestHookPreHelper(t *testing.T) {
 
 func TestHookPostHelper(t *testing.T) {
 	if os.Getenv("ZGO_HOOK_MODE") != "feedback" {
-		os.Exit(0)
+		return // 普通 go test 直跑：不是 hook 调用
 	}
 	os.Stderr.WriteString("结果需要复核")
 	os.Exit(2)
