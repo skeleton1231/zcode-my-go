@@ -313,6 +313,3 @@ func repl(workspace string) int {
 		fmt.Println()
 	}
 }
-
-// planState tracks the REPL's plan-mode flag per session.
-var planState = map[string]bool{}

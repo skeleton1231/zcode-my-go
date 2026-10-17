@@ -583,6 +583,15 @@ func (s *AgentService) SessionUsage(id string) (ai.Usage, error) {
 	return sess.UsageTotal(), nil
 }
 
+// PlanModeState reports a session's plan mode.
+func (s *AgentService) PlanModeState(id string) bool {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return false
+	}
+	return sess.PlanMode()
+}
+
 // Retry regenerates a session's last answer.
 func (s *AgentService) Retry(sessionID string, emit func(agent.Event)) error {
 	sess, ok := s.mgr.Get(sessionID)

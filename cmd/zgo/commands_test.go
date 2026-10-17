@@ -85,13 +85,13 @@ func TestSlashModelAndRenameAndStatus(t *testing.T) {
 		t.Fatalf("status = %q", last)
 	}
 
-	// 计划模式显式 on/off。
+	// 计划模式显式 on/off（状态由 service 管理）。
 	runSlashCommand(env, "/plan on")
-	if !planState[env.info.ID] {
-		t.Fatal("plan on not tracked")
+	if !env.svc.PlanModeState(env.info.ID) {
+		t.Fatal("plan on not applied")
 	}
 	runSlashCommand(env, "/plan off")
-	if planState[env.info.ID] {
-		t.Fatal("plan off not tracked")
+	if env.svc.PlanModeState(env.info.ID) {
+		t.Fatal("plan off not applied")
 	}
 }

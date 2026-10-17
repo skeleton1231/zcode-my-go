@@ -13,6 +13,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/slash"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
@@ -326,10 +327,19 @@ func (a *App) saveSettings() {
 	}()
 }
 
-// Send submits the composer and starts the agent run.
+// Send submits the composer; a /-prefixed line runs a slash command
+// (the same table as the terminal surfaces), anything else starts a run.
 func (a *App) Send() {
 	text := strings.TrimSpace(a.input)
-	if text == "" || a.activeID == "" || a.chat.running {
+	if text == "" {
+		return
+	}
+	if strings.HasPrefix(text, "/") {
+		a.input = ""
+		a.runSlash(text)
+		return
+	}
+	if a.activeID == "" || a.chat.running {
 		return
 	}
 	a.lastSent = text
@@ -558,6 +568,34 @@ func sanitizeFilename(name string) string {
 			return '_'
 		}
 	}, name)
+}
+
+// runSlash runs one slash command, feeding back through notices.
+func (a *App) runSlash(line string) {
+	_, quit := slash.Run(&slash.Env{
+		Svc:       a.svc,
+		SessionID: func() string { return a.activeID },
+		Workspace: func() string {
+			for _, s := range a.sessions {
+				if s.ID == a.activeID {
+					return s.Workspace
+				}
+			}
+			return ""
+		},
+		SetSession: func(info agent.SessionInfo) {
+			a.refreshSessions()
+			a.open(info.ID)
+		},
+		Out: func(msg string) {
+			if msg != "" {
+				a.chat.items = append(a.chat.items, chatItem{kind: itemNotice, text: msg})
+			}
+		},
+	}, line)
+	if quit {
+		mygo.App.Quit()
+	}
 }
 
 // Retry regenerates the last answer.

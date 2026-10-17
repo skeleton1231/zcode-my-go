@@ -2,6 +2,7 @@ package uiapp
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -407,5 +408,35 @@ func TestRenameSessionRoundTrip(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("sidebar title not updated: %+v", a.sessions)
+	}
+}
+
+// TestComposerSlashCommands verifies /-prefixed composer input runs the
+// shared command table instead of starting a chat run.
+func TestComposerSlashCommands(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(info.ID)
+	a.input = "/status"
+	a.Send()
+	tt.Frame()
+	// Send 里命令反馈即时入 notice。
+	found := false
+	for _, item := range a.chat.items {
+		if item.kind == itemNotice && strings.Contains(item.text, "上下文") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no /status notice: %+v", a.chat.items)
+	}
+	if a.chat.running || a.sending {
+		t.Fatal("slash line started an agent run")
 	}
 }
