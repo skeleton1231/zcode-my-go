@@ -118,18 +118,34 @@ func maxFailures(p Policy) int {
 }
 
 // EstimateTokens sizes a transcript. ZCode estimates from message content;
-// this uses runes over a 2.5 rune-per-token ratio (conservative for both
-// English and Chinese) plus per-message overhead.
+// per-message overhead plus content tokens. CJK 内容按每字 1 token 计
+// （主流 tokenizer 对中文约 1~1.5 字/token），其他按 0.4 token/字——
+// 旧的统一 0.4 对中文低估约 2 倍，auto-compact 触发过晚，压缩前就可能
+// 撞 provider 上下文上限（issue #19）。
 func EstimateTokens(messages []ai.Message) int {
 	tokens := 0
 	for _, m := range messages {
 		for _, b := range m.Blocks {
-			tokens += len([]rune(b.Text)) * 10 / 25
-			tokens += len([]rune(b.Arguments)) * 10 / 25
+			tokens += estimateTextTokens(b.Text)
+			tokens += estimateTextTokens(b.Arguments)
 		}
 		tokens += 16 // role and framing overhead
 	}
 	return tokens
+}
+
+// estimateTextTokens 按 rune 自适应：CJK（> U+2E80，含汉字、日文假名、
+// 韩文）每字 1 token，其他每字 2/5 token。
+func estimateTextTokens(s string) int {
+	cjk, other := 0, 0
+	for _, r := range s {
+		if r > 0x2E80 {
+			cjk++
+		} else {
+			other++
+		}
+	}
+	return cjk + other*2/5
 }
 
 // SummaryUserPrompt asks the model for the structured summary that

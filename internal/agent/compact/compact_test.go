@@ -58,6 +58,26 @@ func TestEstimateTokens(t *testing.T) {
 	}
 }
 
+// TestEstimateTokensCJK 验证中文按每字 1 token 计、密度越高估算越高
+// （issue #19：统一 0.4 对中文低估约 2 倍，压缩触发过晚）。
+func TestEstimateTokensCJK(t *testing.T) {
+	cn := EstimateTokens([]ai.Message{
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "一二三四五六七八九十"}}}, // 10 字 → 10 + 16
+	})
+	en := EstimateTokens([]ai.Message{
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "1234567890"}}}, // 10 字符 → 4 + 16
+	})
+	if cn != 26 || en != 20 {
+		t.Fatalf("cn = %d, en = %d; want 26/20", cn, en)
+	}
+	mixed := EstimateTokens([]ai.Message{
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "五个字abcde"}}}, // 3 CJK + 5 ASCII → 3+2 + 16
+	})
+	if mixed != 21 {
+		t.Fatalf("mixed = %d, want 21", mixed)
+	}
+}
+
 func TestSummaryMessage(t *testing.T) {
 	m := SummaryMessage("做完了")
 	if m.Role != ai.RoleUser || m.Blocks[0].Text != "（会话已压缩；以下是此前对话的摘要）\n\n做完了" {
