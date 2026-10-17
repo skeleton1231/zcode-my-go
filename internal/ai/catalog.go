@@ -48,10 +48,16 @@ func LookupModel(id string) ModelInfo {
 		}
 	}
 	// 无日期后缀的族名匹配：claude-sonnet-4-5-20261001 → claude-sonnet-4-5。
+	// 最长前缀优先（issue #16）：glm-5.2 声明在 glm-5.2-air 之前，取首个
+	// 命中会让 glm-5.2-air-* 错误解析到基础款（MaxOutput 32000≠16000）。
+	var best ModelInfo
 	for _, m := range catalog {
-		if strings.HasPrefix(id, strings.ToLower(m.ID)) {
-			return m
+		if strings.HasPrefix(id, strings.ToLower(m.ID)) && len(m.ID) > len(best.ID) {
+			best = m
 		}
+	}
+	if best.ID != "" {
+		return best
 	}
 	return ModelInfo{ID: id, ContextWindow: DefaultContextWindow, MaxOutput: DefaultMaxOutput}
 }

@@ -12,6 +12,16 @@ func TestLookupModel(t *testing.T) {
 	if m.ID != "claude-sonnet-4-5" {
 		t.Fatalf("family match = %+v", m)
 	}
+	// 前缀碰撞取最长家族（issue #16）：glm-5.2-air-* 曾被 catalog 顺序
+	// 抢先解析到 glm-5.2 基础款，MaxOutput 错 32000 vs 16000。
+	m = LookupModel("glm-5.2-air-20261101")
+	if m.ID != "glm-5.2-air" || m.MaxOutput != 16_000 {
+		t.Fatalf("air family = %+v, want glm-5.2-air/16000", m)
+	}
+	m = LookupModel("glm-5.2-20261101")
+	if m.ID != "glm-5.2" || m.MaxOutput != 32_000 {
+		t.Fatalf("base family = %+v, want glm-5.2/32000", m)
+	}
 	// 未知模型回退默认。
 	m = LookupModel("totally-unknown")
 	if m.ContextWindow != DefaultContextWindow || m.MaxOutput != DefaultMaxOutput {
