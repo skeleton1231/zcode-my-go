@@ -490,6 +490,16 @@ type ContextBudget struct {
 	Threshold int `json:"threshold"`
 }
 
+// RenameSession renames a session.
+func (s *AgentService) RenameSession(id, title string) error {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	sess.Rename(title)
+	return nil
+}
+
 // SessionUsage returns a session's cumulative token usage.
 func (s *AgentService) SessionUsage(id string) (ai.Usage, error) {
 	sess, ok := s.mgr.Get(id)

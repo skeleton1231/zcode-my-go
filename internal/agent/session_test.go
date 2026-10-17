@@ -363,3 +363,23 @@ func TestUsageTotalAccumulatesAndPersists(t *testing.T) {
 		t.Fatalf("reloaded total = %+v", got)
 	}
 }
+
+func TestRenamePersists(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	wire(m)
+	s, _ := m.New("ws")
+	s.Append(userMsg("自动标题"))
+	s.Rename("  手动   标题  ") // 折叠空白
+	if got := s.Info().Title; got != "手动 标题" {
+		t.Fatalf("title = %q", got)
+	}
+	s.Rename("") // 空标题忽略
+	if got := s.Info().Title; got != "手动 标题" {
+		t.Fatalf("empty rename applied: %q", got)
+	}
+	reloaded, _ := NewManager(dir)
+	if got := reloaded.List()[0].Title; got != "手动 标题" {
+		t.Fatalf("reloaded title = %q", got)
+	}
+}

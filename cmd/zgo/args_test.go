@@ -32,12 +32,12 @@ func TestParseArgsStrict(t *testing.T) {
 	}
 
 	bad := map[string][]string{
-		"-p 缺值":          {"-p"},
-		"-p 吞 flag":      {"-p", "-C", "D:/tmp"},
-		"未知 flag":        {"--nonexistent-flag"},
-		"-C 缺值":          {"-p", "hi", "-C"},
-		"-C 吞 flag":      {"-C", "-p"},
-		"多余位置参数": {"hi", "extra"},
+		"-p 缺值":     {"-p"},
+		"-p 吞 flag": {"-p", "-C", "D:/tmp"},
+		"未知 flag":   {"--nonexistent-flag"},
+		"-C 缺值":     {"-p", "hi", "-C"},
+		"-C 吞 flag": {"-C", "-p"},
+		"多余位置参数":    {"hi", "extra"},
 	}
 	for name, argv := range bad {
 		if _, _, _, err := parseArgs(argv); err == nil {

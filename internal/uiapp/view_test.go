@@ -291,3 +291,44 @@ func TestContextMeterShowsBudget(t *testing.T) {
 		t.Fatalf("meter percent = %q", tt.Texts())
 	}
 }
+
+// TestRenameSessionRoundTrip verifies the modal renames and the sidebar
+// shows the new title.
+func TestRenameSessionRoundTrip(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.chat.appendUser("第一问") // 触发自动标题
+	a.update(func() {})
+	_ = info
+	a.OpenSession(info.ID)
+	tt.Frame()
+
+	a.OpenRename()
+	tt.Frame()
+	if !tt.HasText("重命名会话") {
+		t.Fatalf("modal missing: %q", tt.Texts())
+	}
+	a.renameDraft = "我的调试会话"
+	if err := tt.Click("保存"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if a.renameOpen {
+		t.Fatal("modal still open")
+	}
+	found := false
+	for _, s := range a.sessions {
+		if s.ID == info.ID && s.Title == "我的调试会话" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("sidebar title not updated: %+v", a.sessions)
+	}
+}

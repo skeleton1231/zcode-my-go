@@ -1,6 +1,8 @@
 package uiapp
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
@@ -85,4 +87,28 @@ func riskLabel(risk permission.RiskLevel) string {
 	default:
 		return "中"
 	}
+}
+
+// renameModal renames the active session (ZCode's rename).
+func (a *App) renameModal(c *ui.Context, t *ui.Theme) {
+	if !a.renameOpen {
+		return
+	}
+	ui.Modal(c, &a.renameOpen, func() {
+		ui.Column(c).Width(380).Gap(12).Children(func() {
+			ui.Text(c, "重命名会话").Bold().FontSize(15)
+			in := ui.TextInput(c, &a.renameDraft).AutoFocus()
+			if in.Submitted() {
+				a.SubmitRename()
+			}
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				if ui.Button(c, "取消").Clicked() {
+					a.renameOpen = false
+				}
+				if ui.PrimaryButton(c, "保存").Disabled(strings.TrimSpace(a.renameDraft) == "").Clicked() {
+					a.SubmitRename()
+				}
+			})
+		})
+	})
 }

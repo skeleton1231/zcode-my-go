@@ -267,6 +267,22 @@ func (s *Session) SetPlanMode(on bool) {
 	}
 }
 
+// Rename sets the session's title (ZCode's rename), rewriting the meta
+// line like Append's first-title write does.
+func (s *Session) Rename(title string) {
+	title = strings.Join(strings.Fields(title), " ")
+	if len([]rune(title)) > 80 {
+		title = string([]rune(title)[:79]) + "…"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if title == "" || title == s.info.Title {
+		return
+	}
+	s.info.Title = title
+	_ = s.writeMetaLocked()
+}
+
 // UsageTotal returns the session's cumulative token usage.
 func (s *Session) UsageTotal() ai.Usage {
 	s.mu.Lock()
