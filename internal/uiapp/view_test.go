@@ -440,3 +440,48 @@ func TestComposerSlashCommands(t *testing.T) {
 		t.Fatal("slash line started an agent run")
 	}
 }
+
+// TestSlashHintsPanel verifies the composer's autocomplete panel filters
+// by prefix and fills the composer on pick.
+func TestSlashHintsPanel(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(info.ID)
+	tt.Frame()
+
+	// 普通输入不弹。
+	a.input = "普通问题"
+	tt.Frame()
+	if tt.HasText("列出全部命令") {
+		t.Fatal("hints on plain input")
+	}
+
+	// "/" 弹出全部；"/mo" 过滤到 /model。
+	a.input = "/"
+	tt.Frame()
+	if !tt.HasText("/help") || !tt.HasText("/compact") {
+		t.Fatalf("full hints = %q", tt.Texts())
+	}
+	a.input = "/mo"
+	tt.Frame()
+	if !tt.HasText("/model") {
+		t.Fatalf("filtered hints missing /model: %q", tt.Texts())
+	}
+	if tt.HasText("/compact") {
+		t.Fatal("unrelated command shown for /mo")
+	}
+
+	// 点击填入命令名。
+	if err := tt.Click("/model"); err != nil {
+		t.Fatalf("picking hint: %v", err)
+	}
+	if a.input != "/model " {
+		t.Fatalf("composer after pick = %q", a.input)
+	}
+}
