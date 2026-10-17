@@ -20,19 +20,32 @@ Zgo 是开源桌面 coding agent：mygo **native UI**（package `ui`，纯 Go �
 
 ## Git 工作流
 
-每个功能一次提交与一次 PR（不在 main 上直接开发）：
+每个功能一次提交与一次 PR，且**在 worktree 里开发**（主检出目录留给
+人工操作与浏览，循环/多会话互不踩踏）：
 
 ```bash
-git checkout -b feat/<功能名>        # 或 fix/ chore/ docs/
-# …实现 + 测试…
+# 1. 建隔离工作树（基于目标基线分支）
+git fetch origin
+git worktree add .claude/worktrees/<名称> -b feat/<功能名> origin/main
+cd .claude/worktrees/<名称>
+
+# 2. 实现 + 测试 + 全量验证
 go build ./... && go vet ./... && go test ./...
-git add -A && git commit              # 约定式消息：<type>: <描述>
+
+# 3. 提交并开 PR（约定式消息：<type>: <描述>）
+git add -A && git commit
 git push -u origin HEAD
 gh pr create --fill-first             # PR 描述含变更摘要与测试计划
+
+# 4. PR 开出后清理本工作树（分支已推远端，PR 不受影响）
+cd ../.. && git worktree remove .claude/worktrees/<名称>
+git worktree prune
 ```
 
 - commit 消息与 PR 描述如实写明验证结果；未跑过的检查不写成通过。
 - PR 粒度 = 一个功能；循环（/loop）产出的每轮迭代就是一个 PR。
+- 并发会话各自用独立 worktree；主目录只读浏览，不并行 checkout。
+- Go 模块缓存全局共享，worktree 无需重新拉依赖；`build/` 产物各树独立。
 
 ## 命令与仓库结构
 
