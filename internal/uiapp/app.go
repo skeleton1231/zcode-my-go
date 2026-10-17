@@ -31,6 +31,10 @@ type App struct {
 	lastSent string
 	planMode bool
 
+	// edit-in-progress state: the item index being edited and its draft.
+	editingIndex int
+	editDraft    string
+
 	modelSuggestions []string
 
 	// permission ask modal state (driven from the agent's goroutine)
@@ -276,6 +280,59 @@ func (a *App) answerQuestion(answer string) {
 		a.qCh <- answer
 		a.qCh = nil
 	}
+}
+
+// StartEdit begins editing the last user message (ZCode's edit-message).
+func (a *App) StartEdit() {
+	if a.activeID == "" || a.chat.running {
+		return
+	}
+	idx := lastUserIndex(a.chat.items)
+	if idx < 0 {
+		return
+	}
+	a.editingIndex = idx
+	a.editDraft = a.chat.items[idx].text
+}
+
+// SubmitEdit sends the edited message: the view truncates to match the
+// agent's rewind, then the run streams in as usual.
+func (a *App) SubmitEdit() {
+	text := strings.TrimSpace(a.editDraft)
+	idx := a.editingIndex
+	a.editingIndex = -1
+	a.editDraft = ""
+	if text == "" || a.activeID == "" || a.chat.running {
+		return
+	}
+	a.chat.items = a.chat.items[:idx]
+	a.chat.appendUser(text)
+	a.sending = true
+	a.lastSent = text
+	id := a.activeID
+	go func() {
+		err := a.svc.EditAndResend(id, text, func(ev agent.Event) {
+			a.update(func() { a.chat.apply(ev) })
+		})
+		a.update(func() {
+			a.sending = false
+			if err != nil {
+				a.chat.endErr = err.Error()
+			}
+			a.refreshSessions()
+		})
+	}()
+}
+
+// CancelEdit drops the edit-in-progress state.
+func (a *App) CancelEdit() {
+	a.editingIndex = -1
+	a.editDraft = ""
+}
+
+// Editing reports whether a user message is being edited, and which item.
+func (a *App) Editing() (int, bool) {
+	return a.editingIndex, a.editingIndex >= 0
 }
 
 // Retry regenerates the last answer.

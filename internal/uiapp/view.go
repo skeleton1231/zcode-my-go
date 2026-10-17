@@ -74,7 +74,7 @@ func (a *App) chatView(c *ui.Context, t *ui.Theme) {
 	a.list.FollowEnd = true
 	a.list.FollowAnimation = &ui.Smooth
 	ui.List(c, &a.list, len(a.chat.items), func(i int) {
-		a.itemView(c, t, &a.chat.items[i])
+		a.itemView(c, t, i, &a.chat.items[i])
 	}).Grow(1).Padding(16, 24).Gap(14).Justify(ui.End).Children(func() {
 		if len(a.chat.items) == 0 {
 			ui.Text(c, "把任务交给 agent：读代码、改文件、跑命令。").TextColor(t.TextMuted).Margin(ui.Auto)
@@ -106,14 +106,46 @@ func (a *App) welcomeView(c *ui.Context, t *ui.Theme) {
 
 // itemView renders one chat row: the user's in a bubble, the assistant's as
 // Markdown, tool calls as collapsible blocks.
-func (a *App) itemView(c *ui.Context, t *ui.Theme, item *chatItem) {
+// userItemView renders a user bubble, or its editor while editing.
+func (a *App) userItemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
+	if idx, editing := a.Editing(); editing && idx == i {
+		ui.Column(c).Grow(1).Gap(6).Children(func() {
+			in := ui.TextArea(c, &a.editDraft).Lines(2, 8).AutoFocus()
+			in.OnTextKey(func(k ui.TextKey) bool {
+				if k.Key == ui.KeyEnter && k.Mods == 0 && strings.TrimSpace(a.editDraft) != "" {
+					a.SubmitEdit()
+					k.SetText("")
+					return true
+				}
+				return false
+			})
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				if ui.Button(c, "取消").Clicked() {
+					a.CancelEdit()
+				}
+				if ui.PrimaryButton(c, "重发").Disabled(strings.TrimSpace(a.editDraft) == "").Clicked() {
+					a.SubmitEdit()
+				}
+			})
+		})
+		return
+	}
+	ui.Row(c).Children(func() {
+		ui.Spacer(c)
+		ui.Text(c, item.text).Selectable().Padding(8, 12).Radius(12).
+			Background(t.Surface).MaxWidth(520)
+		if i == lastUserIndex(a.chat.items) && !a.chat.running && a.activeID != "" {
+			if ui.Button(c, "✎ 编辑").Clicked() {
+				a.StartEdit()
+			}
+		}
+	})
+}
+
+func (a *App) itemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 	switch item.kind {
 	case itemUser:
-		ui.Row(c).Children(func() {
-			ui.Spacer(c)
-			ui.Text(c, item.text).Selectable().Padding(8, 12).Radius(12).
-				Background(t.Surface).MaxWidth(520)
-		})
+		a.userItemView(c, t, i, item)
 
 	case itemAssistant:
 		ui.Column(c).MaxWidth(760).Grow(1).Children(func() {

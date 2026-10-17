@@ -233,3 +233,63 @@ func TestRetryGuards(t *testing.T) {
 		t.Fatal("empty retry allowed")
 	}
 }
+
+// TestEditAndResendReplacesLastUserMessage verifies the edit path truncates
+// back to (not including) the last user message and runs with new text.
+func TestEditAndResendReplacesLastUserMessage(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return failProvider{msg: "no provider"} },
+		Model:    func() string { return "fake-model" },
+	})
+	s, _ := m.New("ws")
+	s.Append(ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "keep me"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "old answer"}}})
+	s.Append(ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "fix this"}}})
+
+	if err := s.EditAndResend("改成那样", func(Event) {}); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	msgs := s.Messages()
+	if msgs[0].Text() != "keep me" || msgs[1].Text() != "old answer" {
+		t.Fatalf("earlier turns lost: %+v", msgs[:2])
+	}
+	found := false
+	for _, m := range msgs[2:] {
+		if m.Role == ai.RoleUser && m.Text() == "改成那样" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("edited prompt missing: %+v", msgs[2:])
+	}
+	for _, m := range msgs {
+		if m.Role == ai.RoleUser && m.Text() == "fix this" {
+			t.Fatal("old prompt survived the edit")
+		}
+	}
+
+	// 重放一致性。
+	reloaded, _ := NewManager(dir)
+	if got := len(reloaded.List()); got != 1 {
+		t.Fatalf("sessions = %d", got)
+	}
+	again, _ := reloaded.Get(s.Info().ID)
+	if len(again.Messages()) != len(msgs) {
+		t.Fatalf("replayed = %d, want %d", len(again.Messages()), len(msgs))
+	}
+}
+
+func TestEditAndResendGuards(t *testing.T) {
+	m, _ := NewManager(t.TempDir())
+	wire(m)
+	s, _ := m.New("ws")
+	if err := s.EditAndResend("hi", func(Event) {}); err == nil {
+		t.Fatal("edit without history allowed")
+	}
+	s.Append(ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "x"}}})
+	if err := s.EditAndResend("  ", func(Event) {}); err == nil {
+		t.Fatal("empty edit allowed")
+	}
+}

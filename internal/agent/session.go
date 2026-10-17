@@ -166,30 +166,57 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 // as a regenerate record and replayed on load, keeping the file
 // append-only.
 func (s *Session) Retry(emit func(Event)) error {
-	s.mu.Lock()
-	if s.cancel != nil {
-		s.mu.Unlock()
-		return errors.New("a run is already in progress")
+	last := s.lastUserIndex()
+	if last < 0 {
+		return errors.New("nothing to regenerate")
 	}
+	return s.rewindAndSend(last, s.messages[last].Text(), emit)
+}
+
+// EditAndResend replaces the last user message with new text and reruns
+// (ZCode's edit-message): same truncation semantics as Retry, persisted
+// the same way.
+func (s *Session) EditAndResend(text string, emit func(Event)) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("empty message")
+	}
+	last := s.lastUserIndex()
+	if last < 0 {
+		return errors.New("nothing to edit")
+	}
+	return s.rewindAndSend(last, text, emit)
+}
+
+// lastUserIndex is the index of the last user message, or -1.
+func (s *Session) lastUserIndex() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	last := -1
 	for i, m := range s.messages {
 		if m.Role == ai.RoleUser {
 			last = i
 		}
 	}
-	if last < 0 {
+	return last
+}
+
+// rewindAndSend truncates the transcript before the given user message,
+// persists the truncation as a regenerate record, and runs a new turn with
+// the given text (Retry and EditAndResend share it).
+func (s *Session) rewindAndSend(userIndex int, text string, emit func(Event)) error {
+	s.mu.Lock()
+	if s.cancel != nil {
 		s.mu.Unlock()
-		return errors.New("nothing to regenerate")
+		return errors.New("a run is already in progress")
 	}
-	prompt := s.messages[last].Text()
-	s.messages = s.messages[:last]
-	kept := last
+	s.messages = s.messages[:userIndex]
 	workspace := s.info.Workspace
 	modelInfo := ai.LookupModel(s.model())
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	id := s.info.ID
-	rec, err := json.Marshal(regenerateRecord{Type: "regenerate", Kept: kept})
+	rec, err := json.Marshal(regenerateRecord{Type: "regenerate", Kept: userIndex})
 	if err == nil {
 		err = appendLine(s.path, rec)
 	}
@@ -206,7 +233,7 @@ func (s *Session) Retry(emit func(Event)) error {
 		cancel()
 	}()
 	if err := s.Append(ai.Message{Role: ai.RoleUser,
-		Blocks: []ai.Block{{Kind: ai.BlockText, Text: prompt}}}); err != nil {
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}}); err != nil {
 		return err
 	}
 	s.run(ctx, workspace, id, modelInfo, emit)
