@@ -66,6 +66,10 @@ func (a *Ask) Execute(ctx context.Context, args json.RawMessage) agent.ToolResul
 	return agent.ToolResult{Content: "用户回答：" + answer}
 }
 
+// SerialOnly implements agent.SerialOnly: user interaction and the shared
+// plan must never overlap with other tools in a parallel batch.
+func (*Ask) SerialOnly() bool { return true }
+
 // Capability implements agent.Capabler: asking has no side effects.
 func (a *Ask) Capability() permission.Capability {
 	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}

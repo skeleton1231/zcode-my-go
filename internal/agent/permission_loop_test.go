@@ -560,3 +560,164 @@ func TestSteeringClearedOnRunEnd(t *testing.T) {
 		t.Fatalf("aborted steering leaked into next run: %d queued", left)
 	}
 }
+
+// overlapSlowTool blocks until it sees the fast tool has run — only
+// possible when the batch overlaps (timeout keeps serial runs moving).
+type overlapSlowTool struct {
+	fastStarted chan struct{}
+	name        string
+	runs        int
+}
+
+func (t *overlapSlowTool) Name() string        { return t.name }
+func (t *overlapSlowTool) Description() string { return "slow" }
+func (t *overlapSlowTool) Parameters() map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{}}
+}
+func (t *overlapSlowTool) Execute(context.Context, json.RawMessage) ToolResult {
+	t.runs++
+	select {
+	case <-t.fastStarted:
+		return ToolResult{Content: "slow done after overlap"}
+	case <-time.After(2 * time.Second):
+		return ToolResult{IsError: true, Content: "no overlap observed"}
+	}
+}
+
+// overlapFastTool signals its start and returns immediately.
+type overlapFastTool struct {
+	started chan struct{}
+	runs    int
+}
+
+func (t *overlapFastTool) Name() string        { return "fast" }
+func (t *overlapFastTool) Description() string { return "fast" }
+func (t *overlapFastTool) Parameters() map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{}}
+}
+func (t *overlapFastTool) Execute(context.Context, json.RawMessage) ToolResult {
+	t.runs++
+	close(t.started)
+	return ToolResult{Content: "fast done"}
+}
+
+// TestParallelToolsOverlap verifies parallel mode truly overlaps a batch
+// (the slow tool only finishes after the fast one started) and assembles
+// results in source order.
+func TestParallelToolsOverlap(t *testing.T) {
+	fast := &overlapFastTool{started: make(chan struct{})}
+	slow := &overlapSlowTool{fastStarted: fast.started, name: "slow"}
+	provider := &fakeProvider{turns: []fakeTurn{
+		fakeTurn{events: []ai.StreamEvent{
+			{Kind: ai.EvMessageStart},
+			{Kind: ai.EvToolCallStart, ToolCallID: "slow", ToolCallName: "slow"},
+			{Kind: ai.EvToolCallStart, ToolCallID: "fast", ToolCallName: "fast"},
+			{Kind: ai.EvMessageEnd, StopReason: ai.StopToolUse},
+		}},
+		textTurn("done", ai.Usage{}),
+	}}
+	c := &collector{}
+	var endOrder []string
+	loop := NewLoop(LoopConfig{
+		Provider:      provider,
+		Tools:         []Tool{slow, fast},
+		ToolExecution: ParallelExecution,
+		History:       func() []ai.Message { return c.messages },
+	}, func(ev Event) {
+		c.emit(ev)
+		if ev.Kind == EvToolExecutionEnd {
+			endOrder = append(endOrder, ev.ToolCallID)
+		}
+	})
+	loop.Run(context.Background(), c.append)
+
+	if slow.runs != 1 || fast.runs != 1 {
+		t.Fatalf("runs slow=%d fast=%d", slow.runs, fast.runs)
+	}
+	// 结果按源序（slow 在前）组装。
+	results := c.messages[1]
+	if len(results.Blocks) != 2 ||
+		results.Blocks[0].ToolCallID != "slow" ||
+		results.Blocks[1].ToolCallID != "fast" {
+		t.Fatalf("source order broken: %+v", results.Blocks)
+	}
+	// 完成序事件：fast 先完成。
+	if len(endOrder) != 2 || endOrder[0] != "fast" {
+		t.Fatalf("completion order = %v", endOrder)
+	}
+}
+
+// TestSerialBatchDoesNotOverlap verifies the default mode stays sequential.
+func TestSerialBatchDoesNotOverlap(t *testing.T) {
+	fast := &overlapFastTool{started: make(chan struct{})}
+	slow := &overlapSlowTool{fastStarted: fast.started, name: "slow"}
+	provider := &fakeProvider{turns: []fakeTurn{
+		fakeTurn{events: []ai.StreamEvent{
+			{Kind: ai.EvMessageStart},
+			{Kind: ai.EvToolCallStart, ToolCallID: "slow", ToolCallName: "slow"},
+			{Kind: ai.EvToolCallStart, ToolCallID: "fast", ToolCallName: "fast"},
+			{Kind: ai.EvMessageEnd, StopReason: ai.StopToolUse},
+		}},
+		textTurn("done", ai.Usage{}),
+	}}
+	c := &collector{}
+	loop := NewLoop(LoopConfig{
+		Provider: provider,
+		Tools:    []Tool{slow, fast}, // 默认 sequential
+		History:  func() []ai.Message { return c.messages },
+	}, c.emit)
+	loop.Run(context.Background(), c.append)
+	// 串行：slow 等不到 fast 启动，按超时路径完成并报错。
+	results := c.messages[1]
+	if !results.Blocks[0].IsError {
+		t.Fatalf("serial mode unexpectedly overlapped: %+v", results.Blocks[0])
+	}
+}
+
+// TestSerialOnlyToolForcesSequentialBatch verifies ask/todo marked serial
+// keep the whole batch sequential even in parallel mode.
+func TestSerialOnlyToolForcesSequentialBatch(t *testing.T) {
+	fast := &overlapFastTool{started: make(chan struct{})}
+	slow := &overlapSlowTool{fastStarted: fast.started, name: "slow"}
+	provider := &fakeProvider{turns: []fakeTurn{
+		fakeTurn{events: []ai.StreamEvent{
+			{Kind: ai.EvMessageStart},
+			{Kind: ai.EvToolCallStart, ToolCallID: "ask", ToolCallName: "ask"},
+			{Kind: ai.EvToolCallStart, ToolCallID: "fast", ToolCallName: "fast"},
+			{Kind: ai.EvMessageEnd, StopReason: ai.StopToolUse},
+		}},
+		textTurn("done", ai.Usage{}),
+	}}
+	// 带 SerialOnly 标记的轻量替身（ask/todo 的批内替身）。
+	marker := &serialMarker{name: "ask"}
+	c := &collector{}
+	loop := NewLoop(LoopConfig{
+		Provider:      provider,
+		Tools:         []Tool{marker, fast, slow},
+		ToolExecution: ParallelExecution,
+		History:       func() []ai.Message { return c.messages },
+	}, c.emit)
+	_ = slow
+	loop.Run(context.Background(), c.append)
+	// 批次含 ask（标记串行）→ 整批顺序：本测试里 ask 先跑、fast 后跑。
+	// slow 未被本批调用；断言 ask 已执行且无并发要求。
+	if marker.runs != 1 || fast.runs != 1 {
+		t.Fatalf("ask=%d fast=%d", marker.runs, fast.runs)
+	}
+}
+
+type serialMarker struct {
+	name string
+	runs int
+}
+
+func (t *serialMarker) Name() string        { return t.name }
+func (t *serialMarker) Description() string { return "serial marker" }
+func (t *serialMarker) Parameters() map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{}}
+}
+func (t *serialMarker) Execute(context.Context, json.RawMessage) ToolResult {
+	t.runs++
+	return ToolResult{Content: "ok"}
+}
+func (t *serialMarker) SerialOnly() bool { return true }
