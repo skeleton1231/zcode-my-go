@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,5 +87,43 @@ func TestWorkspaceFilesHints(t *testing.T) {
 	hints = svc.WorkspaceFiles(id, "zzz")
 	if len(hints) != 0 {
 		t.Fatalf("hints = %v", hints)
+	}
+}
+
+// TestMentionTotalBudget 验证多文件引用的总量/数量预算（issue #120：50×
+// 60KB 曾逼近 JSONL 行上限，重载整条消息静默消失——#105 的文本载荷版）。
+func TestMentionTotalBudget(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	scrubEnv(t)
+	ws := t.TempDir()
+	info, err := svc.NewSession(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 35 个 60KB 文本文件（超 mentionMaxFiles=30，且总量近 2.1MB）。
+	text := "都看看"
+	for i := 0; i < 35; i++ {
+		name := fmt.Sprintf("f%02d.log", i)
+		if err := os.WriteFile(filepath.Join(ws, name),
+			[]byte(strings.Repeat("数", 20<<10)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		text += " @" + name
+	}
+	out, _ := svc.expandMentions(info.ID, text, nil)
+	// 数量上限生效：30 个展开 + 注明 5 个未展开。
+	if !strings.Contains(out, "未展开") {
+		t.Fatal("budget notice missing")
+	}
+	if n := strings.Count(out, "：\n```"); n > 30 {
+		t.Fatalf("expanded %d files, want <= 30", n)
+	}
+	// 总展开量受预算约束（2MB + 原文 + 围栏开销）。
+	if len(out) > mentionTotalCap+64<<10 {
+		t.Fatalf("expanded output = %d bytes", len(out))
 	}
 }
