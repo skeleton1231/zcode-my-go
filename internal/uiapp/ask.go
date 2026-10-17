@@ -26,6 +26,12 @@ func (a *App) askModal(c *ui.Context, t *ui.Theme) {
 			}
 			ui.Text(c, "风险："+riskLabel(a.askReq.Risk)+" · "+a.askReq.Reason).
 				TextColor(t.TextMuted).FontSize(12)
+			if a.askReq.Diff != "" {
+				ui.Text(c, "将做出的改动：").FontSize(12)
+				ui.Scroll(c).MaxHeight(260).Children(func() {
+					diffView(c, t, a.askReq.Diff)
+				})
+			}
 
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c, "拒绝").Clicked() {

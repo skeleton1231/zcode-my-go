@@ -79,6 +79,29 @@ func (w *Write) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 		a.Path, lines, len(a.Content)), Diff: textdiff.Unified(oldData, []byte(a.Content))}
 }
 
+// PreviewDiff implements agent.PreviewDiffer: old (missing = empty)
+// against the incoming content, no write.
+func (w *Write) PreviewDiff(args json.RawMessage) string {
+	var a struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := decodeArgs(args, &a); err != nil {
+		return ""
+	}
+	abs, err := w.ws.Resolve(a.Path)
+	if err != nil {
+		return ""
+	}
+	var old []byte
+	if w.ws.IsRemote() {
+		old, _ = w.ws.Remote.ReadFile(remoteRel(w.ws, abs))
+	} else {
+		old, _ = os.ReadFile(abs)
+	}
+	return textdiff.Unified(old, []byte(a.Content))
+}
+
 // Capability implements agent.Capabler: writing files changes the workspace.
 func (w *Write) Capability() permission.Capability {
 	return permission.Capability{Risk: permission.RiskMedium}

@@ -46,6 +46,9 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    输入降级为整块替换）；Diff 随 EvToolExecutionEnd 事件透传给 UI 彩色渲染
    （+绿/-红/@@强调），不进模型上下文（Content 仍是给模型的摘要）。
 
+12. 审批预览：实现 PreviewDiffer（edit/write）的工具在权限询问时计算
+   待执行改动的统一 diff（只读试算，不落盘），随 AskRequest.Diff 交给
+   审批面（桌面弹窗彩色渲染、终端打印）——批准前所见即批准后所得。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
@@ -122,3 +125,5 @@ agent_end(stop_reason)
    历史不变；ignored 文件保留。
 9. 工具 diff：edit/write 的工具块事件携带统一 diff —— 新建文件全为 + 行，
    修改为 -旧/+新 配上下文行；desktop 工具块与终端 TUI 彩色渲染。
+12. 审批预览：write 的权限询问携带 +内容 预览；edit 携带 -旧/+新；
+    询问未回答前文件不落盘。

@@ -85,6 +85,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    防重叠与结果记账）+ 服务调度接线（桌面随启动开、退出即停）+ zgo cron
    CLI（list/add/rm/run/enable/disable）+ 桌面任务面板（列表/行内启停/立即
    运行/删除/新建表单，specs/automation.md 规则 7）。
+**审批 diff 预览**：PreviewDiffer（edit/write）在权限询问时只读试算待执行
+   改动的统一 diff（不落盘），AskRequest.Diff 随桌面弹窗彩色渲染、终端
+   打印——批准前所见即所得。
 待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录

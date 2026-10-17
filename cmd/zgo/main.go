@@ -195,8 +195,11 @@ func firstLine(s string) string {
 // stdinAsker confirms permission asks on the terminal: y allows once,
 // a always (this session), anything else denies.
 func stdinAsker(req agent.AskRequest) agent.AskResponse {
-	fmt.Fprintf(os.Stderr, "\n需要确认：%s %s（%s）\n[y]允许一次 [a]本会话总是允许 [其他]拒绝 > ",
-		req.Tool, oneLine(req.Args), req.Reason)
+	fmt.Fprintf(os.Stderr, "\n需要确认：%s %s（%s）\n", req.Tool, oneLine(req.Args), req.Reason)
+	if req.Diff != "" {
+		fmt.Fprint(os.Stderr, req.Diff)
+	}
+	fmt.Fprint(os.Stderr, "[y]允许一次 [a]本会话总是允许 [其他]拒绝 > ")
 	line, err := readLine()
 	if err != nil {
 		return agent.AskResponse{Deny: true, Note: "终端读取失败"}
