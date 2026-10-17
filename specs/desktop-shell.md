@@ -25,6 +25,13 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
    状态点，展开见完整输出）。
 6. 输入区：多行自动增高（`TextArea.Lines(1,8)`），Enter 发送 /
    Shift+Enter 换行；运行时按钮变为停止（触发 Abort）。
+7. 浏览器目标（wasm）：`go tool mygo build -platform web` 产出静态站点，
+   `go run ./cmd/webfs` 注入内存文件系统垫片（wasm 的 syscall 层需要 Node
+   形态的 fs 对象，wasm_exec.js 的回退只有 stdout）。浏览器上的语义：
+   用户数据目录与工作区都在内存 FS（`main_wasm.go` 的 SetPath 与
+   PickWorkspace 的 GOOS=js 分支），刷新即清空（持久化桥接是后续工作）；
+   bash 工具明确报错拒绝（无进程模型）；权限确认弹窗照常阻塞运行；
+   provider 经浏览器的 fetch 流式调用。
 
 ## 状态所有者
 
@@ -42,3 +49,6 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 4. 会话切换：历史经 `Messages` 恢复（含工具结果）。
 5. 视图测试：`ui.NewTester` 无窗口运行 view，输入并提交后用户消息与
    agent_end 事件出现在视图状态中。
+6. 浏览器目标：静态站点加载后窗口渲染；新建会话落在内存工作区；设置
+   弹窗保存的配置经真实 provider 流式对话；写工具触发权限弹窗，未点击
+   时运行阻塞；bash 工具返回明确的不可用错误。
