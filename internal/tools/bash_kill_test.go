@@ -16,7 +16,7 @@ import (
 // runBash 执行 bash 工具并返回结果与耗时。
 func runBash(t *testing.T, ctx context.Context, timeoutMS int, command string) (agent.ToolResult, time.Duration) {
 	t.Helper()
-	b := NewBash(Workspace{Root: t.TempDir()})
+	b := NewBash(Workspace{Root: t.TempDir()}, NewJobs())
 	start := time.Now()
 	res := b.Execute(ctx, mustArgs(t, map[string]any{"command": command, "timeout_ms": timeoutMS}))
 	return res, time.Since(start)
@@ -79,7 +79,7 @@ func TestBashGrandchildKilledOnTimeout(t *testing.T) {
 	} else {
 		command = "(sleep 5; echo lived > " + marker + ") & sleep 60"
 	}
-	b := NewBash(Workspace{Root: root})
+	b := NewBash(Workspace{Root: root}, NewJobs())
 	res := b.Execute(context.Background(), mustArgs(t, map[string]any{"command": command, "timeout_ms": 2000}))
 	if !res.IsError || !strings.Contains(res.Content, "timed out") {
 		t.Fatalf("content = %q, want timed out", res.Content)

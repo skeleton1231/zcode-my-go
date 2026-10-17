@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"runtime"
 	"time"
@@ -22,10 +23,13 @@ const (
 
 // Bash runs a shell command in the workspace. Windows uses PowerShell; Unix
 // uses bash (falling back to sh).
-type Bash struct{ ws Workspace }
+type Bash struct {
+	ws   Workspace
+	jobs *Jobs
+}
 
 // NewBash builds the bash tool.
-func NewBash(ws Workspace) *Bash { return &Bash{ws: ws} }
+func NewBash(ws Workspace, jobs *Jobs) *Bash { return &Bash{ws: ws, jobs: jobs} }
 
 // Name implements agent.Tool.
 func (b *Bash) Name() string { return "bash" }
@@ -49,14 +53,18 @@ func (b *Bash) Parameters() map[string]any {
 // Execute implements agent.Tool.
 func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResult {
 	var a struct {
-		Command   string `json:"command"`
-		TimeoutMS int    `json:"timeout_ms"`
+		Command    string `json:"command"`
+		TimeoutMS  int    `json:"timeout_ms"`
+		Background bool   `json:"background"`
 	}
 	if err := decodeArgs(args, &a); err != nil {
 		return errResult("%v", err)
 	}
 	if a.Command == "" {
 		return errResult("command is empty")
+	}
+	if a.Background {
+		return b.startBackground(a.Command)
 	}
 	timeout := bashDefaultTimeout
 	if a.TimeoutMS > 0 {
@@ -141,4 +149,46 @@ func (b *Bash) CapabilityForArgs(args string) permission.Capability {
 		cap.Risk = permission.RiskLow
 	}
 	return cap
+}
+
+// startBackground launches a long command without blocking the turn
+// (ZCode's bash background): output drains via bash_output, the tree
+// stops via bash_kill or when the session ends.
+func (b *Bash) startBackground(line string) agent.ToolResult {
+	if b.jobs == nil {
+		return errResult("no job registry in this session")
+	}
+	cmd, err := b.command(context.Background(), line)
+	if err != nil {
+		return errResult("%v", err)
+	}
+	setupTreeKill(cmd)
+	cmd.Dir = b.ws.Root
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return errResult("%v", err)
+	}
+	cmd.Stderr = cmd.Stdout // 合并到同一管道，输出顺序即产出顺序
+
+	job, err := b.jobs.Start(execProcess{cmd}, line)
+	if err != nil {
+		return errResult("starting job: %v", err)
+	}
+	go io.Copy(jobWriter{job}, stdout)
+	return okResult("后台任务已启动 [%s]：%s\n用 bash_output 读取输出，bash_kill 停止。", job.ID, line)
+}
+
+// execProcess adapts *exec.Cmd to the job interface.
+type execProcess struct{ cmd *exec.Cmd }
+
+func (e execProcess) Start() error    { return e.cmd.Start() }
+func (e execProcess) KillTree() error { return killTree(e.cmd) }
+func (e execProcess) Wait() error     { return e.cmd.Wait() }
+
+// jobWriter feeds a job's output buffer from an io.Copy.
+type jobWriter struct{ job *Job }
+
+func (w jobWriter) Write(p []byte) (int, error) {
+	w.job.append(p)
+	return len(p), nil
 }

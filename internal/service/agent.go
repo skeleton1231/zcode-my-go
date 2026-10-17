@@ -99,7 +99,7 @@ func (s *AgentService) startMCP() {
 	}
 }
 
-// Close shuts down launched MCP servers.
+// Close shuts down MCP servers and every session's background jobs.
 func (s *AgentService) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -107,6 +107,9 @@ func (s *AgentService) Close() {
 		server.Close()
 	}
 	s.mcp = nil
+	for _, state := range s.states {
+		state.Jobs.KillAll()
+	}
 }
 
 // rewire installs the current settings into the manager. Callers hold s.mu.
@@ -337,10 +340,13 @@ func (s *AgentService) ListSessions() []agent.SessionInfo {
 	return s.mgr.List()
 }
 
-// DeleteSession removes a session.
+// DeleteSession removes a session (its background jobs stop first).
 func (s *AgentService) DeleteSession(id string) error {
 	s.mu.Lock()
-	delete(s.states, id)
+	if state, ok := s.states[id]; ok {
+		state.Jobs.KillAll()
+		delete(s.states, id)
+	}
 	s.mu.Unlock()
 	return s.mgr.Delete(id)
 }

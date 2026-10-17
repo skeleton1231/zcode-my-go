@@ -30,10 +30,11 @@ func ReadOnly(workspace string) []agent.Tool {
 // session; All receives the owning session's slice.
 type States struct {
 	Todo *TodoState
+	Jobs *Jobs
 }
 
 // NewStates builds empty per-session state.
-func NewStates() *States { return &States{Todo: &TodoState{}} }
+func NewStates() *States { return &States{Todo: &TodoState{}, Jobs: NewJobs()} }
 
 // All returns the built-in tools bound to a workspace. state may be nil —
 // the todo tool then starts empty every turn — and ask may be nil, which
@@ -47,7 +48,9 @@ func All(workspace string, state *States, ask func(ctx context.Context, q agent.
 		NewRead(w),
 		NewWrite(w),
 		NewEdit(w),
-		NewBash(w),
+		NewBash(w, state.Jobs),
+		NewBashOutput(state.Jobs),
+		NewBashKill(state.Jobs),
 		NewGrep(w),
 		NewGlob(w),
 		NewLs(w),

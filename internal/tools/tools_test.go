@@ -138,7 +138,7 @@ func TestBashRuns(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		command = "Write-Output hello"
 	}
-	res := execTool(t, NewBash(w), `{"command":"`+command+`"}`)
+	res := execTool(t, NewBash(w, NewJobs()), `{"command":"`+command+`"}`)
 	if res.IsError {
 		t.Fatalf("bash failed: %s", res.Content)
 	}
@@ -154,7 +154,7 @@ func TestBashReportsExitCode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		command = "exit 3"
 	}
-	res := execTool(t, NewBash(w), `{"command":"`+command+`"}`)
+	res := execTool(t, NewBash(w, NewJobs()), `{"command":"`+command+`"}`)
 	if !res.IsError {
 		t.Fatal("failing command reported success")
 	}
