@@ -114,6 +114,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **跨会话搜索**（ZCode task-index 的轻量落地）：service.SearchSessions
    流式扫 JSONL（文本+工具参数、片段窗口、双上限）+ 桌面「搜索所有会话」
    弹窗（后台扫描、代次防旧结果、点命中切会话沿用过滤词）。
+**Anthropic 前缀缓存**：cache_control ephemeral 断点打在工具表尾/系统提示
+   尾/滚动前缀（≤4），命中按缓存计价降本；兼容端点安全忽略。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
