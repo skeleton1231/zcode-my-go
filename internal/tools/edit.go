@@ -9,6 +9,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
+	"github.com/skeleton1231/zcode-my-go/internal/textdiff"
 )
 
 // Edit replaces an exact, unique string in a file — the safest small-change
@@ -75,8 +76,9 @@ func (e *Edit) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		if werr := e.ws.Remote.WriteFile(rel, []byte(updated), 0o644); werr != nil {
 			return errResult("writing %s: %v", a.Path, werr)
 		}
-		return okResult("replaced %d occurrence(s) in %s\n%s",
-			count, a.Path, snippet(updated, a.NewString))
+		return agent.ToolResult{Content: fmt.Sprintf("replaced %d occurrence(s) in %s\n%s",
+			count, a.Path, snippet(updated, a.NewString)),
+			Diff: textdiff.Unified(data, []byte(updated))}
 	}
 
 	data, err := os.ReadFile(abs)
@@ -99,8 +101,9 @@ func (e *Edit) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	if err := os.WriteFile(abs, []byte(updated), 0o644); err != nil {
 		return errResult("writing %s: %v", a.Path, err)
 	}
-	return okResult("replaced %d occurrence(s) in %s\n%s",
-		count, a.Path, snippet(updated, a.NewString))
+	return agent.ToolResult{Content: fmt.Sprintf("replaced %d occurrence(s) in %s\n%s",
+		count, a.Path, snippet(updated, a.NewString)),
+		Diff: textdiff.Unified(data, []byte(updated))}
 }
 
 // applyEdit 在 content 上执行精确替换，返回更新后内容、命中次数与

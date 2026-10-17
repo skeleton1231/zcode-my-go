@@ -271,7 +271,7 @@ func (l *Loop) execute(ctx context.Context, turn int, msg ai.Message, call ai.Bl
 	}
 
 	l.emit(Event{Kind: EvToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name,
-		IsError: result.IsError, ResultContent: result.Content, TurnIndex: turn})
+		IsError: result.IsError, ResultContent: result.Content, Diff: result.Diff, TurnIndex: turn})
 	return result
 }
 

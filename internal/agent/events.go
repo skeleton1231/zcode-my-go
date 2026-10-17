@@ -42,6 +42,7 @@ type Event struct {
 
 	IsError       bool     `json:"isError,omitempty"`       // EvToolExecutionEnd
 	ResultContent string   `json:"resultContent,omitempty"` // EvToolExecutionEnd
+	Diff          string   `json:"diff,omitempty"`          // EvToolExecutionEnd：统一 diff（UI 彩色渲染）
 	Usage         ai.Usage `json:"usage,omitempty"`         // EvMessageEnd / EvAgentEnd (totals)
 	KeptMessages  int      `json:"keptMessages,omitempty"`  // EvCompaction
 	TurnIndex     int      `json:"turnIndex"`

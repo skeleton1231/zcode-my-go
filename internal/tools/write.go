@@ -3,12 +3,14 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
+	"github.com/skeleton1231/zcode-my-go/internal/textdiff"
 )
 
 // Write creates or overwrites a file wholesale.
@@ -48,20 +50,24 @@ func (w *Write) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 		return errResult("%v", err)
 	}
 	if w.ws.IsRemote() {
-		if err := w.ws.Remote.WriteFile(remoteRel(w.ws, abs), []byte(a.Content), 0o644); err != nil {
+		rel := remoteRel(w.ws, abs)
+		oldData, _ := w.ws.Remote.ReadFile(rel) // 读不到即新文件：diff 自空
+		if err := w.ws.Remote.WriteFile(rel, []byte(a.Content), 0o644); err != nil {
 			return errResult("writing %s: %v", a.Path, err)
 		}
 		lines := strings.Count(a.Content, "\n")
 		if !strings.HasSuffix(a.Content, "\n") && a.Content != "" {
 			lines++
 		}
-		return okResult("wrote %s (%d lines, %d bytes) [remote]", a.Path, lines, len(a.Content))
+		return agent.ToolResult{Content: fmt.Sprintf("wrote %s (%d lines, %d bytes) [remote]",
+			a.Path, lines, len(a.Content)), Diff: textdiff.Unified(oldData, []byte(a.Content))}
 	}
 	if dir := filepath.Dir(abs); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return errResult("creating directory: %v", err)
 		}
 	}
+	oldData, _ := os.ReadFile(abs) // 覆盖前读旧内容；读不到即新文件，diff 自空
 	if err := os.WriteFile(abs, []byte(a.Content), 0o644); err != nil {
 		return errResult("writing %s: %v", a.Path, err)
 	}
@@ -69,7 +75,8 @@ func (w *Write) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 	if !strings.HasSuffix(a.Content, "\n") && a.Content != "" {
 		lines++
 	}
-	return okResult("wrote %s (%d lines, %d bytes)", a.Path, lines, len(a.Content))
+	return agent.ToolResult{Content: fmt.Sprintf("wrote %s (%d lines, %d bytes)",
+		a.Path, lines, len(a.Content)), Diff: textdiff.Unified(oldData, []byte(a.Content))}
 }
 
 // Capability implements agent.Capabler: writing files changes the workspace.
