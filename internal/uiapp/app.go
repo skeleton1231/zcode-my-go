@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 
@@ -54,6 +55,12 @@ type App struct {
 	jobRunning                                     string
 	jobFormErr                                     string
 	jobSchedule, jobPrompt, jobWorkspace, jobModel string
+
+	// terminal panel state（browser-workbench terminal-ui）.
+	termOpen bool
+	term     *terminal.Terminal
+	termDir  string
+	termErr  string
 
 	// composer attachments: image blocks sent with the next message
 	//（多模态输入，附件体验）.
@@ -178,6 +185,13 @@ func (a *App) open(id string) {
 	// "没有匹配"；搜索词跨会话泄漏。
 	a.searchOpen = false
 	a.searchQuery = ""
+	// 终端与工作区绑定：切换会话即重建（面板开着就换目录重开）。
+	if a.termOpen {
+		a.ensureTerminal()
+	} else {
+		a.closeTerminal()
+	}
+
 	// 文件树缓存不跨会话：换工作区即换树。
 	a.treeEntries = map[string][]tools.DirEntry{}
 	a.treeExpanded = map[string]bool{}

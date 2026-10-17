@@ -53,6 +53,11 @@ func main() {
 						win.Update(func() { a.OpenRename() })
 					}
 				}},
+				{Label: "终端", Accelerator: "CmdOrCtrl+J", Click: func(*mygo.MenuItem, *mygo.Window) {
+					if win := a.Window(); win != nil {
+						win.Update(func() { a.ToggleTerminal() })
+					}
+				}},
 				{Label: "文件树", Accelerator: "CmdOrCtrl+B", Click: func(*mygo.MenuItem, *mygo.Window) {
 					if win := a.Window(); win != nil {
 						win.Update(func() { a.ToggleFiles() })
@@ -95,6 +100,7 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
-	svc.StopScheduler() // 停调度循环
-	svc.Close()         // 关停 MCP 子进程
+	a.CloseTerminalOnExit() // 关终端（PTY 子进程）
+	svc.StopScheduler()     // 停调度循环
+	svc.Close()             // 关停 MCP 子进程
 }

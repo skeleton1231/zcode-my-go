@@ -23,6 +23,7 @@ func (a *App) View(c *ui.Context) {
 		ui.Column(c).Grow(1).Children(func() {
 			a.chatView(c, t)
 			a.planView(c, t)
+			a.terminalPanelView(c, t)
 			a.composerView(c, t)
 			a.statusView(c, t)
 		})
