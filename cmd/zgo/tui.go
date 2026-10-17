@@ -16,6 +16,29 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
+// ANSI 前景码：颜色只加在最终字符串外层（wrap 已完成），不参与宽度计算。
+const (
+	ansiBold   = "1"
+	ansiDim    = "2"
+	ansiRed    = "31"
+	ansiGreen  = "32"
+	ansiYellow = "33"
+	ansiBlue   = "34"
+	ansiCyan   = "36"
+	ansiGray   = "90"
+)
+
+// colorEnabled 遵循 NO_COLOR 惯例（置任意值即禁色）。
+var colorEnabled = os.Getenv("NO_COLOR") == ""
+
+// ansi wraps s in a color when enabled.
+func ansi(code, s string) string {
+	if !colorEnabled {
+		return s
+	}
+	return "[" + code + "m" + s + "[0m"
+}
+
 type tuiState struct {
 	mu      sync.Mutex
 	lines   []string // transcript lines (wrapped before storing)
@@ -86,7 +109,7 @@ func runTUI(svc *service.AgentService, workspace string) int {
 					s.requestRedraw()
 					continue
 				}
-				s.push("你 > " + line)
+				s.push(ansi(ansiCyan, "你 > ") + line)
 				s.handleLine(line, svc, &info, workspace)
 			case b == 127 || b == 8: // 退格
 				s.mu.Lock()
@@ -159,23 +182,23 @@ func (s *tuiState) applyEvent(ev agent.Event, last *string) {
 		*last += ev.Text
 		// 流式：替换最后一条 assistant 行（由 message_start 预置）。
 		if len(s.lines) > 0 && strings.HasPrefix(s.lines[len(s.lines)-1], "zgo") {
-			s.lines[len(s.lines)-1] = "zgo > " + wrap(*last, s.width)
+			s.lines[len(s.lines)-1] = ansi(ansiBold, "zgo > ") + wrap(*last, s.width)
 		}
 	case agent.EvMessageStart:
 		*last = ""
-		s.lines = append(s.lines, "zgo > ")
+		s.lines = append(s.lines, ansi(ansiBold, "zgo > "))
 	case agent.EvMessageEnd:
 		if ev.StopReason == "error" && ev.ErrorMessage != "" {
-			s.lines = append(s.lines, "[错误] "+ev.ErrorMessage)
+			s.lines = append(s.lines, ansi(ansiRed, "[错误] "+ev.ErrorMessage))
 		}
 	case agent.EvToolExecutionStart:
-		s.lines = append(s.lines, "  ⚙ "+ev.ToolName+" "+oneLine(ev.Args))
+		s.lines = append(s.lines, ansi(ansiGray, "  ⚙ "+ev.ToolName+" "+oneLine(ev.Args)))
 	case agent.EvToolExecutionEnd:
 		if ev.IsError {
-			s.lines = append(s.lines, "  ✕ "+firstLine(ev.ResultContent))
+			s.lines = append(s.lines, ansi(ansiRed, "  ✕ "+firstLine(ev.ResultContent)))
 		}
 	case agent.EvCompaction:
-		s.lines = append(s.lines, "[压缩] "+ev.Text)
+		s.lines = append(s.lines, ansi(ansiBlue, "[压缩] "+ev.Text))
 	}
 	s.requestRedraw()
 }
@@ -232,10 +255,13 @@ func (s *tuiState) draw(out *os.File) {
 		b.WriteString("\x1b[K\n")
 	}
 	status := s.status
+	plain := status
 	if s.running {
-		status = "● " + status
+		plain = "● " + status
+		// 宽度按可见字符计：转义码不计入，否则反显条右缘留残迹。
+		status = ansi(ansiGreen, plain)
 	}
-	b.WriteString("\x1b[7m " + status + strings.Repeat(" ", max(0, w-2-len([]rune(status)))) + " \x1b[0m\n")
+	b.WriteString("\x1b[7m " + status + strings.Repeat(" ", max(0, w-2-len([]rune(plain)))) + " \x1b[0m\n")
 	b.WriteString("> " + string(s.input) + "\x1b[K")
 	out.WriteString(b.String())
 }
