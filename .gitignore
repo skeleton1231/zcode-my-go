@@ -1,0 +1,26 @@
+# Build outputs
+build/
+dist/
+*.exe
+*.app
+
+# mygo dev artifacts
+.mygo/
+
+# Node
+node_modules/
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Local secrets / environment
+.env
+.env.*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

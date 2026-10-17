@@ -1,0 +1,36 @@
+version: 1
+
+# 模块依赖治理。所有模块 managed: true；新增模块必须登记。
+# 依赖方向：service → agent → (ai, tools, prompt)；tools 不依赖 agent。
+# 审查规则：
+#   - import 出现 policy 之外的路径 → 架构违规
+#   - frontend 只允许 import ./mygo（生成客户端）与前端自身模块
+modules:
+  - id: ai
+    roots: [internal/ai]
+    managed: true
+    requires: []
+  - id: prompt
+    roots: [internal/prompt]
+    managed: true
+    requires: [ai]
+  - id: tools
+    roots: [internal/tools]
+    managed: true
+    requires: []
+  - id: agent
+    roots: [internal/agent]
+    managed: true
+    requires: [ai, tools, prompt]
+  - id: service
+    roots: [internal/service]
+    managed: true
+    requires: [agent, ai, tools]
+  - id: shell
+    roots: [main.go]
+    managed: true
+    requires: [service, agent]
+  - id: frontend
+    roots: [frontend/src]
+    managed: true
+    requires: [frontend/src/mygo.ts]

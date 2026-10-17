@@ -1,0 +1,433 @@
+package agent
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
+)
+
+// RunState of a session.
+type RunState string
+
+// Run states.
+const (
+	StateIdle    RunState = "idle"
+	StateRunning RunState = "running"
+)
+
+// SessionInfo is the listable projection of a session.
+type SessionInfo struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Workspace string    `json:"workspace"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	Running   bool      `json:"running"`
+}
+
+// Session is a conversation: a transcript persisted as JSONL plus run state.
+// The transcript's only writer is Append (the loop appends through it);
+// nothing rewrites history.
+type Session struct {
+	mu         sync.Mutex
+	info       SessionInfo
+	messages   []ai.Message
+	path       string
+	metaTitle  string // title as last written to disk
+	cancel     context.CancelFunc
+	usageTotal ai.Usage
+
+	// wiring, installed by the manager
+	provider   func() ai.Provider
+	model      func() string
+	buildTools func(workspace string) []Tool
+	system     func(workspace string) string
+}
+
+// Info returns the session's projection.
+func (s *Session) Info() SessionInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	info := s.info
+	info.Running = s.cancel != nil
+	return info
+}
+
+// Messages returns a copy of the transcript.
+func (s *Session) Messages() []ai.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]ai.Message(nil), s.messages...)
+}
+
+// UsageTotal returns the session's cumulative token usage.
+func (s *Session) UsageTotal() ai.Usage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.usageTotal
+}
+
+// Append adds a message to the transcript and persists it. It is the single
+// write path of the history.
+func (s *Session) Append(m ai.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = append(s.messages, m)
+	s.info.UpdatedAt = time.Now()
+	if s.info.Title == "" && m.Role == ai.RoleUser {
+		s.info.Title = summarize(m.Text())
+	}
+	if err := s.writeLine(m); err != nil {
+		return fmt.Errorf("persisting message: %w", err)
+	}
+	// The title changes once, with the first user message, when the file is
+	// still tiny — rewrite then and only then.
+	if s.info.Title != s.metaTitle {
+		return s.writeMetaLocked()
+	}
+	return nil
+}
+
+// AddUsage accumulates turn usage into the session totals.
+func (s *Session) AddUsage(u ai.Usage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.usageTotal = s.usageTotal.Add(u)
+}
+
+// Chat appends the user message and runs the loop, streaming events through
+// emit. It returns an error only for misuse (empty message, already
+// running); provider and tool failures arrive as events.
+func (s *Session) Chat(text string, emit func(Event)) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("empty message")
+	}
+
+	s.mu.Lock()
+	if s.cancel != nil {
+		s.mu.Unlock()
+		return errors.New("a run is already in progress")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	id := s.info.ID
+	workspace := s.info.Workspace
+	s.mu.Unlock()
+
+	// Clear the running flag whatever happens, including a panic in the loop.
+	defer func() {
+		s.mu.Lock()
+		s.cancel = nil
+		s.mu.Unlock()
+		cancel()
+	}()
+
+	if err := s.Append(ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: text}}}); err != nil {
+		return err
+	}
+
+	loop := NewLoop(LoopConfig{
+		Provider:  s.provider(),
+		Model:     s.model(),
+		System:    s.system(workspace),
+		Tools:     s.buildTools(workspace),
+		MaxTokens: 16384,
+		MaxTurns:  DefaultMaxTurns,
+		History:   s.Messages,
+	}, func(ev Event) {
+		ev.SessionID = id
+		emit(ev)
+	})
+	loop.Run(ctx, s.Append)
+	return nil
+}
+
+// Abort cancels the running loop, if any.
+func (s *Session) Abort() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancel != nil {
+		s.cancel()
+	}
+}
+
+// summarize makes a session title from the first user message.
+func summarize(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if utf8.RuneCountInString(text) > 40 {
+		return string([]rune(text)[:39]) + "…"
+	}
+	return text
+}
+
+// --- persistence ---------------------------------------------------------
+
+// jsonl record kinds.
+const (
+	recordMeta    = "meta"
+	recordMessage = "message"
+)
+
+type metaRecord struct {
+	Type      string    `json:"type"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Workspace string    `json:"workspace"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type messageRecord struct {
+	Type    string     `json:"type"`
+	Message ai.Message `json:"message"`
+}
+
+// writeLine appends one message record. Called with s.mu held.
+func (s *Session) writeLine(m ai.Message) error {
+	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return json.NewEncoder(f).Encode(messageRecord{Type: recordMessage, Message: m})
+}
+
+// writeMetaLocked rewrites the header line: meta is always line one, so the
+// rewrite happens only while the file holds no history yet. Called with
+// s.mu held.
+func (s *Session) writeMetaLocked() error {
+	rec, err := json.Marshal(metaRecord{
+		Type: recordMeta, ID: s.info.ID, Title: s.info.Title,
+		Workspace: s.info.Workspace, CreatedAt: s.info.UpdatedAt,
+	})
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(s.path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
+		lines = append([]string{string(rec) + "\n"}, lines...)
+	} else {
+		lines[0] = string(rec) + "\n"
+	}
+	if err := os.WriteFile(s.path, []byte(strings.Join(lines, "")), 0o600); err != nil {
+		return err
+	}
+	s.metaTitle = s.info.Title
+	return nil
+}
+
+// loadSession reads a session file. A missing meta record is fatal; damaged
+// message lines are skipped, not fatal.
+func loadSession(path string) (*Session, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	s := &Session{path: path}
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var kind struct{ Type string }
+		if err := json.Unmarshal([]byte(line), &kind); err != nil {
+			continue
+		}
+		switch kind.Type {
+		case recordMeta:
+			var rec metaRecord
+			if json.Unmarshal([]byte(line), &rec) == nil {
+				s.info.ID = rec.ID
+				s.info.Title = rec.Title
+				s.info.Workspace = rec.Workspace
+				s.metaTitle = rec.Title
+			}
+		case recordMessage:
+			var rec messageRecord
+			if json.Unmarshal([]byte(line), &rec) == nil {
+				s.messages = append(s.messages, rec.Message)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	if s.info.ID == "" {
+		return nil, fmt.Errorf("%s has no meta record", path)
+	}
+	// The title may postdate the last meta rewrite (crash between the two
+	// writes): derive it from the transcript like Append would have.
+	if s.info.Title == "" {
+		for _, m := range s.messages {
+			if m.Role == ai.RoleUser {
+				s.info.Title = summarize(m.Text())
+				break
+			}
+		}
+	}
+	if stat, err := f.Stat(); err == nil {
+		s.info.UpdatedAt = stat.ModTime()
+	}
+	return s, nil
+}
+
+// Manager owns the session directory.
+type Manager struct {
+	mu       sync.Mutex
+	dir      string
+	sessions map[string]*Session
+
+	// wiring, installed by the service layer before first use
+	provider   func() ai.Provider
+	model      func() string
+	buildTools func(workspace string) []Tool
+	system     func(workspace string) string
+}
+
+// NewManager loads the sessions of dir, creating it when missing.
+func NewManager(dir string) (*Manager, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("creating session directory: %w", err)
+	}
+	m := &Manager{dir: dir, sessions: map[string]*Session{}}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".jsonl" {
+			continue
+		}
+		s, err := loadSession(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue // unreadable session files are skipped, not fatal
+		}
+		m.sessions[s.info.ID] = s
+	}
+	return m, nil
+}
+
+// Wire installs the loop dependencies on every session, existing and new.
+// It must be called once, before the first Chat.
+func (m *Manager) Wire(provider func() ai.Provider, model func() string,
+	tools func(workspace string) []Tool, system func(workspace string) string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.provider, m.model, m.buildTools, m.system = provider, model, tools, system
+	for _, s := range m.sessions {
+		m.wire(s)
+	}
+}
+
+func (m *Manager) wire(s *Session) {
+	s.provider = func() ai.Provider {
+		if m.provider == nil {
+			return failProvider{msg: "no provider configured"}
+		}
+		return m.provider()
+	}
+	s.model = func() string {
+		if m.model == nil {
+			return ""
+		}
+		return m.model()
+	}
+	s.buildTools = m.buildTools
+	if s.buildTools == nil {
+		s.buildTools = func(string) []Tool { return nil }
+	}
+	s.system = m.system
+	if s.system == nil {
+		s.system = func(string) string { return "" }
+	}
+}
+
+// New creates a session for a workspace.
+func (m *Manager) New(workspace string) (*Session, error) {
+	id := time.Now().UTC().Format("20060102T150405.000000000")
+	s := &Session{
+		info: SessionInfo{ID: id, Workspace: workspace, UpdatedAt: time.Now()},
+		path: filepath.Join(m.dir, id+".jsonl"),
+	}
+	s.mu.Lock()
+	err := s.writeMetaLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessions[s.info.ID] = s
+	m.wire(s)
+	return s, nil
+}
+
+// Get returns a session by id.
+func (m *Manager) Get(id string) (*Session, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	return s, ok
+}
+
+// List returns sessions newest-first.
+func (m *Manager) List() []SessionInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	infos := make([]SessionInfo, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		infos = append(infos, s.Info())
+	}
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].UpdatedAt.After(infos[j].UpdatedAt)
+	})
+	return infos
+}
+
+// Delete removes a session from the index and disk.
+func (m *Manager) Delete(id string) error {
+	m.mu.Lock()
+	s, ok := m.sessions[id]
+	if ok {
+		delete(m.sessions, id)
+	}
+	m.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	s.Abort()
+	err := os.Remove(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// failProvider is the placeholder used before the manager is wired.
+type failProvider struct{ msg string }
+
+func (p failProvider) Stream(context.Context, ai.Request) <-chan ai.StreamEvent {
+	out := make(chan ai.StreamEvent, 1)
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopError, ErrorMessage: p.msg}
+	close(out)
+	return out
+}
