@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
@@ -40,6 +42,7 @@ type settings struct {
 	Thinking   string                `json:"thinking"` // off|low|medium|high
 	MCPServers map[string]mcp.Config `json:"mcpServers"`
 	Hooks      agent.CommandHooks    `json:"hooks"`
+	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
@@ -273,6 +276,9 @@ func thinkingLevelOf(v string) ai.ThinkingLevel {
 }
 
 // providerFor builds the provider matching the configured API dialect.
+// An Anthropic subscription token (from /login) authenticates as Bearer
+// when no API key is set; an expired token refreshes synchronously
+// (best effort — a failed refresh falls back to the stale token).
 func providerFor(cfg settings) ai.Provider {
 	switch cfg.API {
 	case "openai":
@@ -280,8 +286,63 @@ func providerFor(cfg settings) ai.Provider {
 	case "gemini":
 		return ai.NewGemini(cfg.BaseURL, cfg.APIKey)
 	default:
-		return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
+		client := ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
+		if cfg.APIKey == "" && cfg.OAuth.AccessToken != "" {
+			if cfg.OAuth.Expired() && cfg.OAuth.RefreshToken != "" {
+				if fresh, err := aiAuth.Refresh(context.Background(),
+					authTokenURL, cfg.OAuth.RefreshToken); err == nil {
+					cfg.OAuth = fresh
+					client.OAuthToken = fresh.AccessToken
+					return client
+				}
+			}
+			client.OAuthToken = cfg.OAuth.AccessToken
+		}
+		return client
 	}
+}
+
+// authTokenURL is the token endpoint (pi's constant).
+const authTokenURL = aiAuth.TokenURL
+
+// LoginStatus reports whether a subscription token is present.
+func (s *AgentService) LoginStatus() (ok bool, expiresAt time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tok := s.settings.OAuth
+	return tok.AccessToken != "", tok.ExpiresAt
+}
+
+// LoginStart runs the OAuth flow in the background: onURL receives the
+// browser link as soon as the callback server is up; the token lands in
+// settings when the browser round-trip completes. done reports success.
+func (s *AgentService) LoginStart(onURL func(string)) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		tok, err := aiAuth.Login(context.Background(), func(link string) {
+			if onURL != nil {
+				onURL(link)
+			}
+		}, authTokenURL)
+		if err != nil {
+			done <- err
+			return
+		}
+		s.mu.Lock()
+		cfg := s.settings
+		cfg.OAuth = tok
+		data, merr := json.MarshalIndent(cfg, "", "  ")
+		if merr == nil {
+			merr = os.WriteFile(s.path, data, 0o600)
+		}
+		if merr == nil {
+			s.settings = cfg
+		}
+		s.mu.Unlock()
+		s.rewire()
+		done <- merr
+	}()
+	return done
 }
 
 // loadSettings reads the settings file; a missing file is first run.

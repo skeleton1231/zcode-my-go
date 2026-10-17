@@ -148,6 +148,27 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/login", usage: "/login",
+		help: "订阅登录（浏览器 OAuth，Claude Pro/Max）",
+		run: func(env *Env, _ string) string {
+			ok, expires := env.Svc.LoginStatus()
+			if ok {
+				return fmt.Sprintf("已登录（%s 到期）；再次 /login 可重新授权", expires.Format("2006-01-02 15:04"))
+			}
+			done := env.Svc.LoginStart(func(link string) {
+				env.Out("在浏览器完成授权：\n" + link + "\n（回调服务器已就绪，最长等待 5 分钟）")
+			})
+			go func() {
+				if err := <-done; err != nil {
+					env.Out("登录失败：" + err.Error())
+					return
+				}
+				env.Out("登录成功，订阅凭据已保存")
+			}()
+			return "[登录] 已启动 OAuth 流程"
+		},
+	},
+	{
 		name: "/status", usage: "/status",
 		help: "模型、思考等级、用量与上下文预算",
 		run: func(env *Env, _ string) string {
