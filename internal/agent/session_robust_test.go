@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,4 +195,38 @@ func TestAppendTrimsImageBudget(t *testing.T) {
 	if !strings.Contains(msgs[0].Text(), "未持久化") {
 		t.Fatal("drop notice lost on reload")
 	}
+}
+
+// TestCompactLoadsLazyShell 验证惰性壳上压缩先装载转录（issue #138：
+// Compact 曾不 ensure，读到空历史报 "nothing to compact"）。
+func TestCompactLoadsLazyShell(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	wire(m)
+	s, _ := m.New("ws")
+	for i := 0; i < 8; i++ {
+		role := ai.RoleUser
+		if i%2 == 1 {
+			role = ai.RoleAssistant
+		}
+		if err := s.Append(ai.Message{Role: role, Blocks: []ai.Block{
+			{Kind: ai.BlockText, Text: strings.Repeat("内容", 200) + string(rune('0'+i))}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 重建 manager：得到惰性壳（只读 meta，转录未装载）。
+	id := s.Info().ID
+	fresh, _ := NewManager(dir)
+	wire(fresh)
+	shell, ok := fresh.Get(id)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	// provider 是 failProvider：压缩请求会失败，但绝不可能是
+	// "nothing to compact"（那意味着转录没装载）。
+	err := shell.Compact(context.Background())
+	if err != nil && strings.Contains(err.Error(), "nothing to compact") {
+		t.Fatalf("lazy shell compacted an unloaded transcript: %v", err)
+	}
+	_ = err
 }
