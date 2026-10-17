@@ -75,7 +75,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    转录。fork/编辑重试/重试即 conversation 半边，此前已备。
 **多模态输入（图片附件）**：ai.BlockImage + 三协议翻译（Anthropic
    base64 source / OpenAI image_url / Gemini inlineData）+ composer 📎
-   附件 chips + ChatMedia 通道；对齐 ZCode attachment-ux 的输入侧。
+   附件 chips + ChatMedia 通道；对齐 ZCode attachment-ux 的输入侧。@ 引用：消息内
+   @路径 在服务层展开（文本围栏化/图片成块、path jail、60KB/5MB 上限，
+   桌面/TUI/print 三端同享），桌面 composer 附文件提示与点选补全。
 **工具 diff 预览**：internal/textdiff（行级 LCS 统一 diff，上下文 3 行，
    输出与规模双上限）+ ToolResult.Diff/Event.Diff 透传 + 桌面工具块与终端
    TUI 的彩色渲染；edit/write（本地与 SSH 远程）覆盖前后对照，对齐 ZCode
@@ -88,6 +90,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **终端面板**（ZCode browser-workbench 的 terminal-ui 半边）：底部抽屉跑
    会话工作区的 shell（mygo terminal 插件/Ghostty libghostty-vt，库自动
    获取）；会话切换重建、失败降级提示、退出回收 PTY。
+**文件树面板与预览**（ZCode browser-workbench 的 file-tree 半边）：右列
+   目录树（懒展开、目录优先、path jail 三端同源）+ 只读文件预览弹窗
+   （60KB 截断、二进制拒绝）。
 待做：会话分享（HTML/Markdown 导出已等价覆盖分享物）。
 
 ## 翻译轮次记录

@@ -58,6 +58,11 @@ func main() {
 						win.Update(func() { a.ToggleTerminal() })
 					}
 				}},
+				{Label: "文件树", Accelerator: "CmdOrCtrl+B", Click: func(*mygo.MenuItem, *mygo.Window) {
+					if win := a.Window(); win != nil {
+						win.Update(func() { a.ToggleFiles() })
+					}
+				}},
 				{Label: "定时任务…", Click: func(*mygo.MenuItem, *mygo.Window) {
 					if win := a.Window(); win != nil {
 						win.Update(func() { a.OpenJobs() })
