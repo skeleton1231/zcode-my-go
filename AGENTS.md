@@ -34,6 +34,21 @@ gh pr create --fill-first             # PR 描述含变更摘要与测试计划
 - commit 消息与 PR 描述如实写明验证结果；未跑过的检查不写成通过。
 - PR 粒度 = 一个功能；循环（/loop）产出的每轮迭代就是一个 PR。
 
+### 并行会话用 worktree 隔离
+
+多会话/agent 并行时（如 /loop 验证 PR 与人工开发同时进行），主目录只保留
+main，验证与开发一律进独立 worktree，避免 stash/checkout 他人的未提交改动：
+
+```bash
+git worktree add ../zcode-wt/<名称> -b <type>/<名称> main
+cd ../zcode-wt/<名称>               # 此目录内 build/vet/test/commit
+git worktree remove ../zcode-wt/<名称>  # 用完清理；先确认无 go 进程占用文件
+```
+
+- 验证已有 PR 分支：`git worktree add ../zcode-wt/pr-N <PR分支名>`。
+- 主目录存在其他会话的未提交 WIP 时，绝不 `git stash`、`git checkout --` 等
+  改写其工作区的操作。
+
 ## 命令与仓库结构
 
 纯 Go 工程，无 Node/Bun 依赖：
