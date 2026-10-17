@@ -57,19 +57,20 @@ type SettingsView struct {
 
 // AgentService is the application service the UI calls.
 type AgentService struct {
-	mu       sync.Mutex
-	settings settings
-	path     string
-	mgr      *agent.Manager
-	ask      func(agent.AskRequest) agent.AskResponse
-	question func(ctx context.Context, q agent.Question) (string, error)
-	states   map[string]*tools.States // session-scoped tool state
-	mcp      []*mcp.Server            // launched MCP servers
-	memories map[string]*tools.Memory // workspace-scoped long-term memory
-	memRoot  string
-	wsCache  map[string]tools.Workspace // sessionID → (possibly remote) workspace
-	wsClose  map[string]func()          // sessionID → dial cleanup
-	askMu    sync.Mutex                 // asker 单槽串行化（issue #79）
+	mu               sync.Mutex
+	settings         settings
+	path             string
+	mgr              *agent.Manager
+	ask              func(agent.AskRequest) agent.AskResponse
+	question         func(ctx context.Context, q agent.Question) (string, error)
+	states           map[string]*tools.States // session-scoped tool state
+	mcp              []*mcp.Server            // launched MCP servers
+	memories         map[string]*tools.Memory // workspace-scoped long-term memory
+	memRoot          string
+	wsCache          map[string]tools.Workspace // sessionID → (possibly remote) workspace
+	wsClose          map[string]func()          // sessionID → dial cleanup
+	askMu            sync.Mutex                 // asker 单槽串行化（issue #79）
+	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -192,8 +193,8 @@ func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.mgr.Wire(agent.Wiring{
 		Provider: func() ai.Provider {
-			if providerOverride != nil {
-				return providerOverride()
+			if s.providerOverride != nil {
+				return s.providerOverride()
 			}
 			return providerFor(cfg, s.persistOAuth)
 		},
@@ -806,13 +807,12 @@ func (s *AgentService) Steer(sessionID, text string) error {
 	return sess.Steer(text)
 }
 
-// providerOverride, when set, replaces the configured provider (the e2e
-// harness injects its script through this).
-var providerOverride func() ai.Provider
-
-// UseProviderForTesting swaps the provider factory (e2e only).
+// UseProviderForTesting swaps the provider factory (e2e only). 覆盖是
+// 实例字段而非包级全局（review #87：全局会让未来任何并行测试静默互踩）。
 func (s *AgentService) UseProviderForTesting(fn func() ai.Provider) {
-	providerOverride = fn
+	s.mu.Lock()
+	s.providerOverride = fn
+	s.mu.Unlock()
 	s.rewire()
 }
 
