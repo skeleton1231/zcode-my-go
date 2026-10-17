@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"io"
 	"log"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,7 @@ type App struct {
 	// terminal panel state（browser-workbench terminal-ui）.
 	termOpen bool
 	term     *terminal.Terminal
+	termConn io.ReadWriteCloser // ssh:// 会话的 shell 连接
 	termDir  string
 	termErr  string
 

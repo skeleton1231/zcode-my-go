@@ -128,6 +128,24 @@ func serveSession(channel ssh.Channel, requests <-chan *ssh.Request, root string
 			channel.SendRequest("exit-status", false,
 				ssh.Marshal(struct{ Status uint32 }{uint32(code)}))
 			return
+		case "pty-req":
+			// 无真 PTY：记录接受即可（测试服务器按行回环）。
+			req.Reply(true, nil)
+		case "shell":
+			req.Reply(true, nil)
+			cmd := interactiveShell()
+			cmd.Dir = root
+			cmd.Stdin = channel
+			cmd.Stdout = channel
+			cmd.Stderr = channel
+			runErr := cmd.Run()
+			code := 0
+			if runErr != nil {
+				code = exitCodeOf(runErr)
+			}
+			channel.SendRequest("exit-status", false,
+				ssh.Marshal(struct{ Status uint32 }{uint32(code)}))
+			return
 		case "subsystem":
 			var payload struct{ Subsystem string }
 			ssh.Unmarshal(req.Payload, &payload)
@@ -147,6 +165,15 @@ func serveSession(channel ssh.Channel, requests <-chan *ssh.Request, root string
 			req.Reply(false, nil)
 		}
 	}
+}
+
+// interactiveShell is the platform shell for shell sessions（无 PTY 的
+// 行式桥接：回显由终端模拟器本地完成）.
+func interactiveShell() *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd")
+	}
+	return exec.Command("sh")
 }
 
 // shellCommand builds the platform shell invocation.

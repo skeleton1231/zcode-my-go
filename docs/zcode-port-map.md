@@ -89,7 +89,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    运行/删除/新建表单，specs/automation.md 规则 7）。
 **终端面板**（ZCode browser-workbench 的 terminal-ui 半边）：底部抽屉跑
    会话工作区的 shell（mygo terminal 插件/Ghostty libghostty-vt，库自动
-   获取）；会话切换重建、失败降级提示、退出回收 PTY。
+   获取）；会话切换重建、失败降级提示、退出回收 PTY；ssh:// 工作区经
+   remote.Shell 接远端交互 shell（PTY + WindowChange，remotetest 进程内
+   服务器端到端验证）。
 **文件树面板与预览**（ZCode browser-workbench 的 file-tree 半边）：右列
    目录树（懒展开、目录优先、path jail 三端同源）+ 只读文件预览弹窗
    （60KB 截断、二进制拒绝）。
