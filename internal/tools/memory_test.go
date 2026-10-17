@@ -54,3 +54,21 @@ func TestMemoryToolOps(t *testing.T) {
 		t.Fatal("bad op accepted")
 	}
 }
+
+// TestMemoryPathNoCollision 验证相近路径不再碰撞（issue #20：31 哈希下
+// "D:\aa" 与 "D:\bB" 同文件，跨工作区互读记忆）。
+func TestMemoryPathNoCollision(t *testing.T) {
+	dir := t.TempDir()
+	p1 := MemoryPath(dir, `D:\aa`)
+	p2 := MemoryPath(dir, `D:\bB`)
+	if p1 == p2 {
+		t.Fatalf("collision: %s", p1)
+	}
+	m1 := NewMemory(p1)
+	if err := m1.Append("secret-of-workspace-aa"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(NewMemory(p2).Read(), "secret-of-workspace-aa") {
+		t.Fatal("memory leaked across workspaces")
+	}
+}
