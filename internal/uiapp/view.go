@@ -222,6 +222,11 @@ func (a *App) userItemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 				a.StartEdit()
 			}
 		}
+		if !a.chat.running && a.activeID != "" && !a.searching() {
+			if ui.Button(c, "⟲ 回滚到此").Clicked() {
+				a.RewindToTurn(i)
+			}
+		}
 	})
 }
 

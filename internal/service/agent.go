@@ -727,6 +727,43 @@ func (s *AgentService) RewindLatest(sessionID string) error {
 	return sess.Rewind(agent.LastUserIndex(msgs))
 }
 
+// RewindTo rolls the session back before its nth user turn (1-based):
+// the workspace restores to that turn's checkpoint and the transcript
+// drops everything from that turn on（任意回合版 RewindLatest——fork 面向
+// "试另一条路"，本方法面向"这条路走错了"）.
+func (s *AgentService) RewindTo(sessionID string, turn int) error {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("no session %s", sessionID)
+	}
+	if sess.Running() {
+		return fmt.Errorf("a run is already in progress")
+	}
+	msgs := sess.Messages()
+	total := userTurnCount(msgs)
+	if turn < 1 || turn > total {
+		return fmt.Errorf("turn %d out of range (1..%d)", turn, total)
+	}
+	if err := s.restoreCheckpoint(sess, turn-1); err != nil {
+		return err
+	}
+	return sess.Rewind(userTurnIndex(msgs, turn))
+}
+
+// userTurnIndex maps a 1-based turn ordinal to its transcript index.
+func userTurnIndex(msgs []ai.Message, turn int) int {
+	seen := 0
+	for i, m := range msgs {
+		if m.Role == ai.RoleUser {
+			seen++
+			if seen == turn {
+				return i
+			}
+		}
+	}
+	return len(msgs)
+}
+
 // SessionRunning reports whether the session has a run in flight.
 func (s *AgentService) SessionRunning(id string) bool {
 	sess, ok := s.mgr.Get(id)
