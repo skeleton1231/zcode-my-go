@@ -110,7 +110,7 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 }
 
 // userMessage assembles the user turn: the text plus any image blocks
-//（多模态输入，顺序与附件一致）.
+// （多模态输入，顺序与附件一致）.
 func userMessage(text string, media []ai.Block) ai.Message {
 	blocks := []ai.Block{{Kind: ai.BlockText, Text: text}}
 	return ai.Message{Role: ai.RoleUser, Blocks: append(blocks, media...)}

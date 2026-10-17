@@ -15,6 +15,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 	"github.com/skeleton1231/zcode-my-go/internal/slash"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
@@ -37,6 +38,14 @@ type App struct {
 	sending  bool
 	lastSent string
 	planMode bool
+
+	// automation panel state（specs/automation.md 的管理面）.
+	jobsOpen                                       bool
+	jobs                                           []schedule.Job
+	jobsErr                                        string
+	jobRunning                                     string
+	jobFormErr                                     string
+	jobSchedule, jobPrompt, jobWorkspace, jobModel string
 
 	// composer attachments: image blocks sent with the next message
 	//（多模态输入，附件体验）.

@@ -78,6 +78,7 @@ internal/service      AgentService：UI 唯一入口（设置、会话、Chat �
 internal/uiapp        native UI：chatState 折叠 + App 视图 + 弹窗
 specs/                行为规格（先于代码）
 internal/checkpoint  工作区检查点与回滚（git 临时索引快照 + read-tree 恢复）
+internal/schedule    定时自动化（cron 解析/任务存储/分钟调度器，zgo cron）
 internal/mcp          MCP 客户端（stdio JSON-RPC）
 docs/                 架构文档 + ZCode 移植地图（zcode-port-map.md）
 mygo.json             打包配置（name/identifier/version/out）

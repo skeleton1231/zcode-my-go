@@ -29,6 +29,7 @@ import (
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
+	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
@@ -74,6 +75,7 @@ type AgentService struct {
 	wsClose          map[string]func()          // sessionID → dial cleanup
 	askMu            sync.Mutex                 // asker 单槽串行化（issue #79）
 	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
+	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
