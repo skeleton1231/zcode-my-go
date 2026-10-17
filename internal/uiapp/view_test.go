@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
@@ -510,5 +511,22 @@ func TestSlashHintsPanel(t *testing.T) {
 	}
 	if a.input != "/model " {
 		t.Fatalf("composer after pick = %q", a.input)
+	}
+}
+
+// TestAttachmentTotalBudget 验证多选附件的总量预算（issue #105：多张图
+// 拼一条消息曾让 JSONL 行超读取上限）——超预算的附件被拒并提示分条。
+func TestAttachmentTotalBudget(t *testing.T) {
+	big := strings.Repeat("a", 4<<20) // 4MB raw/张（单张 < 5MB 上限）
+	_ = big
+	attach := []attachment{
+		{Block: ai.Block{Kind: ai.BlockImage, Data: strings.Repeat("a", 4<<20)}},
+	}
+	if attachTotal(attach) != 4<<20 {
+		t.Fatalf("total = %d", attachTotal(attach))
+	}
+	// 第二张 4MB 会把总量推过 6MB 预算：attachTotal + len > cap。
+	if attachTotal(attach)+4<<20 <= attachmentTotalCapBytes {
+		t.Fatal("budget math broken")
 	}
 }

@@ -403,6 +403,11 @@ func (a *App) Send() {
 // attachmentCapBytes bounds one image（超限拒绝：编码后直接进请求体）.
 const attachmentCapBytes = 5 << 20
 
+// attachmentTotalCapBytes bounds one message's total encoded images
+//（issue #105：多选附件拼一条消息曾让 JSONL 行超读取上限，重载时整条
+// 连图静默消失——session 层还有兜底预算，这里提前拒绝并提示分条发送）.
+const attachmentTotalCapBytes = 6 << 20
+
 // attachment is one composer image: display name plus its message block.
 type attachment struct {
 	Name  string
@@ -457,10 +462,25 @@ func (a *App) Attach() {
 				text: fmt.Sprintf("附件超过 %dMB 上限：%s", attachmentCapBytes>>20, filepath.Base(path))})
 			continue
 		}
+		encoded := base64.StdEncoding.EncodeToString(data)
+		if attachTotal(a.attach)+len(encoded) > attachmentTotalCapBytes {
+			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+				text: fmt.Sprintf("附件总量超过 %dMB 上限，请分条发送：%s",
+					attachmentTotalCapBytes>>20, filepath.Base(path))})
+			continue
+		}
 		a.attach = append(a.attach, attachment{Name: filepath.Base(path),
-			Block: ai.Block{Kind: ai.BlockImage, Media: mt,
-				Data: base64.StdEncoding.EncodeToString(data)}})
+			Block: ai.Block{Kind: ai.BlockImage, Media: mt, Data: encoded}})
 	}
+}
+
+// attachTotal 报告待发附件的编码总量。
+func attachTotal(attach []attachment) int {
+	n := 0
+	for _, at := range attach {
+		n += len(at.Block.Data)
+	}
+	return n
 }
 
 // RemoveAttachment drops the composer's nth attachment.
