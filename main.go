@@ -46,6 +46,11 @@ func main() {
 						win.Update(func() { a.TogglePlanMode() })
 					}
 				}},
+				{Label: "重命名会话…", Accelerator: "CmdOrCtrl+R", Click: func(*mygo.MenuItem, *mygo.Window) {
+					if win := a.Window(); win != nil {
+						win.Update(func() { a.OpenRename() })
+					}
+				}},
 				{Label: "删除会话", Accelerator: "CmdOrCtrl+D", Click: func(*mygo.MenuItem, *mygo.Window) { a.DeleteActive() }},
 				mygo.Separator(),
 				{Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {

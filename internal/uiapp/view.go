@@ -26,6 +26,7 @@ func (a *App) View(c *ui.Context) {
 		})
 	})
 
+	a.renameModal(c, t)
 	a.askModal(c, t)
 	a.questionModal(c, t)
 	a.settingsModal(c, t)

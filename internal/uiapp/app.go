@@ -62,6 +62,10 @@ type App struct {
 	qAnswer string
 	qCh     chan string
 
+	// rename modal state
+	renameOpen  bool
+	renameDraft string
+
 	// settings modal state
 	settings      *service.SettingsView
 	settingsOpen  bool
@@ -195,6 +199,34 @@ func (a *App) RefreshBudget() {
 }
 
 // RefreshPlan reloads the session's todo plan for the panel.
+// OpenRename starts renaming the active session.
+func (a *App) OpenRename() {
+	if a.activeID == "" {
+		return
+	}
+	for _, s := range a.sessions {
+		if s.ID == a.activeID {
+			a.renameDraft = s.Title
+			break
+		}
+	}
+	a.renameOpen = true
+}
+
+// SubmitRename persists the rename.
+func (a *App) SubmitRename() {
+	title := strings.TrimSpace(a.renameDraft)
+	a.renameOpen = false
+	if title == "" || a.activeID == "" {
+		return
+	}
+	if err := a.svc.RenameSession(a.activeID, title); err != nil {
+		a.chat.items = append(a.chat.items, chatItem{kind: itemNotice, text: "重命名失败：" + err.Error()})
+		return
+	}
+	a.refreshSessions()
+}
+
 func (a *App) RefreshPlan() {
 	if a.activeID == "" {
 		a.plan = nil
