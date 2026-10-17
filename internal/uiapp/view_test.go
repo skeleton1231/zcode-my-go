@@ -220,3 +220,50 @@ func TestPlanPanelShowsLivePlan(t *testing.T) {
 		t.Fatalf("panel tasks missing: %q", tt.Texts())
 	}
 }
+
+// TestSessionSearchFiltersTranscript verifies the search bar filters the
+// list to matches, counts them, and clears on close.
+func TestSessionSearchFiltersTranscript(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(info.ID)
+	a.chat.items = []chatItem{
+		{kind: itemUser, text: "修复登录 bug"},
+		{kind: itemAssistant, text: "已修复 login.go"},
+		{kind: itemUser, text: "写个测试"},
+	}
+	tt.Frame()
+
+	a.OpenSearch()
+	a.searchQuery = "登录"
+	tt.Frame()
+	if !tt.HasText("1 处") {
+		t.Fatalf("filter count = %q", tt.Texts())
+	}
+	if tt.HasText("写个测试") {
+		t.Fatal("non-matching item still shown")
+	}
+	// 首行文本的 label 注册依赖最终排版（字体/视口），环境敏感；过滤
+	// 语义用确定性的可见窗口断言：唯一匹配行必须成为可见窗口。
+	if f, l := a.list.Visible(); f != 0 || l != 0 {
+		t.Fatalf("filtered window = %d..%d, want the single matching row", f, l)
+	}
+
+	a.searchQuery = "不存在的东西"
+	tt.Frame()
+	if !tt.HasText("没有匹配") {
+		t.Fatalf("empty state = %q", tt.Texts())
+	}
+
+	a.OpenSearch() // 关闭并清空
+	tt.Frame()
+	if !tt.HasText("写个测试") {
+		t.Fatal("transcript not restored after closing search")
+	}
+}
