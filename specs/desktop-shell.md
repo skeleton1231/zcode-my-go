@@ -69,6 +69,9 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 16. zgo memory（CLI 运维面）：list 按工作区列出记忆概况（最近写入/字
    节，无记忆标注）；show/add/clear 以 --workspace 指定（接受路径或会话 ID
    唯一前缀）；add 追加带时间戳条目；clear 幂等。
+17. zgo models（CLI 运维面）：目录表（ID/协议/上下文/输出上限，--api 过滤，
+   当前设置模型带 ← 标记）；--check <id> 离线校验（在目录或家族前缀命中 →
+   ✓ 带参数，否则 ⚠ 按默认窗口估算）；目录内模型不告警。
 ## 状态所有者
 
 | 状态     | 所有者           | 说明                              |
@@ -107,3 +110,5 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
     列表反映）；未知与歧义 ID 明确报错。
 14. memory CLI：list/show/add/clear 全链路（前缀解析工作区、追加可读回、
     清空幂等）；缺 workspace 拒绝。
+15. models CLI：全目录与按协议过滤的表；未知当前模型告警、已知不告警且
+    带 ← 当前；--check 对目录与家族变体 ✓、对未知 ⚠、空 ID 拒绝。
