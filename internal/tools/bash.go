@@ -63,6 +63,11 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	if a.Command == "" {
 		return errResult("command is empty")
 	}
+	// 浏览器（wasm）目标没有进程模型：给出明确错误而不是让 exec 在
+	// 运行时报 "not supported"，模型可见结果自纠。
+	if runtime.GOOS == "js" {
+		return errResult("bash 工具在浏览器目标不可用（wasm 无进程模型），请改用文件工具")
+	}
 	if a.Background {
 		return b.startBackground(a.Command)
 	}
