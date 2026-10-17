@@ -10,6 +10,8 @@ import (
 	"net"
 	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -287,6 +289,38 @@ func (c *Client) Stat(name string) (exists, isDir bool, err error) {
 	}
 	return true, info.IsDir(), nil
 }
+
+// ReadLink 报告远程路径的符号链接目标：非链接或不存在时 isLink 为
+// false（tools 层的远程 jail 复查靠它逐组件解析，issue #89）。
+// 不经 Lstat 预检：pkg/sftp 的属性映射会丢 Windows junction 的
+// reparse 位（本地 Lstat 呈 ModeIrregular，线上属性无此位），只能
+// 直接试 Readlink、以错误区分非链接——junction 在服务端同样可解。
+func (c *Client) ReadLink(name string) (target string, isLink bool, err error) {
+	full := c.join(name)
+	t, rerr := c.sftp.ReadLink(full)
+	if rerr != nil {
+		// 不存在 / 非链接 / 不可读：一律按非链接处理，包含性检查退回
+		// 词法层兜底（不误拒合法路径）。
+		return "", false, nil
+	}
+	// 绝对目标归一：指向根内的剥掉根前缀（根相对语），根外的保持
+	// 绝对形态——tools 层把它当越狱信号（issue #89）。绝对形态两种：
+	// POSIX 以 / 开头；Windows 宿主是盘符路径（C:\…），后者经 SFTP
+	// 原样返回、不以 / 开头，须单独识别。比较先统一分隔符、再大小
+	// 写不敏感前缀匹配（Windows 语义）。
+	if strings.HasPrefix(t, "/") || windowsDriveRe.MatchString(t) {
+		norm := strings.ReplaceAll(t, "\\", "/")
+		root := strings.TrimSuffix(filepath.ToSlash(c.cfg.Root), "/")
+		if root != "" && len(norm) > len(root) &&
+			strings.EqualFold(norm[:len(root)], root) && norm[len(root)] == '/' {
+			t = norm[len(root)+1:]
+		}
+	}
+	return t, true, nil
+}
+
+// windowsDriveRe 匹配 Windows 盘符绝对路径（C:\ 或 C:/）。
+var windowsDriveRe = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 
 // Glob walks the workspace root collecting paths that match a shell glob
 // (the local Glob tool's semantics, over SFTP).

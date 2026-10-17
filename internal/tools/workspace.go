@@ -50,6 +50,13 @@ func (w Workspace) Resolve(name string) (string, error) {
 		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path %q is outside the workspace", name)
 	}
+	// 远程工作区走独立的真实路径复查（issue #89）：本地 resolveReal 对
+	// 远程路径无意义——远程 Root 在本地不存在时静默回退纯词法（远程侧
+	// 指向 jail 外的符号链接即可穿透），本地恰有同名目录时还会被本地
+	// 链接污染评估结果。
+	if w.IsRemote() {
+		return w.resolveRemoteChecked(abs)
+	}
 	// Root 不存在时保持原有纯词法行为（新建 workspace 等场景）。
 	realRoot, rerr := resolveReal(w.Root)
 	if rerr != nil {
@@ -79,6 +86,86 @@ func (w Workspace) Resolve(name string) (string, error) {
 	}
 	rest := strings.TrimPrefix(abs[len(existing):], string(filepath.Separator))
 	return filepath.Join(real, rest), nil
+}
+
+// resolveRemoteChecked 在远程路径空间做 symlink 复查（issue #89：
+// #4 的远程等价物）。词法检查已由调用方完成；这里把目标转成根相对
+// 路径，经 RemoteFS.ReadLink 逐组件解析——链接展开后任何形式爬出根
+// （.. 越顶、根外绝对目标）即拒绝。返回词法 abs，远程侧打开时自然
+// 跟随链接；TOCTOU 窗口与本地修复同级。
+func (w Workspace) resolveRemoteChecked(abs string) (string, error) {
+	rel := remoteRel(w, abs)
+	if _, err := resolveRemoteRel(w.Remote, rel); err != nil {
+		return "", fmt.Errorf("path %q is outside the workspace (remote symlink escape): %v", abs, err)
+	}
+	return abs, nil
+}
+
+// resolveRemoteRel 在根相对空间解析真实路径：相对链接目标按链接父
+// 目录展开，绝对目标经 Client.ReadLink 归一——仍在根内的剥前缀，
+// 根外的保持绝对形态（即越狱信号）。最多 40 层防循环。
+func resolveRemoteRel(remote RemoteFS, rel string) (string, error) {
+	const maxLinks = 40
+	links := 0
+	comps := splitSlashPath(rel)
+	var out []string
+	for i := 0; i < len(comps); i++ {
+		comp := comps[i]
+		switch {
+		case comp == "" || comp == ".":
+			continue
+		case comp == "..":
+			if len(out) == 0 {
+				return "", fmt.Errorf("escapes the root")
+			}
+			out = out[:len(out)-1]
+		default:
+			next := strings.Join(append(append([]string{}, out...), comp), "/")
+			target, isLink, err := remote.ReadLink(next)
+			if err != nil || !isLink {
+				out = append(out, comp)
+				continue
+			}
+			links++
+			if links > maxLinks {
+				return "", fmt.Errorf("too many levels of symbolic links")
+			}
+			// 绝对目标（归一后仍在根外）：POSIX 以 / 开头，Windows 宿主
+			// 的盘符路径（C:\…）两种形态都视为越狱。
+			if strings.HasPrefix(target, "/") || windowsAbsPath(target) {
+				return "", fmt.Errorf("symlink targets outside the root")
+			}
+			// 相对目标按链接父目录（out）展开，重放整条链。
+			rest := comps[i+1:]
+			comps = append(append(append([]string{}, out...), splitSlashPath(target)...), rest...)
+			i = -1
+			out = nil
+		}
+	}
+	return strings.Join(out, "/"), nil
+}
+
+// windowsAbsPath 报告 s 是否形如 Windows 盘符绝对路径（C:\ 或 C:/）。
+func windowsAbsPath(s string) bool {
+	if len(s) < 3 {
+		return false
+	}
+	c := s[0]
+	if c < 'A' || c > 'z' || (c > 'Z' && c < 'a') {
+		return false
+	}
+	return s[1] == ':' && (s[2] == '\\' || s[2] == '/')
+}
+
+// splitSlashPath 把斜杠路径拆成非空组件。
+func splitSlashPath(p string) []string {
+	var out []string
+	for _, c := range strings.Split(strings.Trim(p, "/"), "/") {
+		if c != "" && c != "." {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // containsPath 报告 abs 是否在 root 内（含等于 root）。
@@ -169,6 +256,9 @@ type RemoteFS interface {
 	ReadDir(name string) ([]DirEntry, error)
 	Stat(name string) (exists, isDir bool, err error)
 	Glob(pattern string) ([]string, error)
+	// ReadLink 报告远程符号链接的目标（远程 jail 的 symlink 复查，
+	// issue #89）；非链接时 isLink 为 false。
+	ReadLink(name string) (target string, isLink bool, err error)
 }
 
 // ExecOutcome mirrors remote.ExecResult without the import.
