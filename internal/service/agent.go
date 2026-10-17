@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -502,6 +503,15 @@ func (s *AgentService) SetQuestion(fn func(ctx context.Context, q agent.Question
 
 // PickWorkspace asks the user for a workspace directory. parent may be nil.
 func (s *AgentService) PickWorkspace(parent *mygo.Window) (string, error) {
+	// 浏览器目标没有本地目录选择器（工作区本身就在 wasm 的内存 FS 上）：
+	// 固定落在 /zgo-workspace，会话期间有效。
+	if runtime.GOOS == "js" {
+		const dir = "/zgo-workspace"
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+		return dir, nil
+	}
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 		Parent:    parent,
 		Directory: true,
