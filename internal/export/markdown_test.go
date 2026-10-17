@@ -58,3 +58,31 @@ func TestMarkdownEmptyAndFences(t *testing.T) {
 		t.Fatal("unclosed fence content lost")
 	}
 }
+
+// TestMarkdownNestedFences 验证工具结果含行首裸围栏时动态加长围栏
+// （issue #71：固定 ``` 会让内容泄漏 + 后续消息被吞）。
+func TestMarkdownNestedFences(t *testing.T) {
+	msgs := []ai.Message{
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "cat 一下"}}},
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{
+			{Kind: ai.BlockToolCall, ID: "c1", Name: "bash", Arguments: `{}`}}},
+		{Role: ai.RoleToolResult, Blocks: []ai.Block{
+			// bash 回显：行首裸 ``` 与 ````，无行号前缀。
+			{Kind: ai.BlockToolResult, ToolCallID: "c1",
+				Text: "# Title\n```go\nfmt\n```\n````inner\n正文仍在输出里\n```"},
+		}},
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "后续回答必须可见"}}},
+	}
+	out := Markdown(msgs, "x", "m", "w")
+	// 后续消息不得被吞。
+	if !strings.Contains(out, "后续回答必须可见") {
+		t.Fatal("following message swallowed by fence collision")
+	}
+	if !strings.Contains(out, "正文仍在输出里") {
+		t.Fatal("tool output content lost")
+	}
+	// 围栏动态加长：至少出现四反引号围栏包住含 ``` 的内容。
+	if !strings.Contains(out, "````text") {
+		t.Fatalf("dynamic fence missing:\n%s", out)
+	}
+}
