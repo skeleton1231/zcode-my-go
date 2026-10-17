@@ -94,7 +94,6 @@ func RunWorkflow(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep) 
 	return runDAG(ctx, cfg, steps, deps)
 }
 
-
 // stepGraph resolves After names to step indices and validates the graph:
 // unique non-empty names on every step (DAG mode is name-addressed),
 // references that exist, no cycles (a cycle would leave steps forever
@@ -373,4 +372,3 @@ func truncate(s string, n int) string {
 	}
 	return string(r[:n]) + "…"
 }
-
