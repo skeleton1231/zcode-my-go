@@ -217,6 +217,12 @@ func (s *Scheduler) Start() {
 	}()
 }
 
+// SetClock injects the time source（测试注入固定时钟）.
+func (s *Scheduler) SetClock(now func() time.Time) { s.now = now }
+
+// FireDue runs one minute-tick synchronously（e2e：不真实等一分钟）.
+func (s *Scheduler) FireDue(ctx context.Context) { s.tick(ctx) }
+
 // Stop ends the loop and waits for it.
 func (s *Scheduler) Stop() {
 	if s.cancel != nil {
