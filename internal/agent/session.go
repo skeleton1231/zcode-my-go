@@ -504,8 +504,9 @@ type Wiring struct {
 	Thinking func() ai.ThinkingLevel
 	// Question delivers the ask tool's questions to the user.
 	Question func(ctx context.Context, q Question) (string, error)
-	// ProjectRules seeds every session's permission service.
-	ProjectRules permission.Ruleset
+	// ProjectRules loads the workspace's project rules (its .zgorules.json);
+	// nil or a failed load seeds an empty set, never blocks the session.
+	ProjectRules func(workspace string) permission.Ruleset
 }
 
 // NewManager loads the sessions of dir, creating it when missing.
@@ -568,7 +569,11 @@ func (m *Manager) wire(s *Session) {
 	}
 	s.ask = m.wiring.Ask
 	if s.permissions == nil {
-		s.permissions = permission.New(m.wiring.ProjectRules)
+		var rules permission.Ruleset
+		if m.wiring.ProjectRules != nil {
+			rules = m.wiring.ProjectRules(s.info.Workspace)
+		}
+		s.permissions = permission.New(rules)
 	}
 }
 

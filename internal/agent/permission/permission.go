@@ -5,6 +5,8 @@
 package permission
 
 import (
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"sync"
 )
@@ -163,19 +165,40 @@ func (s *Service) Check(ctx Context, cap Capability) Decision {
 		Reason: "no matching rule", Escalated: true}
 }
 
-// match finds the first rule that fits the call.
+// match finds the first rule that fits the call. Argument patterns match
+// the call's canonical line ("command: git status"); a pattern without a
+// key prefix also matches the value alone, so "git *" works as written.
 func match(set Ruleset, ctx Context) (Decision, bool) {
 	for _, r := range set.Rules {
 		if r.Tool != "*" && r.Tool != ctx.Tool {
 			continue
 		}
-		if r.Args != "" && !WildcardMatch(r.Args, ctx.Args) {
+		if r.Args != "" && !WildcardMatch(r.Args, ctx.Args) &&
+			!WildcardMatch(r.Args, stripKeyPrefix(ctx.Args)) {
 			continue
 		}
 		return Decision{Behavior: r.Behavior, RuleID: r.ID, Risk: RiskMedium,
 			Reason: "rule " + r.ID}, true
 	}
 	return Decision{}, false
+}
+
+// stripKeyPrefix removes a leading "key: " from a canonical argument line
+// ("command: git status" → "git status"); lines without one pass through.
+func stripKeyPrefix(s string) string {
+	for i := 0; i < len(s); i++ {
+		if s[i] == ':' {
+			if i+1 < len(s) && s[i+1] == ' ' && i > 0 {
+				return s[i+2:]
+			}
+			return s
+		}
+		if !(s[i] >= 'a' && s[i] <= 'z' || s[i] >= 'A' && s[i] <= 'Z' ||
+			s[i] >= '0' && s[i] <= '9' || s[i] == '_') {
+			return s // 非 word: 前缀，原样返回
+		}
+	}
+	return s
 }
 
 // WildcardMatch is ZCode's wildcardToRegExp: * spans anything, the rest is
@@ -263,4 +286,30 @@ func cut(s string, sep byte) (head, rest string, found bool) {
 		}
 	}
 	return s, "", false
+}
+
+// ParseRuleset decodes project rules (the workspace's .zgorules.json):
+// strict validation — a malformed file is an error, never a silent ignore.
+func ParseRuleset(data []byte) (Ruleset, error) {
+	var file struct {
+		Version int    `json:"version"`
+		Rules   []Rule `json:"rules"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil {
+		return Ruleset{}, fmt.Errorf("parsing rules: %w", err)
+	}
+	if file.Version != 1 {
+		return Ruleset{}, fmt.Errorf("unsupported rules version %d (want 1)", file.Version)
+	}
+	for i, r := range file.Rules {
+		if r.Tool == "" {
+			return Ruleset{}, fmt.Errorf("rule %d: empty tool", i+1)
+		}
+		switch r.Behavior {
+		case Allow, Ask, Deny:
+		default:
+			return Ruleset{}, fmt.Errorf("rule %d: behavior must be allow/ask/deny, got %q", i+1, r.Behavior)
+		}
+	}
+	return Ruleset{Rules: file.Rules}, nil
 }

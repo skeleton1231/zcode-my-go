@@ -69,8 +69,27 @@ go run ./cmd/zgo -p "解释这个仓库"   # 终端模式
 | API Key  | `sk-...`                          | 只存本地，不回显         |
 | Model    | `claude-sonnet-4-5` / `glm-5.2` …| 端点支持的任意模型 ID    |
 
-也可用环境变量：`ANTHROPIC_BASE_URL`、`ANTHROPIC_API_KEY`、`ZGO_MODEL`
-（env 优先于设置文件）。
+也可用环境变量：`ANTHROPIC_BASE_URL`、`ANTHROPIC_API_KEY`、`ZGO_MODEL`、
+`ZGO_THINKING`（env 优先于设置文件）。
+
+### 项目权限规则
+
+在工作区根放 `.zgorules.json`，权限规则随仓库走（团队成员共享）：
+
+```json
+{
+  "version": 1,
+  "rules": [
+    {"tool": "bash", "args": "git *", "behavior": "allow"},
+    {"tool": "write", "behavior": "ask"},
+    {"tool": "bash", "args": "rm -rf *", "behavior": "deny"}
+  ]
+}
+```
+
+规则按序匹配；`args` 是通配模式（`*` 任意），可写 `"command: git *"`
+的规范形态，或 `"git *"` 直接匹配命令本体。解析失败降级为空规则并记
+日志，绝不阻塞会话。
 
 ## 工程文档
 
