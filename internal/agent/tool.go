@@ -35,12 +35,27 @@ type Capabler interface {
 	Capability() permission.Capability
 }
 
+// ArgsCapabler lets a tool vary its capability per call — the bash tool's
+// readonly policy (ZCode's bash-readonly-policy) decides per command.
+type ArgsCapabler interface {
+	CapabilityForArgs(args string) permission.Capability
+}
+
 // capabilityOf reads a tool's declaration, defaulting to medium risk.
 func capabilityOf(t Tool) permission.Capability {
 	if c, ok := t.(Capabler); ok {
 		return c.Capability()
 	}
 	return permission.Capability{}
+}
+
+// capabilityFor reads the declaration for one call, per-args when the tool
+// supports it.
+func capabilityFor(t Tool, args string) permission.Capability {
+	if ac, ok := t.(ArgsCapabler); ok {
+		return ac.CapabilityForArgs(args)
+	}
+	return capabilityOf(t)
 }
 
 // AskRequest describes an approval the loop needs before executing

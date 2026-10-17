@@ -121,3 +121,18 @@ func (b *Bash) command(ctx context.Context, line string) (*exec.Cmd, error) {
 func (b *Bash) Capability() permission.Capability {
 	return permission.Capability{Risk: permission.RiskMedium}
 }
+
+// CapabilityForArgs implements agent.ArgsCapabler: inspection commands
+// (git status, ls, grep…) are read-only and auto-allowed; everything else
+// keeps the medium-risk default (ZCode's bash readonly policy).
+func (b *Bash) CapabilityForArgs(args string) permission.Capability {
+	var a struct {
+		Command string `json:"command"`
+	}
+	cap := b.Capability()
+	if json.Unmarshal([]byte(args), &a) == nil && BashCommandReadonly(a.Command) {
+		cap.ReadOnly = true
+		cap.Risk = permission.RiskLow
+	}
+	return cap
+}

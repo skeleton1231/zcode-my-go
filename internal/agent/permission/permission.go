@@ -19,6 +19,16 @@ const (
 	Deny  Behavior = "deny"
 )
 
+// Mode is the collaboration mode (ZCode's CollaborationMode): plan mode
+// denies every side effect, keeping the agent to reading and proposing.
+type Mode string
+
+// Collaboration modes.
+const (
+	ModeNormal Mode = "normal"
+	ModePlan   Mode = "plan"
+)
+
 // RiskLevel of a tool call, from ZCode's RiskLevel.
 type RiskLevel string
 
@@ -71,16 +81,31 @@ type Decision struct {
 
 // Service holds the session-scoped rules ("always allow in this session",
 // dying with the session as ZCode's per-app instance does) over project
-// rules, and decides calls.
+// rules, the collaboration mode, and decides calls.
 type Service struct {
 	mu      sync.Mutex
 	session Ruleset
 	project Ruleset
+	mode    Mode
 }
 
 // New builds a service over immutable project rules.
 func New(project Ruleset) *Service {
 	return &Service{project: project}
+}
+
+// SetMode switches the collaboration mode (ZCode's plan-mode transitions).
+func (s *Service) SetMode(mode Mode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mode = mode
+}
+
+// Mode returns the current collaboration mode.
+func (s *Service) Mode() Mode {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mode
 }
 
 // GrantSession adds a session-scoped rule (ZCode's grantSessionPermission).
@@ -110,8 +135,14 @@ func (s *Service) Check(ctx Context, cap Capability) Decision {
 			Reason: "tool declares alwaysAsk", Escalated: true}
 	}
 	s.mu.Lock()
-	session, project := s.session, s.project
+	session, project, mode := s.session, s.project, s.mode
 	s.mu.Unlock()
+	// Plan 模式先于一切规则拒绝副作用（ZCode plan-mode-policy）：计划
+	// 阶段只读，会话规则也不能越过它。
+	if mode == ModePlan && !cap.ReadOnly {
+		return Decision{Behavior: Deny, Risk: risk,
+			Reason: "plan mode: 只读工具可用，改动类工具被拒绝；请先给出计划", Escalated: true}
+	}
 
 	if d, ok := match(session, ctx); ok {
 		return d

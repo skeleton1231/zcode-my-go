@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
@@ -26,15 +28,18 @@ const DefaultBaseURL = "https://api.anthropic.com"
 
 // settings is the persisted user configuration.
 type settings struct {
-	BaseURL string `json:"baseUrl"`
-	APIKey  string `json:"apiKey"`
-	Model   string `json:"model"`
+	BaseURL    string                `json:"baseUrl"`
+	APIKey     string                `json:"apiKey"`
+	Model      string                `json:"model"`
+	API        string                `json:"api"` // "anthropic" (default) or "openai"
+	MCPServers map[string]mcp.Config `json:"mcpServers"`
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
 type SettingsView struct {
 	BaseURL   string `json:"baseUrl"`
 	Model     string `json:"model"`
+	API       string `json:"api"`
 	HasAPIKey bool   `json:"hasApiKey"`
 	KeyHint   string `json:"keyHint"` // e.g. "sk-…abcd", for display only
 }
@@ -48,6 +53,7 @@ type AgentService struct {
 	ask      func(agent.AskRequest) agent.AskResponse
 	question func(ctx context.Context, q agent.Question) (string, error)
 	states   map[string]*tools.States // session-scoped tool state
+	mcp      []*mcp.Server            // launched MCP servers
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -64,15 +70,42 @@ func New(dataDir string) (*AgentService, error) {
 		return nil, err
 	}
 	s.mgr = mgr
+	s.startMCP()
 	s.rewire()
 	return s, nil
+}
+
+// startMCP launches the configured MCP servers; failures are logged and
+// skipped, never fatal (ZCode treats dead MCP servers as degraded).
+func (s *AgentService) startMCP() {
+	for name, cfg := range s.settings.MCPServers {
+		if cfg.Command == "" {
+			continue
+		}
+		server, err := mcp.Start(context.Background(), name, cfg)
+		if err != nil {
+			log.Printf("mcp %s: %v", name, err)
+			continue
+		}
+		s.mcp = append(s.mcp, server)
+	}
+}
+
+// Close shuts down launched MCP servers.
+func (s *AgentService) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, server := range s.mcp {
+		server.Close()
+	}
+	s.mcp = nil
 }
 
 // rewire installs the current settings into the manager. Callers hold s.mu.
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.mgr.Wire(agent.Wiring{
-		Provider: func() ai.Provider { return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey) },
+		Provider: func() ai.Provider { return providerFor(cfg) },
 		Model:    func() string { return cfg.Model },
 		Tools: func(workspace, sessionID string) []agent.Tool {
 			s.mu.Lock()
@@ -82,7 +115,22 @@ func (s *AgentService) rewire() {
 				s.states[sessionID] = state
 			}
 			s.mu.Unlock()
-			return tools.All(workspace, state, s.question)
+			provider := func() ai.Provider { return providerFor(cfg) }
+			model := cfg.Model
+			question := s.question
+			task := tools.NewTask(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
+				return agent.RunSubtask(ctx, agent.SubtaskConfig{
+					Provider: provider(),
+					Model:    model,
+					System:   agent.SubtaskSystem(),
+					Tools:    tools.ReadOnly(workspace),
+				}, prompt)
+			})
+			all := append(tools.All(workspace, state, question), task)
+			for _, server := range s.mcpServers() {
+				all = append(all, mcp.AgentTools(server)...)
+			}
+			return all
 		},
 		System:   prompt.System,
 		Ask:      s.ask,
@@ -105,7 +153,21 @@ func (s *AgentService) resolve() settings {
 	if v := os.Getenv("ZGO_MODEL"); v != "" {
 		cfg.Model = v
 	}
+	if v := os.Getenv("ZGO_API"); v != "" {
+		cfg.API = v
+	}
+	if cfg.API == "" {
+		cfg.API = "anthropic"
+	}
 	return cfg
+}
+
+// providerFor builds the provider matching the configured API dialect.
+func providerFor(cfg settings) ai.Provider {
+	if cfg.API == "openai" {
+		return ai.NewOpenAI(cfg.BaseURL, cfg.APIKey)
+	}
+	return ai.NewAnthropic(cfg.BaseURL, cfg.APIKey)
 }
 
 // loadSettings reads the settings file; a missing file is first run.
@@ -123,7 +185,7 @@ func (s *AgentService) loadSettings() error {
 // view projects the resolved settings for the UI.
 func (s *AgentService) view() SettingsView {
 	cfg := s.resolve()
-	v := SettingsView{BaseURL: cfg.BaseURL, Model: cfg.Model, HasAPIKey: cfg.APIKey != ""}
+	v := SettingsView{BaseURL: cfg.BaseURL, Model: cfg.Model, API: cfg.API, HasAPIKey: cfg.APIKey != ""}
 	if n := len(cfg.APIKey); n > 8 {
 		v.KeyHint = cfg.APIKey[:3] + "…" + cfg.APIKey[n-4:]
 	} else if n > 0 {
@@ -141,10 +203,13 @@ func (s *AgentService) GetSettings() SettingsView {
 
 // SaveSettings stores the configuration. An empty apiKey keeps the stored
 // key, so the UI never needs to echo it back.
-func (s *AgentService) SaveSettings(baseURL, apiKey, model string) (SettingsView, error) {
+func (s *AgentService) SaveSettings(api, baseURL, apiKey, model string) (SettingsView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg := s.settings
+	if api == "openai" || api == "anthropic" {
+		cfg.API = api
+	}
 	if baseURL != "" {
 		cfg.BaseURL = baseURL
 	}
@@ -257,6 +322,21 @@ func (s *AgentService) CompactSession(id string) error {
 		return fmt.Errorf("no session %s", id)
 	}
 	return sess.Compact(context.Background())
+}
+
+// PlanMode switches a session's collaboration mode (plan = read-only).
+func (s *AgentService) PlanMode(id string, on bool) error {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	sess.SetPlanMode(on)
+	return nil
+}
+
+// mcpServers snapshots the launched servers. Callers hold s.mu.
+func (s *AgentService) mcpServers() []*mcp.Server {
+	return s.mcp
 }
 
 // Abort cancels a session's running loop.

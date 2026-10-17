@@ -123,6 +123,13 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 		cancel()
 	}()
 
+	// 微压缩先行（ZCode microcompact）：无 provider 成本，修剪保留窗口外
+	// 的长工具输出；不足以达标时再走全量摘要。
+	s.mu.Lock()
+	if pruned, changed := compact.Microcompact(s.messages, compact.DefaultKeepTail); changed {
+		s.messages = pruned
+	}
+	s.mu.Unlock()
 	s.autoCompact(ctx, func(ev Event) { ev.SessionID = id; emit(ev) })
 
 	if err := s.Append(ai.Message{Role: ai.RoleUser,
@@ -147,6 +154,26 @@ func (s *Session) Chat(text string, emit func(Event)) error {
 	})
 	loop.Run(ctx, s.Append)
 	return nil
+}
+
+// SetPlanMode switches the session's collaboration mode.
+func (s *Session) SetPlanMode(on bool) {
+	mode := permission.ModeNormal
+	if on {
+		mode = permission.ModePlan
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.permissions != nil {
+		s.permissions.SetMode(mode)
+	}
+}
+
+// PlanMode reports whether the session is in plan mode.
+func (s *Session) PlanMode() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.permissions != nil && s.permissions.Mode() == permission.ModePlan
 }
 
 // Abort cancels the running loop, if any.
@@ -291,6 +318,10 @@ func loadSession(path string) (*Session, error) {
 	}
 	if stat, err := f.Stat(); err == nil {
 		s.info.UpdatedAt = stat.ModTime()
+	}
+	// 与 Chat 入口一致地重放微压缩，恢复后的上下文与运行时一致。
+	if pruned, changed := compact.Microcompact(s.messages, compact.DefaultKeepTail); changed {
+		s.messages = pruned
 	}
 	return s, nil
 }

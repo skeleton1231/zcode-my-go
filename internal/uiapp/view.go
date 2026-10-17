@@ -227,6 +227,9 @@ func (a *App) statusView(c *ui.Context, t *ui.Theme) {
 		if a.chat.running {
 			model = "● " + model
 		}
+		if a.planMode {
+			model = "◍ 计划模式 · " + model
+		}
 		ui.Text(c, model).TextColor(t.TextMuted).FontSize(12)
 		ui.Spacer(c)
 		ui.Text(c, formatUsage(a.chat)).TextColor(t.TextMuted).FontSize(12)

@@ -161,7 +161,7 @@ func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
 	argsLine := SummarizeArgs(nilIfEmpty(call.Arguments))
 	decision := l.cfg.Permissions.Check(
 		permission.Context{Tool: call.Name, Args: argsLine},
-		capabilityOf(tool))
+		capabilityFor(tool, string(call.Arguments)))
 	switch decision.Behavior {
 	case permission.Allow:
 		return nil

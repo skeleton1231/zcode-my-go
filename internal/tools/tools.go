@@ -20,6 +20,12 @@ const (
 	defaultReadLines = 2000
 )
 
+// ReadOnly returns the read-only toolset for subagents.
+func ReadOnly(workspace string) []agent.Tool {
+	w := Workspace{Root: workspace}
+	return []agent.Tool{NewRead(w), NewGrep(w), NewGlob(w), NewLs(w)}
+}
+
 // States holds the session-scoped tool state (the todo plan), keyed by
 // session; All receives the owning session's slice.
 type States struct {

@@ -88,3 +88,28 @@ func TestRuleForTool(t *testing.T) {
 		t.Fatalf("other command allowed: %+v", d)
 	}
 }
+
+// TestPlanModeDeniesSideEffects verifies plan mode beats session rules and
+// keeps read-only tools running (ZCode's plan-mode-policy).
+func TestPlanModeDeniesSideEffects(t *testing.T) {
+	svc := New(Ruleset{})
+	svc.GrantSession(Rule{ID: "s", Tool: "write", Behavior: Allow})
+	svc.SetMode(ModePlan)
+
+	if d := svc.Check(Context{Tool: "write"}, Capability{}); d.Behavior != Deny {
+		t.Fatalf("plan mode allowed write: %+v", d)
+	}
+	if d := svc.Check(Context{Tool: "read"}, Capability{ReadOnly: true}); d.Behavior != Allow {
+		t.Fatalf("plan mode blocked read: %+v", d)
+	}
+	// readonly bash 判定在计划模式下同样可用。
+	if d := svc.Check(Context{Tool: "bash", Args: "command: git status"},
+		Capability{ReadOnly: true}); d.Behavior != Allow {
+		t.Fatalf("plan mode blocked readonly bash: %+v", d)
+	}
+
+	svc.SetMode(ModeNormal)
+	if d := svc.Check(Context{Tool: "write"}, Capability{}); d.Behavior != Allow {
+		t.Fatalf("session rule not restored: %+v", d)
+	}
+}

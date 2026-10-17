@@ -12,18 +12,21 @@
 | ZCode 模块 | 规模 | Zgo 对应物 | 状态 |
 | --- | --- | --- | --- |
 | core/agent/（turn-machine、message-history、compact-session） | 104k* | `internal/agent`（loop.go、session.go、compact_session.go） | ✅ 已移植 |
-| core/permission/（service、broker、rule-matching、plan-mode-policy） | 1.3k | `internal/agent/permission`（三态决策、会话/项目规则、能力声明、通配匹配、会话规则收窄） | ✅ 已移植（plan-mode 语义规划） |
-| core/compact/（policy、manual、microcompact、prompt、rounds） | 0.9k | `internal/agent/compact`（window−reserve−buffer 阈值、熔断、摘要提示词、尾部保留、JSONL 压缩记录重放） | ✅ 已移植（microcompact 规划） |
-| core/tool/handlers/*（bash 只读策略 40+ 文件、edit、read、write、apply-patch…） | — | `internal/tools`（read/write/edit/bash/grep/glob/ls + path jail + 截断） | 🟡 部分移植（bash 命令级只读判定→权限规则可表达；patch/多文件编辑规划） |
+| core/permission/（service、broker、rule-matching、plan-mode-policy） | 1.3k | `internal/agent/permission`（三态决策、会话/项目规则、能力声明、通配匹配、会话规则收窄、plan-mode 拒副作用先于规则） | ✅ 已移植 |
+| core/compact/（policy、manual、microcompact、prompt、rounds） | 0.9k | `internal/agent/compact`（window−reserve−buffer 阈值、熔断、摘要提示词、尾部保留、JSONL 压缩记录重放、microcompact 修剪窗口外长工具输出并在加载时重放） | ✅ 已移植 |
+| core/tool/handlers/*（bash 只读策略 40+ 文件、edit、read、write、apply-patch…） | — | `internal/tools`（read/write/edit/bash/grep/glob/ls + path jail + 截断；bash 命令级只读判定：分段解析、重定向/替换拒绝、git 子命令白名单、列表形态特判 → 只读自动放行） | 🟡 部分移植（patch/多文件编辑规划） |
 | core/tool/（executor、scheduler、registry、json-schema 校验） | — | `agent.loop.execute`（串行调度）+ `agent.declarations` | 🟡 部分移植（并行调度规划） |
 | core/context/、session-context/、memory/ | — | `internal/prompt`（AGENTS/CLAUDE/ZGO.md 注入、git 摘要） | 🟡 部分移植（分层记忆/topic 归档规划） |
-| core/subagent/、runtime-task/、workflow/、dynamic-workflow/ | 26k | — | 📐 规划（子代理与工作流在 loop 接口预留位之后） |
-| core/mcp/ | — | — | 📐 规划（MCP 客户端：stdio JSON-RPC） |
+| core/tool/handlers 中 ask-user-question | — | `internal/tools/ask.go` + service 提问通道 | ✅ 已移植 |
+| ZCode 任务清单 | — | `internal/tools/todo.go`（会话级状态） | ✅ 已移植 |
+| core/subagent/ | — | `internal/agent/subagent.go`（RunSubtask 嵌套只读循环 + `task` 工具 + tools.ReadOnly 工具集） | ✅ 已移植 |
+| runtime-task/、workflow/、dynamic-workflow/ | 26k | — | 📐 规划（多步工作流编排） |
+| core/mcp/ | — | `internal/mcp`（stdio JSON-RPC 2.0：initialize 握手、tools/list、tools/call；AgentTools 适配为 mcp_前缀工具；settings.mcpServers 配置、进程退出唤醒等待者） | ✅ 已移植 |
 | core/hooks/、plugin-reference/、telemetry/ | 4k | — | 📐 规划 |
 | core/system-reminder/ | — | `agent.EvCompaction` 等 notice 事件 | 🟡 部分移植 |
 | contracts/（协议与类型，22k） | 22k | `internal/agent`（Event/ToolResult/AskRequest 类型即协议） | 🟡 部分移植（随模块补齐） |
-| adapters/（54k：各 provider 适配） | 54k | `internal/ai`（Anthropic 兼容协议一家通吃 Anthropic/GLM/Kimi） | 🟡 部分移植（OpenAI 原生协议规划） |
-| bootstrap/、cli/、tui/（终端宿主 81k） | 81k | `cmd/zgo`（print 模式：-p/-C、stdin 确认与提问） | 🟡 部分移植（全屏 TUI 规划） |
+| adapters/（54k：各 provider 适配） | 54k | `internal/ai`（Anthropic 兼容协议 + OpenAI Chat Completions 原生流式：工具调用增量、usage、finish 映射；settings.api 按协议选择） | 🟡 部分移植（其余厂商协议按需追加，均为同构适配） |
+| bootstrap/、cli/、tui/（终端宿主 81k） | 81k | `cmd/zgo`（print 模式 -p/-C + 交互 REPL：/exit /compact /plan /new，stdin 权限确认与提问，错误运行非零退出） | 🟡 部分移植（全屏 TUI 界面规划；交互语义已等价） |
 | tools/（ripgrep 等原生搜索依赖） | — | Go 原生 `regexp` + walk（embedded-search 的降维实现） | ✅ 等价实现 |
 | i18n/ | 1k | 界面文案中文常量 | 🟡 部分移植 |
 | 各 *-plugin/（pdf、spreadsheets、swift-bridge…） | 8k | — | 🚫 不移植（插件生态按需另启） |
@@ -55,7 +58,18 @@
 | 设计系统 DESIGN.md | `DESIGN.md`（ui.Theme token 体系） |
 | 测试矩阵（单测 + 视图测试 + e2e） | go test 单测 + `ui.NewTester` 视图测试（e2e 规划） |
 
-## 本阶段新增（v0.3）
+## 本阶段新增（v0.3 第一轮 + 第二轮）
+
+第二轮（翻译收尾）：
+- bash 命令级只读判定（gate 的 per-args 能力）
+- plan-mode（UI Ctrl+P / REPL /plan / service API）
+- microcompact（窗口外工具输出修剪 + 加载重放）
+- 子代理 task 工具（RunSubtask + 只读工具集）
+- MCP 客户端（stdio JSON-RPC，真子进程测试）
+- OpenAI Chat Completions 原生 provider（settings.api 切换）
+- CLI 交互 REPL（/exit /compact /plan /new）
+
+第一轮：
 
 - permission 子系统（决策序、规则收窄、gate 集成、桌面/CLI 双通道）
 - compact 子系统（阈值/熔断/摘要/持久化重放，手动 + 自动入口）

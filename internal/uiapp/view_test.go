@@ -85,6 +85,7 @@ func TestSettingsModal(t *testing.T) {
 		t.Fatalf("settings fields missing: %q", tt.Texts())
 	}
 
+	a.setAPI = 0
 	a.setModel = "glm-5.2"
 	a.setBaseURL = "https://open.bigmodel.cn/api/anthropic"
 	if err := tt.Click("保存"); err != nil {

@@ -40,9 +40,7 @@ func main() {
 		}
 	}
 	if prompt == "" {
-		fmt.Fprintln(os.Stderr, "用法：zgo [-C 工作区] -p \"任务描述\"")
-		fmt.Fprintln(os.Stderr, "设置：ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY / ZGO_MODEL 或桌面端的设置文件")
-		os.Exit(2)
+		os.Exit(repl(workspace))
 	}
 	if workspace == "" {
 		if cwd, err := os.Getwd(); err == nil {
@@ -188,3 +186,83 @@ func fatal(err error) {
 	fmt.Fprintln(os.Stderr, "错误：", err)
 	os.Exit(1)
 }
+
+// repl runs the interactive loop (zcode-cli's interactive mode): one
+// session, streamed turns, slash commands. It returns the exit code.
+func repl(workspace string) int {
+	if workspace == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			workspace = cwd
+		}
+	}
+	dataDir, err := userDataDir()
+	if err != nil {
+		fatal(err)
+	}
+	svc, err := service.New(dataDir)
+	if err != nil {
+		fatal(err)
+	}
+	defer svc.Close()
+	svc.SetAsker(stdinAsker)
+	svc.SetQuestion(stdinQuestion)
+
+	info, err := svc.NewSession(workspace)
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "zgo 交互模式 · 工作区 %s\n命令：/exit 退出 · /compact 压缩 · /plan 切换计划模式 · /new 新会话\n", workspace)
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for {
+		fmt.Fprint(os.Stderr, "zgo> ")
+		if !sc.Scan() {
+			fmt.Fprintln(os.Stderr)
+			return 0
+		}
+		line := strings.TrimSpace(sc.Text())
+		switch line {
+		case "":
+			continue
+		case "/exit", "/quit", "/q":
+			return 0
+		case "/compact":
+			if err := svc.CompactSession(info.ID); err != nil {
+				fmt.Fprintln(os.Stderr, "[压缩失败]", err)
+			} else {
+				fmt.Fprintln(os.Stderr, "[压缩] 会话已压缩")
+			}
+			continue
+		case "/plan":
+			on := true
+			if planState[info.ID] {
+				on = false
+			}
+			planState[info.ID] = on
+			if err := svc.PlanMode(info.ID, on); err != nil {
+				fmt.Fprintln(os.Stderr, "[计划模式]", err)
+			} else if on {
+				fmt.Fprintln(os.Stderr, "[计划模式] 已开启（只读）")
+			} else {
+				fmt.Fprintln(os.Stderr, "[计划模式] 已关闭")
+			}
+			continue
+		case "/new":
+			var err error
+			info, err = svc.NewSession(workspace)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "[新建]", err)
+				continue
+			}
+			fmt.Fprintln(os.Stderr, "[新建] 已开启新会话")
+			continue
+		}
+		if err := svc.Chat(info.ID, line, func(ev agent.Event) { render(ev) }); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+		}
+		fmt.Println()
+	}
+}
+
+// planState tracks the REPL's plan-mode flag per session.
+var planState = map[string]bool{}

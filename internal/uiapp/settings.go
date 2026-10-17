@@ -14,8 +14,11 @@ func (a *App) settingsModal(c *ui.Context, t *ui.Theme) {
 		ui.Column(c).Width(380).Gap(12).Children(func() {
 			ui.Text(c, "设置").Bold().FontSize(15)
 
-			ui.TextInput(c, &a.setBaseURL).Label("API Base URL（Anthropic 兼容端点）").
-				Placeholder("https://api.anthropic.com")
+			ui.Text(c, "协议").FontSize(12)
+			ui.Segmented(c, &a.setAPI, "anthropic", "openai")
+
+			ui.TextInput(c, &a.setBaseURL).Label("API Base URL（按协议选择端点）").
+				Placeholder("https://api.anthropic.com / https://api.openai.com/v1")
 
 			keyLabel := "API Key"
 			if a.settings != nil && a.settings.HasAPIKey {

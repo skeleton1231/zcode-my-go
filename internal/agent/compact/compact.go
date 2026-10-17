@@ -5,6 +5,7 @@
 package compact
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -151,4 +152,35 @@ func SummaryMessage(summary string) ai.Message {
 		Kind: ai.BlockText,
 		Text: "（会话已压缩；以下是此前对话的摘要）\n\n" + strings.TrimSpace(summary),
 	}}}
+}
+
+// PruneCapBytes is the size above which an old tool result is pruned
+// (ZCode's microcompact keeps recent output intact and stubs the rest).
+const PruneCapBytes = 512
+
+// Microcompact prunes tool outputs outside the keep window to stubs —
+// ZCode's microcompact: cheaper than a full summary, no provider needed,
+// and the structure of the conversation stays. The messages are copied;
+// the report says whether anything changed.
+func Microcompact(messages []ai.Message, keepWindow int) ([]ai.Message, bool) {
+	if keepWindow < 0 {
+		keepWindow = 0
+	}
+	out := append([]ai.Message(nil), messages...)
+	changed := false
+	cutoff := len(out) - keepWindow
+	for i := 0; i < cutoff; i++ {
+		for j, b := range out[i].Blocks {
+			if b.Kind != ai.BlockToolResult || len(b.Text) <= PruneCapBytes {
+				continue
+			}
+			// 消息与块都是浅拷贝共享的，替换前先复制这一条。
+			blocks := append([]ai.Block(nil), out[i].Blocks...)
+			stub := fmt.Sprintf("[工具输出已修剪：原 %d 字节，超出保留窗口]", len([]rune(b.Text)))
+			blocks[j].Text = stub
+			out[i].Blocks = blocks
+			changed = true
+		}
+	}
+	return out, changed
 }

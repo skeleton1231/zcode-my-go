@@ -29,6 +29,7 @@ type App struct {
 	input    string
 	sending  bool
 	lastSent string
+	planMode bool
 
 	// permission ask modal state (driven from the agent's goroutine)
 	askOpen bool
@@ -44,6 +45,7 @@ type App struct {
 	// settings modal state
 	settings      *service.SettingsView
 	settingsOpen  bool
+	setAPI        int // 0 = anthropic, 1 = openai
 	setBaseURL    string
 	setKey        string
 	setModel      string
@@ -147,6 +149,11 @@ func (a *App) DeleteActive() {
 func (a *App) OpenSettings() {
 	v := a.svc.GetSettings()
 	a.settings = &v
+	if v.API == "openai" {
+		a.setAPI = 1
+	} else {
+		a.setAPI = 0
+	}
 	a.setBaseURL = v.BaseURL
 	a.setModel = v.Model
 	a.setKey = ""
@@ -156,10 +163,14 @@ func (a *App) OpenSettings() {
 
 // saveSettings persists the modal's fields. Runs off the main thread.
 func (a *App) saveSettings() {
+	api := "anthropic"
+	if a.setAPI == 1 {
+		api = "openai"
+	}
 	baseURL, key, model := a.setBaseURL, a.setKey, a.setModel
 	a.saving = true
 	go func() {
-		v, err := a.svc.SaveSettings(strings.TrimSpace(baseURL), strings.TrimSpace(key), strings.TrimSpace(model))
+		v, err := a.svc.SaveSettings(api, strings.TrimSpace(baseURL), strings.TrimSpace(key), strings.TrimSpace(model))
 		a.update(func() {
 			a.saving = false
 			if err != nil {
@@ -259,6 +270,17 @@ func (a *App) answerQuestion(answer string) {
 	if a.qCh != nil {
 		a.qCh <- answer
 		a.qCh = nil
+	}
+}
+
+// TogglePlanMode switches the open session between normal and plan mode.
+func (a *App) TogglePlanMode() {
+	if a.activeID == "" {
+		return
+	}
+	a.planMode = !a.planMode
+	if err := a.svc.PlanMode(a.activeID, a.planMode); err != nil {
+		a.planMode = false
 	}
 }
 

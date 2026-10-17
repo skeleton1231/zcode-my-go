@@ -1,6 +1,7 @@
 package compact
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -61,5 +62,39 @@ func TestSummaryMessage(t *testing.T) {
 	m := SummaryMessage("做完了")
 	if m.Role != ai.RoleUser || m.Blocks[0].Text != "（会话已压缩；以下是此前对话的摘要）\n\n做完了" {
 		t.Fatalf("message = %+v", m)
+	}
+}
+
+// TestMicrocompactPrunesOutsideWindow verifies old long tool outputs are
+// stubbed, recent ones stay intact.
+func TestMicrocompactPrunesOutsideWindow(t *testing.T) {
+	long := strings.Repeat("x", 1000)
+	short := "ok"
+	msgs := []ai.Message{
+		{Role: ai.RoleToolResult, Blocks: []ai.Block{{Kind: ai.BlockToolResult, ToolCallID: "a", Text: long}}},
+		{Role: ai.RoleToolResult, Blocks: []ai.Block{{Kind: ai.BlockToolResult, ToolCallID: "b", Text: short}}},
+	}
+	for i := 0; i < DefaultKeepTail; i++ {
+		msgs = append(msgs, ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "m"}}})
+	}
+	msgs = append(msgs, ai.Message{Role: ai.RoleToolResult, Blocks: []ai.Block{
+		{Kind: ai.BlockToolResult, ToolCallID: "c", Text: long}}})
+
+	out, changed := Microcompact(msgs, DefaultKeepTail)
+	if !changed {
+		t.Fatal("nothing pruned")
+	}
+	if !strings.Contains(out[0].Blocks[0].Text, "已修剪") {
+		t.Fatalf("old result not stubbed: %q", out[0].Blocks[0].Text)
+	}
+	if !strings.Contains(out[1].Blocks[0].Text, "ok") {
+		t.Fatalf("short result pruned wrongly")
+	}
+	last := out[len(out)-1]
+	if last.Blocks[0].Text != long {
+		t.Fatalf("recent result pruned: %q", last.Blocks[0].Text[:20])
+	}
+	if msgs[0].Blocks[0].Text != long {
+		t.Fatal("input mutated")
 	}
 }
