@@ -181,6 +181,10 @@ type Scheduler struct {
 	running map[string]bool
 	cancel  context.CancelFunc
 	stopped chan struct{}
+	// inflight 追踪派发的 fire goroutine（issue #134：Stop 曾只等 tick
+	// 循环——在飞的 run 结束后 record 写盘晚于关闭，最后一条记录丢失，
+	// 下个启动周期双触发；测试侧与 t.TempDir 清理竞争致全套件抖动）。
+	inflight sync.WaitGroup
 }
 
 // NewScheduler wires a store and runner.
@@ -228,6 +232,9 @@ func (s *Scheduler) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 		<-s.stopped
+		// 排空在飞的 fire（issue #134）：record 落盘完成后才返回，调用
+		// 方（应用退出、测试清理）随即关 store/删 TempDir 不再竞争。
+		s.inflight.Wait()
 	}
 }
 
@@ -271,7 +278,9 @@ func (s *Scheduler) fire(ctx context.Context, job Job) {
 	s.mu.Unlock()
 
 	started := s.now()
+	s.inflight.Add(1)
 	go func() {
+		defer s.inflight.Done()
 		defer func() {
 			s.mu.Lock()
 			delete(s.running, job.ID)
