@@ -148,6 +148,10 @@ func (a *App) OpenSession(id string) { a.open(id) }
 
 func (a *App) open(id string) {
 	a.activeID = id
+	// 搜索状态不跨会话（issue #46）：旧查询过滤新会话，刚打开就
+	// "没有匹配"；搜索词跨会话泄漏。
+	a.searchOpen = false
+	a.searchQuery = ""
 	messages, err := a.svc.Messages(id)
 	if err != nil {
 		log.Printf("loading session %s: %v", id, err)
@@ -178,8 +182,10 @@ func (a *App) SearchMatches() []int {
 	}
 	var out []int
 	for i, item := range a.chat.items {
+		// args 必须参与匹配（issue #42）：正在改的文件、正在跑的命令
+		// 都只在 args 里——"刚才改了哪个文件"恰是搜索高频用例。
 		hay := strings.ToLower(item.text + " " + item.think + " " +
-			item.name + " " + item.result)
+			item.name + " " + item.args + " " + item.result)
 		if strings.Contains(hay, q) {
 			out = append(out, i)
 		}
@@ -243,6 +249,8 @@ func (a *App) DeleteActive() {
 	id := a.activeID
 	a.activeID = ""
 	a.chat = chatState{}
+	a.searchOpen = false // 与 open() 一致：搜索状态随会话终结清空
+	a.searchQuery = ""
 	if err := a.svc.DeleteSession(id); err != nil {
 		log.Printf("deleting session %s: %v", id, err)
 	}

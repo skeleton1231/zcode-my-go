@@ -268,6 +268,60 @@ func TestSessionSearchFiltersTranscript(t *testing.T) {
 	}
 }
 
+// TestSearchMatchesToolArgs 验证 args 参与匹配（issue #42：文件名/命令
+// 只在 args 里，渲染可见却搜索零匹配）。
+func TestSearchMatchesToolArgs(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(info.ID)
+	a.chat.items = []chatItem{
+		{kind: itemTool, name: "edit", args: `{"path":"needle.go"}`, result: "ok"},
+	}
+	a.searchQuery = "needle.go"
+	if got := a.SearchMatches(); len(got) != 1 || got[0] != 0 {
+		t.Fatalf("args-only match = %v", got)
+	}
+	a.searchQuery = "ok"
+	if got := a.SearchMatches(); len(got) != 1 {
+		t.Fatalf("result match regressed = %v", got)
+	}
+}
+
+// TestSearchResetsOnSessionSwitch 验证切换/删除会话清空搜索状态
+// （issue #46：旧查询过滤新会话，刚打开就"没有匹配"；搜索词跨会话
+// 泄漏）。
+func TestSearchResetsOnSessionSwitch(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	a.Init()
+	first, _ := svc.NewSession(t.TempDir())
+	second, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(first.ID)
+	a.OpenSearch()
+	a.searchQuery = "alpha"
+	if !a.searching() {
+		t.Fatal("precondition: searching")
+	}
+	a.OpenSession(second.ID)
+	if a.searchOpen || a.searchQuery != "" {
+		t.Fatalf("switch left residue: open=%v query=%q", a.searchOpen, a.searchQuery)
+	}
+	a.OpenSearch()
+	a.searchQuery = "beta"
+	a.DeleteActive()
+	if a.searchOpen || a.searchQuery != "" {
+		t.Fatalf("delete left residue: open=%v query=%q", a.searchOpen, a.searchQuery)
+	}
+}
+
 // TestContextMeterShowsBudget verifies the status bar meter appears with
 // the percentage label once a budget is loaded.
 func TestContextMeterShowsBudget(t *testing.T) {
