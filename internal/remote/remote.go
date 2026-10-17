@@ -143,7 +143,10 @@ func (c *Client) Close() error {
 func (c *Client) String() string { return c.cfg.String() }
 
 // execTimeout caps each command.
-const execTimeout = 10 * time.Minute
+var execTimeout = 10 * time.Minute
+
+// execCapBytes bounds combined stdout+stderr read into memory.
+const execCapBytes = 30 << 10
 
 // ExecResult is one command's outcome.
 type ExecResult struct {
@@ -166,13 +169,36 @@ func (c *Client) Exec(command string) (ExecResult, error) {
 	}
 	session.Stdout = pw
 	session.Stderr = pw
+
+	type readResult struct {
+		out []byte
+		err error
+	}
+	readDone := make(chan readResult, 1)
+	go func() {
+		limited := io.LimitReader(pr, execCapBytes+1)
+		out, rerr := io.ReadAll(limited)
+		_, _ = io.Copy(io.Discard, pr)
+		readDone <- readResult{out: out, err: rerr}
+	}()
+
 	done := make(chan error, 1)
 	go func() { done <- session.Run("cd " + quote(c.cfg.Root) + " && " + command) }()
 	select {
 	case err := <-done:
-		pw.Close()
-		out, _ := io.ReadAll(pr)
-		pr.Close()
+		_ = pw.Close()
+		res := <-readDone
+		_ = pr.Close()
+		out := res.out
+		truncated := false
+		if int64(len(out)) > execCapBytes {
+			out = out[:execCapBytes]
+			truncated = true
+		}
+		output := string(out)
+		if truncated {
+			output += "\n… output truncated …\n"
+		}
 		code := 0
 		if err != nil {
 			code = 1
@@ -182,9 +208,12 @@ func (c *Client) Exec(command string) (ExecResult, error) {
 				code = exitErr.ExitStatus()
 			}
 		}
-		return ExecResult{Output: string(out), ExitCode: code}, nil
+		return ExecResult{Output: output, ExitCode: code}, nil
 	case <-time.After(execTimeout):
-		session.Close()
+		_ = session.Close()
+		_ = pw.Close()
+		<-readDone
+		_ = pr.Close()
 		return ExecResult{}, fmt.Errorf("command timed out after %s", execTimeout)
 	}
 }

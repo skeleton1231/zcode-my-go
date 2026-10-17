@@ -2,11 +2,13 @@ package remote
 
 import (
 	"os"
-
-	"github.com/skeleton1231/zcode-my-go/internal/remotetest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/skeleton1231/zcode-my-go/internal/remotetest"
 )
 
 // dialTestServer dials the in-process server for real round-trips.
@@ -150,3 +152,125 @@ func TestWriteLandsInRoot(t *testing.T) {
 		t.Fatalf("file not in root: %v", err)
 	}
 }
+
+func countOpenFDs() int {
+	for _, dir := range []string{"/proc/self/fd", "/dev/fd"} {
+		entries, err := os.ReadDir(dir)
+		if err == nil {
+			return len(entries)
+		}
+	}
+	return -1
+}
+
+func TestExecTimeoutCleanupAndReuse(t *testing.T) {
+	client := dialTestServer(t)
+
+	oldTimeout := execTimeout
+	execTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { execTimeout = oldTimeout })
+
+	initialFDs := countOpenFDs()
+
+	// Command sleeps longer than execTimeout to trigger the timeout branch.
+	_, err := client.Exec("sleep 2")
+	if err == nil {
+		t.Fatal("expected exec to timeout, got nil error")
+	}
+	if !strings.Contains(err.Error(), "timed out after") {
+		t.Fatalf("expected timeout error message, got %v", err)
+	}
+
+	// Restore normal timeout before subsequent reuse command so it does not time out under load.
+	execTimeout = oldTimeout
+
+	// Verify the client remains usable and can execute subsequent commands.
+	res, err := client.Exec("echo reuse-ok")
+	if err != nil {
+		t.Fatalf("exec after timeout failed: %v", err)
+	}
+	if !strings.Contains(res.Output, "reuse-ok") {
+		t.Fatalf("expected reuse-ok in output, got %q", res.Output)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", res.ExitCode)
+	}
+
+	// Verify file descriptors were not leaked by the timeout path.
+	if initialFDs > 0 {
+		currentFDs := countOpenFDs()
+		if currentFDs > initialFDs+2 {
+			t.Fatalf("fd leak detected: initial %d, current %d", initialFDs, currentFDs)
+		}
+	}
+}
+
+func TestExecOutputCap(t *testing.T) {
+	client := dialTestServer(t)
+
+	// Small output below execCapBytes should not be truncated.
+	smallRes, err := client.Exec("echo short-output")
+	if err != nil {
+		t.Fatalf("small exec failed: %v", err)
+	}
+	if strings.Contains(smallRes.Output, "output truncated") {
+		t.Fatalf("small output should not be marked truncated: %q", smallRes.Output)
+	}
+	if !strings.Contains(smallRes.Output, "short-output") {
+		t.Fatalf("expected short-output, got %q", smallRes.Output)
+	}
+
+	// Large output exceeding execCapBytes (30KB) must be bounded and annotated.
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "powershell -Command \"[Console]::Write('A' * 40000)\""
+	} else {
+		cmd = "head -c 40000 /dev/zero | tr '\\0' 'A'"
+	}
+
+	largeRes, err := client.Exec(cmd)
+	if err != nil {
+		t.Fatalf("large exec failed: %v", err)
+	}
+	const marker = "\n… output truncated …\n"
+	if !strings.HasSuffix(largeRes.Output, marker) {
+		t.Fatalf("expected output to end with truncation marker, got %q", largeRes.Output)
+	}
+	raw := strings.TrimSuffix(largeRes.Output, marker)
+	if len([]byte(raw)) != execCapBytes {
+		t.Fatalf("expected raw output length %d bytes, got %d", execCapBytes, len([]byte(raw)))
+	}
+	if !strings.HasPrefix(raw, "AAAA") {
+		t.Fatalf("expected prefix 'AAAA', got %q", raw[:min(10, len(raw))])
+	}
+}
+
+func TestExecLargeOutputDoesNotDeadlock(t *testing.T) {
+	client := dialTestServer(t)
+
+	// 128KB output exceeds standard OS pipe capacity (64KB), proving the pipe is drained
+	// concurrently without deadlocking the command runner.
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "powershell -Command \"[Console]::Write('B' * 131072)\""
+	} else {
+		cmd = "head -c 131072 /dev/zero | tr '\\0' 'B'"
+	}
+
+	res, err := client.Exec(cmd)
+	if err != nil {
+		t.Fatalf("large pipe exec failed: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", res.ExitCode)
+	}
+	const marker = "\n… output truncated …\n"
+	if !strings.HasSuffix(res.Output, marker) {
+		t.Fatalf("expected output to end with truncation marker, got %q", res.Output)
+	}
+	raw := strings.TrimSuffix(res.Output, marker)
+	if len([]byte(raw)) != execCapBytes {
+		t.Fatalf("expected output capped at %d bytes, got %d", execCapBytes, len([]byte(raw)))
+	}
+}
+
