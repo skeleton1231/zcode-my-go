@@ -84,6 +84,15 @@ type AskRequest struct {
 	Args      string
 	Reason    string
 	Risk      permission.RiskLevel
+	// Diff 预告这次调用将做出的改动（统一 diff；edit/write 等改动类工具
+	// 在询问时计算，不落盘）。审批者据此知情决策。
+	Diff string
+}
+
+// PreviewDiffer: tools that can preview an upcoming change as a unified
+// diff without executing it — the permission ask shows it.
+type PreviewDiffer interface {
+	PreviewDiff(args json.RawMessage) string
 }
 
 // AskResponse is the user's answer: Allow runs this call, Always also
