@@ -78,6 +78,9 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 19. /export [md] [路径]（终端三端）：导出当前会话——默认自包含 HTML，
    md 走 Markdown；缺省文件名 zgo-export-时间戳；显式路径优先；失败给
    [导出失败] 说明。与桌面导出菜单、zgo sessions export 同一导出器。
+20. zgo sessions search <关键词>（CLI 运维面）：跨会话检索——复用桌面搜索
+   的同一 SearchSessions（文本+工具参数、片段、双上限）；表格式输出
+   （会话前缀/标题/片段），无命中明确说明；与 export 前缀衔接。
 ## 状态所有者
 
 | 状态     | 所有者           | 说明                              |
@@ -122,3 +125,5 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
     报错；/help 收录。
 17. /export：默认 HTML、md 变体、显式路径三形态落盘且内容完整；
     /help 收录。
+18. sessions search CLI：命中带标题与片段、无命中与空关键词各有明确行为、
+    工具参数可检索。
