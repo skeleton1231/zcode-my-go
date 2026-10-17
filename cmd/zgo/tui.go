@@ -255,10 +255,13 @@ func (s *tuiState) draw(out *os.File) {
 		b.WriteString("\x1b[K\n")
 	}
 	status := s.status
+	plain := status
 	if s.running {
-		status = ansi(ansiGreen, "● "+status)
+		plain = "● " + status
+		// 宽度按可见字符计：转义码不计入，否则反显条右缘留残迹。
+		status = ansi(ansiGreen, plain)
 	}
-	b.WriteString("\x1b[7m " + status + strings.Repeat(" ", max(0, w-2-len([]rune(status)))) + " \x1b[0m\n")
+	b.WriteString("\x1b[7m " + status + strings.Repeat(" ", max(0, w-2-len([]rune(plain)))) + " \x1b[0m\n")
 	b.WriteString("> " + string(s.input) + "\x1b[K")
 	out.WriteString(b.String())
 }
