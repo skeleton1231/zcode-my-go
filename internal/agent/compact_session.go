@@ -48,6 +48,7 @@ func (s *Session) Compact(ctx context.Context) error {
 		s.mu.Unlock()
 		return errors.New("a run is already in progress")
 	}
+	s.ensureLoadedLocked() // 惰性壳必须先装载（issue #138：曾读到空转录）
 	history := append([]ai.Message(nil), s.messages...)
 	provider, model := s.provider(), s.model()
 	s.mu.Unlock()
