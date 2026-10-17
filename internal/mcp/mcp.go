@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -49,22 +51,42 @@ type rpcRequest struct {
 }
 
 type rpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
-	Result  json.RawMessage `json:"result"`
-	Error   *struct {
+	JSONRPC string `json:"jsonrpc"`
+	// id 按原文保留：规范允许 string|number（issue #18），call 侧不做
+	// id 关联（readLoop 已完成投递），int64 硬编码会让字符串 id 的
+	// 响应解析失败。
+	ID     json.RawMessage `json:"id"`
+	Result json.RawMessage `json:"result"`
+	Error  *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// serverEnv builds the child's environment: Config.Env 覆盖父进程同名
+// 变量。先过滤父项再追加——Linux glibc getenv 取第一个匹配，直接 append
+// 的覆盖是无效的（Windows last-wins 恰好掩盖了它，issue #18）。
+func serverEnv(cmd *exec.Cmd, overrides map[string]string) []string {
+	parent := cmd.Environ()
+	env := make([]string, 0, len(parent)+len(overrides))
+	for _, kv := range parent {
+		k, _, _ := strings.Cut(kv, "=")
+		if _, overridden := overrides[k]; overridden {
+			continue
+		}
+		env = append(env, kv)
+	}
+	for k, v := range overrides {
+		env = append(env, k+"="+v)
+	}
+	return env
 }
 
 // Start launches a server and performs the MCP handshake, returning its
 // advertised tools.
 func Start(ctx context.Context, name string, cfg Config) (*Server, error) {
 	cmd := exec.Command(cfg.Command, cfg.Args...)
-	for k, v := range cfg.Env {
-		cmd.Env = append(cmd.Environ(), k+"="+v)
-	}
+	cmd.Env = serverEnv(cmd, cfg.Env)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -94,14 +116,18 @@ func Start(ctx context.Context, name string, cfg Config) (*Server, error) {
 	var init struct {
 		Tools []ToolDef `json:"tools"`
 	}
-	// initialize → (notifications/initialized) → tools/list
+	// initialize → (notifications/initialized) → tools/list。initialize
+	// 失败必须立即上报：继续 tools/list 只会报误导性的 listing 超时，
+	// 掩盖协议版本不匹配等真实原因（issue #18）。
 	if err := s.call(ctx, "initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "zgo", "version": "0.3"},
-	}, &init); err == nil {
-		s.notify("notifications/initialized")
+	}, &init); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("initializing %s: %w", name, err)
 	}
+	s.notify("notifications/initialized")
 	if err := s.call(ctx, "tools/list", map[string]any{}, &init); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("listing tools of %s: %w", name, err)
@@ -219,19 +245,39 @@ func (s *Server) readLoop(r *bufio.Reader) {
 			s.failPending(err)
 			return
 		}
+		// id 宽容解码（issue #18）：JSON-RPC 规范允许 string|number，
+		// 硬编码 int64 会让字符串 id 的响应整行解析失败、静默丢弃，
+		// 挂满超时后还报误导性的 listing 错误。
 		var head struct {
-			ID int64 `json:"id"`
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
 		}
-		if json.Unmarshal(line, &head) != nil || head.ID == 0 {
-			continue // notification or malformed line
+		if json.Unmarshal(line, &head) != nil || len(head.ID) == 0 || head.Method != "" {
+			continue // notification、server-initiated request 或损坏行
 		}
 		s.mu.Lock()
-		ch, ok := s.pending[head.ID]
+		ch, ok := s.pending[normalizeID(head.ID)]
+		if !ok && len(s.pending) == 1 {
+			// id 与任何等待者都对不上（服务器重写了 id，如网关）：恰有
+			// 一个等待中的调用时按单飞关联投递，顺序握手下无错配风险。
+			for _, c := range s.pending {
+				ch, ok = c, true
+			}
+		}
 		s.mu.Unlock()
 		if ok {
 			ch <- line
 		}
 	}
+}
+
+// normalizeID 把 JSON-RPC id（string 或 number）归一化为 int64；无法
+// 解析时返回 0（由调用方走单飞关联兜底）。
+func normalizeID(raw json.RawMessage) int64 {
+	s := strings.TrimSpace(string(raw))
+	s = strings.TrimSuffix(strings.TrimPrefix(s, `"`), `"`)
+	id, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	return id
 }
 
 func (s *Server) failPending(err error) {
