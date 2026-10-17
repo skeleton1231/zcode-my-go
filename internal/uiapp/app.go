@@ -42,6 +42,9 @@ type App struct {
 	searchQuery   string
 	lastSearchKey string // 上帧的过滤标识，变化时重置列表滚动
 
+	// context budget for the status bar meter
+	budget *service.ContextBudget
+
 	// plan is the session's live todo snapshot (nil/empty hides the panel).
 	plan     []tools.TodoTask
 	planOpen bool
@@ -150,6 +153,7 @@ func (a *App) open(id string) {
 	if total, err := a.svc.SessionUsage(id); err == nil {
 		a.chat.sessionTotal = total
 	}
+	a.RefreshBudget()
 	a.RefreshPlan()
 }
 
@@ -177,6 +181,17 @@ func (a *App) SearchMatches() []int {
 		}
 	}
 	return out
+}
+
+// RefreshBudget reloads the context meter's numbers.
+func (a *App) RefreshBudget() {
+	if a.activeID == "" {
+		a.budget = nil
+		return
+	}
+	if b, err := a.svc.ContextBudget(a.activeID); err == nil {
+		a.budget = &b
+	}
 }
 
 // RefreshPlan reloads the session's todo plan for the panel.
@@ -292,6 +307,7 @@ func (a *App) Send() {
 			}
 			a.refreshSessions()
 			a.RefreshPlan()
+			a.RefreshBudget() // 运行结束即刷新：否则仪表停在运行前的旧值
 		})
 	}()
 }

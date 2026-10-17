@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
@@ -462,6 +463,31 @@ func (s *AgentService) ForkSession(sessionID string, userTurn int) (agent.Sessio
 		return agent.SessionInfo{}, err
 	}
 	return fork.Info(), nil
+}
+
+// ContextBudget reports a session's estimated context usage against its
+// model's window and the auto-compact threshold (ZCode's context
+// indicator): the numbers behind the status bar's meter.
+func (s *AgentService) ContextBudget(id string) (ContextBudget, error) {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return ContextBudget{}, fmt.Errorf("no session %s", id)
+	}
+	window := ai.LookupModel(s.resolve().Model).ContextWindow
+	policy := compact.DefaultPolicy()
+	policy.ContextWindow = window
+	return ContextBudget{
+		Used:      compact.EstimateTokens(sess.Messages()),
+		Window:    window,
+		Threshold: policy.Threshold(),
+	}, nil
+}
+
+// ContextBudget is the context meter's data.
+type ContextBudget struct {
+	Used      int `json:"used"`
+	Window    int `json:"window"`
+	Threshold int `json:"threshold"`
 }
 
 // SessionUsage returns a session's cumulative token usage.

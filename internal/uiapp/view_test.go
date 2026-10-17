@@ -267,3 +267,27 @@ func TestSessionSearchFiltersTranscript(t *testing.T) {
 		t.Fatal("transcript not restored after closing search")
 	}
 }
+
+// TestContextMeterShowsBudget verifies the status bar meter appears with
+// the percentage label once a budget is loaded.
+func TestContextMeterShowsBudget(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	a.Init()
+	info, _ := svc.NewSession(t.TempDir())
+	a.OpenSession(info.ID)
+	tt.Frame()
+	if !tt.HasText("上下文 0%") {
+		t.Fatalf("empty-session meter missing: %q", tt.Texts())
+	}
+	// 接近阈值时应显示高占比。
+	a.budget = &service.ContextBudget{Used: 150_000, Window: 200_000, Threshold: 166_000}
+	tt.Frame()
+	if !tt.HasText("上下文 75%") {
+		t.Fatalf("meter percent = %q", tt.Texts())
+	}
+}
