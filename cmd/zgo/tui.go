@@ -14,6 +14,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
@@ -70,8 +71,9 @@ type tuiState struct {
 }
 
 // runTUI drives the interactive full-screen interface. It returns the
-// exit code.
-func runTUI(svc *service.AgentService, workspace string) int {
+// exit code. resumed 时沿用传入会话并回放转录（--continue/--resume 的
+// TUI 形态），否则在工作区新建。
+func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.SessionInfo, resumed bool) int {
 	fd := int(os.Stdin.Fd())
 	original, err := term.MakeRaw(fd)
 	if err != nil {
@@ -82,13 +84,27 @@ func runTUI(svc *service.AgentService, workspace string) int {
 
 	s := &tuiState{status: "就绪", redraw: make(chan struct{}, 1), topIdx: -1, turnCur: -1}
 	s.resize()
-	s.push(fmt.Sprintf("zgo 全屏模式 · 工作区 %s · Ctrl+C 退出 · Enter 发送", workspace))
+	info := resumeInfo
+	if resumed {
+		// 恢复会话沿用其自身工作区（即使与当前目录不同）。
+		workspace = info.Workspace
+		s.push(fmt.Sprintf("zgo 全屏模式 · 恢复会话 %s · %s · Ctrl+C 退出", shortID(info.ID), info.Title))
+		if msgs, merr := svc.Messages(info.ID); merr == nil {
+			replayHistory(s, msgs)
+		} else {
+			s.push(ansi(ansiRed, "[恢复失败] "+merr.Error()))
+		}
+	} else {
+		s.push(fmt.Sprintf("zgo 全屏模式 · 工作区 %s · Ctrl+C 退出 · Enter 发送", workspace))
+	}
 	s.push("命令：/exit 退出 · /compact 压缩 · /plan 计划模式 · /new 新会话")
 
-	info, err := svc.NewSession(workspace)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "错误：", err)
-		return 1
+	if !resumed {
+		info, err = svc.NewSession(workspace)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
 	}
 	// 闭包按引用捕获 info：/new 经 SetSession 换 ID 后面板读到新会话。
 	s.onPlan = func() []tools.TodoTask { return svc.TodoPlan(info.ID) }
@@ -457,4 +473,26 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// replayHistory 把既有会话的消息回放进转录（--continue/--resume 的 TUI
+// 形态）：用户回合经 pushTurn 登记导航锚点（恢复的回合一样可 Ctrl+↑/↓
+// 跳转），助手文本走常规样式；工具块只保留文本部分（历史里的调用记
+// 录以结果文本呈现）。返回回放的回合数。
+func replayHistory(s *tuiState, msgs []ai.Message) int {
+	turns := 0
+	for _, m := range msgs {
+		switch m.Role {
+		case ai.RoleUser:
+			if txt := m.Text(); txt != "" {
+				s.pushTurn(txt)
+				turns++
+			}
+		case ai.RoleAssistant:
+			if txt := m.Text(); txt != "" {
+				s.push(ansi(ansiBold, "zgo > ") + txt)
+			}
+		}
+	}
+	return turns
 }

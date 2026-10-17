@@ -855,21 +855,30 @@ func (m *Manager) wire(s *Session) {
 
 // New creates a session for a workspace.
 func (m *Manager) New(workspace string) (*Session, error) {
+	// ID 是时间戳：同一时钟节拍内的两次创建会撞 ID 互相覆盖（Windows
+	// 时钟粒度实测可达百纳秒级，测试里真实发生过）——持锁探测，撞了
+	// 就追加序号。
+	m.mu.Lock()
 	id := time.Now().UTC().Format("20060102T150405.000000000")
+	base := id
+	for n := 2; ; n++ {
+		if _, exists := m.sessions[id]; !exists {
+			break
+		}
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
 	s := &Session{
 		info: SessionInfo{ID: id, Workspace: workspace, UpdatedAt: time.Now()},
 		path: filepath.Join(m.dir, id+".jsonl"),
 	}
-	s.mu.Lock()
 	err := s.writeMetaLocked()
-	s.mu.Unlock()
 	if err != nil {
+		m.mu.Unlock()
 		return nil, err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.sessions[s.info.ID] = s
 	m.wire(s)
+	m.mu.Unlock()
 	return s, nil
 }
 
