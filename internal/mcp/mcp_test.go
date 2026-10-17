@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -123,5 +124,69 @@ func TestStartFailure(t *testing.T) {
 	}
 	if !strings.Contains(fmt.Sprint(err), "bad") {
 		t.Fatalf("error lacks server name: %v", err)
+	}
+}
+
+// TestStringIDHelperProcess 是用字符串 JSON-RPC id 应答的假服务器
+// （Node MCP SDK 生态常见形态，issue #18 的复现向量）。不是真正的测试。
+func TestStringIDHelperProcess(t *testing.T) {
+	if os.Getenv("GO_MCP_STRID_HELPER") != "1" {
+		return
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	enc := json.NewEncoder(os.Stdout)
+	for scanner.Scan() {
+		var req struct {
+			Method string `json:"method"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &req) != nil {
+			continue
+		}
+		switch req.Method {
+		case "initialize":
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "resp-init", "result": map[string]any{}})
+		case "tools/list":
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "resp-tools", "result": map[string]any{
+				"tools": []map[string]any{{
+					"name":        "ping",
+					"description": "Ping",
+					"inputSchema": map[string]any{"type": "object"},
+				}},
+			}})
+		}
+	}
+	os.Exit(0)
+}
+
+// TestStartWithStringIDServer 验证字符串 id 的服务器能完成握手（issue
+// #18：响应曾被静默丢弃，挂满 20s 后报误导性的 tools/list 超时）。
+func TestStartWithStringIDServer(t *testing.T) {
+	cfg := Config{
+		Command: os.Args[0],
+		Args:    []string{"-test.run=TestStringIDHelperProcess", "--"},
+		Env:     map[string]string{"GO_MCP_STRID_HELPER": "1"},
+	}
+	srv, err := Start(context.Background(), "strid", cfg)
+	if err != nil {
+		t.Fatalf("start with string-id server: %v", err)
+	}
+	defer srv.Close()
+	if tools := srv.Tools(); len(tools) != 1 || tools[0].Name != "ping" {
+		t.Fatalf("tools = %+v", tools)
+	}
+}
+
+// TestEnvOverrideWins 验证 Config.Env 覆盖父进程同名变量（issue #18 顺带
+// 修复：Linux glibc getenv 取第一个匹配，直接 append 的覆盖是无效的）。
+func TestEnvOverrideWins(t *testing.T) {
+	got := serverEnv(exec.Command("x"), map[string]string{"A": "1", "PATH": "custom"})
+	sawPath := ""
+	for _, kv := range got {
+		if strings.HasPrefix(kv, "PATH=") {
+			sawPath = kv
+		}
+	}
+	if sawPath != "PATH=custom" {
+		t.Fatalf("PATH override lost: %q", sawPath)
 	}
 }
