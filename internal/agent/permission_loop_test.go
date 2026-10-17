@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -617,6 +618,9 @@ func TestParallelToolsOverlap(t *testing.T) {
 		textTurn("done", ai.Usage{}),
 	}}
 	c := &collector{}
+	// EvToolExecutionEnd 从各工具 goroutine 并发回调（并行模式的既定
+	// 契约）：记录必须加锁，裸 append 是数据竞态（issue #86）。
+	var endMu sync.Mutex
 	var endOrder []string
 	loop := NewLoop(LoopConfig{
 		Provider:      provider,
@@ -626,7 +630,9 @@ func TestParallelToolsOverlap(t *testing.T) {
 	}, func(ev Event) {
 		c.emit(ev)
 		if ev.Kind == EvToolExecutionEnd {
+			endMu.Lock()
 			endOrder = append(endOrder, ev.ToolCallID)
+			endMu.Unlock()
 		}
 	})
 	loop.Run(context.Background(), c.append)
