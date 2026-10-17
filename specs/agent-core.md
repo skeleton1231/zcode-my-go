@@ -23,6 +23,11 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    不做重定向。
 7. 所有工具输出必须截断到上限（bash 30KB、read/grep 每文件 60KB），超限提示
    截断发生。
+8. 工作流（workflow 工具）：步骤串行执行，每步看到完整计划与此前结果；任一步
+   失败即停止，报告已完成部分。步骤声明 `after` 依赖（按 `name` 引用）时按 DAG
+   调度：无依赖关系的步骤并行（上限 4），每步只看到其直接上游的结果；首个
+   失败后不再派发新步骤，已在跑的步骤跑完，未启动的依赖链在报告中记为跳过；
+   出现 `after` 时全部步骤必须有唯一 `name`，引用不存在的名字或成环即拒绝。
 
 ## 状态所有者
 
@@ -91,3 +96,5 @@ agent_end(stop_reason)
 4. 中止：Chat 进行中调用 Abort → 事件流以 aborted 结束，Session 可再次 Chat。
 5. Path jail：read("../outside.txt")、read(绝对路径越界) → isError=true。
 6. 持久化：Chat 后进程重启，LoadSession 恢复完整历史。
+7. DAG 工作流：三步 A、B（无依赖）、C after A,B —— A、B 并行启动，C 等两者
+   完成后启动且其提示携带 A、B 的结果；A 失败时 C 不启动，报告 A 失败与 C 跳过。
