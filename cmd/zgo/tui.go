@@ -36,7 +36,9 @@ func ansi(code, s string) string {
 	if !colorEnabled {
 		return s
 	}
-	return "[" + code + "m" + s + "[0m"
+	// 显式 \x1b 转义而非内嵌裸 ESC 字节（issue #66）：裸字节不可见、
+	// 易被编辑器静默剥离，已误导过一次静态审查。
+	return "\x1b[" + code + "m" + s + "\x1b[0m"
 }
 
 type tuiState struct {
