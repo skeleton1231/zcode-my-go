@@ -84,6 +84,10 @@ type LoopConfig struct {
 type Loop struct {
 	cfg  LoopConfig
 	emit func(Event)
+	// askMu 串行化权限确认：并行批次的 gate 可能同时要求用户确认，
+	// 确认通道（桌面 modal、终端 stdin）都是单实例，并发会互相覆盖
+	// 或把答案错配给另一个请求。
+	askMu sync.Mutex
 }
 
 // NewLoop builds a loop that reports through emit.
@@ -327,9 +331,11 @@ func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
 		if l.cfg.Ask == nil {
 			return blocked("no approval channel", "当前没有确认通道，保守起见拒绝执行")
 		}
+		l.askMu.Lock()
 		resp := l.cfg.Ask(AskRequest{
 			SessionID: l.cfg.SessionID, Tool: call.Name, Args: argsLine,
 			Reason: decision.Reason, Risk: decision.Risk})
+		l.askMu.Unlock()
 		if !resp.Deny {
 			if resp.Always {
 				l.cfg.Permissions.GrantSession(

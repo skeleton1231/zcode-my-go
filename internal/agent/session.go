@@ -157,18 +157,22 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		thinking = s.thinking()
 	}
 	loop := NewLoop(LoopConfig{
-		Provider:    s.provider(),
-		Model:       s.model(),
-		System:      s.system(workspace),
-		Tools:       s.buildTools(workspace, id),
-		MaxTokens:   modelInfo.MaxOutput,
-		MaxTurns:    DefaultMaxTurns,
-		Thinking:    thinking,
-		History:     s.Messages,
-		SessionID:   id,
-		Permissions: s.permissions,
-		Ask:         s.ask,
-		Steering:    s.drainSteering,
+		Provider:  s.provider(),
+		Model:     s.model(),
+		System:    s.system(workspace),
+		Tools:     s.buildTools(workspace, id),
+		MaxTokens: modelInfo.MaxOutput,
+		MaxTurns:  DefaultMaxTurns,
+		Thinking:  thinking,
+		// 并行执行并发安全工具（pi 的 overlap 语义）：串行工具（ask、
+		// todo）强制整批串行，权限确认经 askMu 串行化——安全前提下
+		// 让批处理真正提速。
+		ToolExecution: ParallelExecution,
+		History:       s.Messages,
+		SessionID:     id,
+		Permissions:   s.permissions,
+		Ask:           s.ask,
+		Steering:      s.drainSteering,
 	}, func(ev Event) {
 		ev.SessionID = id
 		if ev.Kind == EvAgentEnd && ev.Usage != (ai.Usage{}) {
