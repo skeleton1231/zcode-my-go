@@ -961,6 +961,16 @@ func (s *AgentService) ExportSessionMarkdown(id, dest string) error {
 	return os.WriteFile(dest, []byte(doc), 0o644)
 }
 
+// AppendForTesting appends a raw message to a session's transcript
+//（sessions-CLI 等 e2e 的数据铺垫；生产路径一律经 Chat 家族）。
+func (s *AgentService) AppendForTesting(sessionID string, m ai.Message) error {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("no session %s", sessionID)
+	}
+	return sess.Append(m)
+}
+
 // Steer queues a message into a running session (pi's steering).
 func (s *AgentService) Steer(sessionID, text string) error {
 	sess, ok := s.mgr.Get(sessionID)
