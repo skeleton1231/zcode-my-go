@@ -21,6 +21,24 @@ type compactionRecord struct {
 	Kept    int    `json:"kept"`
 }
 
+// 摘要请求的输出与预留预算：输出上限与 summarize 的 MaxTokens 一致，
+// 预留覆盖 system+摘要 prompt+余量。
+const (
+	summaryMaxTokens = 8192
+	summaryReserve   = 4096
+)
+
+// boundedSummaryInput 裁剪待摘要片段，保证摘要请求永远装得下
+// （issue #57）：近阈值时全文 + 8k 输出可能超过窗口，摘要请求 400 →
+// 三次熔断永久停用压缩——越界时的逃生门先锁死。超预算从最旧端丢起。
+func boundedSummaryInput(messages []ai.Message, window int) []ai.Message {
+	budget := window - summaryMaxTokens - summaryReserve
+	for len(messages) > 0 && compact.EstimateTokens(messages) > budget {
+		messages = messages[1:]
+	}
+	return messages
+}
+
 // Compact summarizes the transcript through the provider and replaces old
 // history with the summary plus the kept tail (ZCode's manual compact).
 // It fails when a run is in progress.
@@ -34,13 +52,21 @@ func (s *Session) Compact(ctx context.Context) error {
 	provider, model := s.provider(), s.model()
 	s.mu.Unlock()
 
-	summary, err := summarize(ctx, provider, model, history)
-	if err != nil {
-		return err
-	}
 	kept := compact.DefaultKeepTail
 	if kept > len(history) {
 		kept = len(history)
+	}
+	// 只摘要将被丢弃的前缀（issue #57）：保留尾部原样留在上下文，送进
+	// 摘要既浪费 token（工具结果每条可达 30KB），摘要还会重复转述仍
+	// 完整在场的内容。再按窗口预算裁剪，请求永远可容纳。
+	toSummarize := boundedSummaryInput(history[:len(history)-kept],
+		ai.LookupModel(model).ContextWindow)
+	if len(toSummarize) == 0 {
+		return errors.New("nothing to compact")
+	}
+	summary, err := summarize(ctx, provider, model, toSummarize)
+	if err != nil {
+		return err
 	}
 
 	s.mu.Lock()
