@@ -297,44 +297,14 @@ func repl(workspace string) int {
 			return 0
 		}
 		line := strings.TrimSpace(sc.Text())
-		switch line {
-		case "":
-			continue
-		case "/exit", "/quit", "/q":
+		handled, quit := runSlashCommand(&commandEnv{
+			svc: svc, info: &info, workspace: workspace,
+			out: func(msg string) { fmt.Fprintln(os.Stderr, msg) },
+		}, line)
+		if quit {
 			return 0
-		case "/compact":
-			if err := svc.CompactSession(info.ID); err != nil {
-				fmt.Fprintln(os.Stderr, "[压缩失败]", err)
-			} else {
-				fmt.Fprintln(os.Stderr, "[压缩] 会话已压缩")
-			}
-			continue
-		case "/plan":
-			// 服务先翻转、成功后才写本地 flag（issue #39：失败时本地
-			// flag 先翻会让下次 /plan 与服务状态反相）。
-			on := !planState[info.ID]
-			if err := svc.PlanMode(info.ID, on); err != nil {
-				fmt.Fprintln(os.Stderr, "[计划模式]", err)
-				continue
-			}
-			planState[info.ID] = on
-			if on {
-				fmt.Fprintln(os.Stderr, "[计划模式] 已开启（只读）")
-			} else {
-				fmt.Fprintln(os.Stderr, "[计划模式] 已关闭")
-			}
-			continue
-		case "/new":
-			// 旧 session 的 plan flag 随之清理（issue #39：全局 map 只增
-			// 不减，长 REPL 会话缓慢泄漏）。
-			delete(planState, info.ID)
-			var err error
-			info, err = svc.NewSession(workspace)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "[新建]", err)
-				continue
-			}
-			fmt.Fprintln(os.Stderr, "[新建] 已开启新会话")
+		}
+		if handled {
 			continue
 		}
 		if err := svc.Chat(info.ID, line, func(ev agent.Event) { render(ev) }); err != nil {

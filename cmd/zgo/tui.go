@@ -116,39 +116,15 @@ func runTUI(svc *service.AgentService, workspace string) int {
 
 // handleLine runs one submitted line (commands or a chat turn).
 func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agent.SessionInfo, workspace string) {
-	switch line {
-	case "/exit", "/quit", "/q":
+	handled, quit := runSlashCommand(&commandEnv{
+		svc: svc, info: info, workspace: workspace,
+		out: func(msg string) { s.push(msg) },
+	}, line)
+	if quit {
 		s.finish(os.Stdout)
 		os.Exit(0)
-	case "/compact":
-		s.setStatus("压缩中…", true)
-		go func() {
-			err := svc.CompactSession(info.ID)
-			s.mu.Lock()
-			if err != nil {
-				s.push("[压缩失败] " + err.Error())
-			} else {
-				s.push("[压缩] 会话已压缩")
-			}
-			s.running = false
-			s.status = "就绪"
-			s.mu.Unlock()
-			s.requestRedraw()
-		}()
-		return
-	case "/plan":
-		on := !planState[info.ID]
-		planState[info.ID] = on
-		if err := svc.PlanMode(info.ID, on); err == nil {
-			s.push("[计划模式] " + map[bool]string{true: "已开启（只读）", false: "已关闭"}[on])
-		}
-		s.requestRedraw()
-		return
-	case "/new":
-		if fresh, err := svc.NewSession(workspace); err == nil {
-			*info = fresh
-			s.push("[新建] 已开启新会话")
-		}
+	}
+	if handled {
 		s.requestRedraw()
 		return
 	}
