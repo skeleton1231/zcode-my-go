@@ -160,8 +160,9 @@ func (s *AgentService) rewire() {
 		System: func(workspace string) string {
 			return prompt.System(workspace) + s.memoryFor(workspace).Section()
 		},
-		Ask:      s.ask,
-		Question: s.question,
+		Ask:          s.ask,
+		ProjectRules: loadProjectRules,
+		Question:     s.question,
 	})
 }
 
@@ -399,6 +400,35 @@ func (s *AgentService) memoryFor(workspace string) *tools.Memory {
 // inheritance. Callers hold s.mu.
 func permissionFor(s *AgentService, sessionID string) *permission.Service {
 	return s.mgr.SessionPermissions(sessionID)
+}
+
+// rulesFile is the per-workspace project rules file, committed with the
+// repo (ZCode's project permission rules).
+const rulesFile = ".zgorules.json"
+
+// rulesCapBytes bounds the rules file a workspace may impose.
+const rulesCapBytes = 16 << 10
+
+// loadProjectRules reads the workspace's .zgorules.json; missing files and
+// parse failures degrade to an empty set (logged), never a blocked session.
+func loadProjectRules(workspace string) permission.Ruleset {
+	if workspace == "" {
+		return permission.Ruleset{}
+	}
+	data, err := os.ReadFile(filepath.Join(workspace, rulesFile))
+	if err != nil {
+		return permission.Ruleset{}
+	}
+	if len(data) > rulesCapBytes {
+		log.Printf("rules: %s in %s exceeds %d bytes, ignored", rulesFile, workspace, rulesCapBytes)
+		return permission.Ruleset{}
+	}
+	rules, err := permission.ParseRuleset(data)
+	if err != nil {
+		log.Printf("rules: %s in %s: %v (ignored)", rulesFile, workspace, err)
+		return permission.Ruleset{}
+	}
+	return rules
 }
 
 // mcpServers snapshots the launched servers. Callers hold s.mu.

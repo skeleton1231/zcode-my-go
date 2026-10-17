@@ -113,3 +113,31 @@ func TestPlanModeDeniesSideEffects(t *testing.T) {
 		t.Fatalf("session rule not restored: %+v", d)
 	}
 }
+
+func TestParseRuleset(t *testing.T) {
+	rules, err := ParseRuleset([]byte(`{
+		"version": 1,
+		"rules": [
+			{"tool": "bash", "args": "git *", "behavior": "allow"},
+			{"tool": "write", "behavior": "ask"},
+			{"tool": "bash", "args": "rm *", "behavior": "deny"}
+		]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules.Rules) != 3 || rules.Rules[0].Tool != "bash" || rules.Rules[2].Behavior != Deny {
+		t.Fatalf("rules = %+v", rules)
+	}
+
+	for name, bad := range map[string]string{
+		"bad version":  `{"version": 2, "rules": []}`,
+		"empty tool":   `{"version": 1, "rules": [{"tool": "", "behavior": "allow"}]}`,
+		"bad behavior": `{"version": 1, "rules": [{"tool": "bash", "behavior": "maybe"}]}`,
+		"not json":     `{`,
+	} {
+		if _, err := ParseRuleset([]byte(bad)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -332,5 +334,51 @@ func TestLoopKeepsThinkingInHistory(t *testing.T) {
 	}
 	if thinkingEvents != 1 {
 		t.Fatalf("thinking events = %d", thinkingEvents)
+	}
+}
+
+// TestProjectRulesGateSession verifies a workspace's .zgorules.json seeds
+// the session's permission service: a deny rule blocks, an allow rule runs
+// without asking.
+func TestProjectRulesGateSession(t *testing.T) {
+	ws := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ws, ".zgorules.json"), []byte(`{
+		"version": 1,
+		"rules": [
+			{"tool": "bash", "args": "git *", "behavior": "allow"},
+			{"tool": "write", "behavior": "deny"}
+		]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	m.Wire(Wiring{
+		Provider: func() ai.Provider { return failProvider{msg: "x"} },
+		Model:    func() string { return "m" },
+		ProjectRules: func(workspace string) permission.Ruleset {
+			data, err := os.ReadFile(filepath.Join(workspace, ".zgorules.json"))
+			if err != nil {
+				return permission.Ruleset{}
+			}
+			rules, err := permission.ParseRuleset(data)
+			if err != nil {
+				return permission.Ruleset{}
+			}
+			return rules
+		},
+	})
+	s, _ := m.New(ws)
+
+	// 直接在会话的 permission service 上验证规则语义（与 loadProjectRules
+	// 同一解析路径）。
+	svc := s.permissions
+	if got := svc.Check(permission.Context{Tool: "bash", Args: "command: git status"},
+		permission.Capability{}).Behavior; got != permission.Allow {
+		t.Fatalf("git rule = %v", got)
+	}
+	if got := svc.Check(permission.Context{Tool: "write", Args: "path: x"},
+		permission.Capability{}).Behavior; got != permission.Deny {
+		t.Fatalf("write rule = %v", got)
 	}
 }
