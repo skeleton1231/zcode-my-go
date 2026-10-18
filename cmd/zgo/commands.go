@@ -17,6 +17,7 @@ type commandEnv struct {
 	out       func(string)
 	attach    *attachments // 终端表面的 /attach 状态（可空）
 	send      func(string)  // /mcp 展开后直接发送（可空即不支持）
+	rerun     func(string) error // /retry、/resend 的 EditAndResend 包装（可空即不支持）
 }
 
 // runSlashCommand adapts slash.Run for the terminal surfaces.
@@ -35,6 +36,7 @@ func runSlashCommand(env *commandEnv, line string) (handled, quit bool) {
 		Out:    env.out,
 		Attach: attachFn,
 		Send:   env.send,
+		Rerun:  env.rerun,
 	}, line)
 }
 

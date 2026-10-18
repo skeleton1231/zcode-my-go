@@ -33,6 +33,9 @@ type Env struct {
 	// Send submits a message as if the user typed it（/mcp 展开后直接
 	// 发送；不填即该表面不支持直接发送）.
 	Send func(text string)
+	// Rerun replaces the last user message and reruns the turn
+	//（/retry 与 /resend；EditAndResend 的表面包装）.
+	Rerun func(text string) error
 }
 
 // Run dispatches one line; handled reports whether it was a command,
@@ -210,6 +213,30 @@ var commands = []command{
 				return "[导出失败] " + err.Error()
 			}
 			return "[导出] " + dest
+		},
+	},
+	{
+		name: "/retry", usage: "/retry",
+		help: "重跑最后一轮（撤当前轮含工作区后原样重发）",
+		run: func(env *Env, _ string) string {
+			text, err := env.Svc.LastUserText(env.SessionID())
+			if err != nil {
+				return "[重跑失败] " + err.Error()
+			}
+			if text == "" {
+				return "[重跑失败] 没有可重跑的回合"
+			}
+			return rerunTurn(env, text)
+		},
+	},
+	{
+		name: "/resend", usage: "/resend <新文本>",
+		help: "编辑重发：撤最后一轮并以新文本重发",
+		run: func(env *Env, args string) string {
+			if strings.TrimSpace(args) == "" {
+				return "[用法] /resend <新文本>（撤最后一轮并重发）"
+			}
+			return rerunTurn(env, strings.TrimSpace(args))
 		},
 	},
 	{
@@ -446,4 +473,16 @@ func mcpRun(env *Env, args string) string {
 	}
 	env.Send(text)
 	return "[mcp] 已发送 " + target
+}
+
+// rerunTurn 经表面 Rerun 钩子重跑最后一轮（spec 规则 29）：EditAnd
+// Resend 的表面包装（运行守卫先于文件恢复）。
+func rerunTurn(env *Env, text string) string {
+	if env.Rerun == nil {
+		return "[重跑不支持] 此表面不能重跑回合；新文本：\n" + text
+	}
+	if err := env.Rerun(text); err != nil {
+		return "[重跑失败] " + err.Error()
+	}
+	return "[重跑] 已撤最后一轮并重发"
 }

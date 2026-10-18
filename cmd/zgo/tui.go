@@ -168,6 +168,11 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 				s.pushTurn(text)
 				go s.sendChat(svc, info, workspace, text)
 			},
+			// /retry、/resend（spec 规则 29）：EditAndResend 包装，
+			// 事件流照常渲染（旧轮的显示行留在转录上方）。
+			rerun: func(text string) error {
+				return s.rerunChat(svc, info, text)
+			},
 		}, line)
 		if quit {
 			s.finish(os.Stdout)
@@ -215,6 +220,23 @@ func (s *tuiState) sendChat(svc *service.AgentService, info *agent.SessionInfo, 
 	if err != nil {
 		s.push("[错误] " + err.Error())
 	}
+}
+
+// rerunChat 撤最后一轮并以 text 重发（/retry、/resend 的包装，spec
+// 规则 29）：状态与事件渲染同 sendChat；重发文本进转录（旧轮的显示行
+// 留在上方，与 CC 的转录观感一致）。
+func (s *tuiState) rerunChat(svc *service.AgentService, info *agent.SessionInfo, text string) error {
+	s.setStatus("重跑中…", true)
+	defer func() {
+		s.mu.Lock()
+		s.running = false
+		s.status = "就绪"
+		s.mu.Unlock()
+		s.requestRedraw()
+	}()
+	s.pushTurn(text)
+	var last string
+	return svc.EditAndResend(info.ID, text, func(ev agent.Event) { s.applyEvent(ev, &last) })
 }
 
 // applyEvent folds agent events into transcript lines.

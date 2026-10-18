@@ -1,12 +1,13 @@
 package slash
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
-
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -235,4 +236,66 @@ func captureOutSlash(t *testing.T, env *Env, line string) string {
 	defer func() { env.Out = prev }()
 	Run(env, line)
 	return strings.Join(lines, "\n")
+}
+
+// TestSlashRetryResend 验证终端回合重做（spec 规则 29）：/retry 无历史
+// 明确拒绝、有历史经 Rerun 钩子收到原文；/resend 缺文本报用法、带文本
+// 传新文；钩子缺失说明不支持。
+func TestSlashRetryResend(t *testing.T) {
+	env, _ := newEnv(t)
+
+	// 无历史回合。
+	out := captureOutSlash(t, env, "/retry")
+	if !strings.Contains(out, "没有可重跑") {
+		t.Fatalf("empty history: %q", out)
+	}
+
+	// 攒一个历史回合（直接经 service 写转录：chat 走 provider 成本高）。
+	if err := seedTurn(t, env); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	env.Rerun = func(text string) error { got = text; return nil }
+	out = captureOutSlash(t, env, "/retry")
+	if !strings.Contains(out, "[重跑]") || got != "第一回合的问题" {
+		t.Fatalf("retry: out=%q got=%q", out, got)
+	}
+
+	out = captureOutSlash(t, env, "/resend 改写后的问题")
+	if !strings.Contains(out, "[重跑]") || got != "改写后的问题" {
+		t.Fatalf("resend: out=%q got=%q", out, got)
+	}
+
+	out = captureOutSlash(t, env, "/resend")
+	if !strings.Contains(out, "用法") {
+		t.Fatalf("bare resend: %q", out)
+	}
+
+	env.Rerun = nil
+	out = captureOutSlash(t, env, "/retry")
+	if !strings.Contains(out, "不支持") {
+		t.Fatalf("no hook: %q", out)
+	}
+}
+
+// seedTurn 经一次真实 Chat 攒一个用户回合（脚本回放太重：用最小
+// provider）。
+func seedTurn(t *testing.T, env *Env) error {
+	t.Helper()
+	env.Svc.UseProviderForTesting(func() ai.Provider {
+		out := make(chan ai.StreamEvent, 3)
+		out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "回答"}
+		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+		close(out)
+		return chProviderSvc{ch: out}
+	})
+	defer env.Svc.UseProviderForTesting(nil)
+	return env.Svc.Chat(env.SessionID(), "第一回合的问题", func(agent.Event) {})
+}
+
+type chProviderSvc struct{ ch <-chan ai.StreamEvent }
+
+func (p chProviderSvc) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	return p.ch
 }

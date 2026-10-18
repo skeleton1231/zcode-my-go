@@ -1330,3 +1330,17 @@ func (s *AgentService) MCPGetPrompt(server, name string, args map[string]string)
 	}
 	return "", fmt.Errorf("没有 MCP 服务器 %q", server)
 }
+
+// LastUserText returns the session's last user message text（/retry 的
+// 重跑输入；空串表示没有可重跑的回合）.
+func (s *AgentService) LastUserText(sessionID string) (string, error) {
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return "", fmt.Errorf("no session %s", sessionID)
+	}
+	msgs := sess.Messages()
+	if i := agent.LastUserIndex(msgs); i >= 0 {
+		return msgs[i].Text(), nil
+	}
+	return "", nil
+}
