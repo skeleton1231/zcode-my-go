@@ -6,6 +6,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,8 +31,8 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
 	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
-	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
+	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
@@ -79,13 +81,13 @@ type profile struct {
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
 type SettingsView struct {
-	BaseURL   string `json:"baseUrl"`
-	Model     string `json:"model"`
-	API       string `json:"api"`
-	Thinking  string `json:"thinking"`
-	HasAPIKey bool   `json:"hasApiKey"`
-	KeyHint   string `json:"keyHint"`  // e.g. "sk-…abcd", for display only
-	Profile   string `json:"profile"` // 当前活动剖面名（展示/状态栏）
+	BaseURL   string   `json:"baseUrl"`
+	Model     string   `json:"model"`
+	API       string   `json:"api"`
+	Thinking  string   `json:"thinking"`
+	HasAPIKey bool     `json:"hasApiKey"`
+	KeyHint   string   `json:"keyHint"`  // e.g. "sk-…abcd", for display only
+	Profile   string   `json:"profile"`  // 当前活动剖面名（展示/状态栏）
 	Profiles  []string `json:"profiles"` // 可用剖面（下拉/列表）
 }
 
@@ -273,22 +275,33 @@ func (s *AgentService) syncMCP() {
 	}
 }
 
-// mcpSignature serializes a config's identity: command, args, env.
+// mcpSignature serializes a config's identity: command, args, env（stdio）
+// 或 url, headers（HTTP，spec 规则 69）。输出取 sha256——签名对值的变更
+// 仍敏感（热重载照常触发），但签名本身读不出凭据（env/header 值可能
+// 是 token，教义：不进日志不回显）。
 func mcpSignature(cfg mcp.Config) string {
-	keys := make([]string, 0, len(cfg.Env))
-	for k := range cfg.Env {
-		keys = append(keys, k)
+	keys := func(m map[string]string) []string {
+		out := make([]string, 0, len(m))
+		for k := range m {
+			out = append(out, k)
+		}
+		sort.Strings(out)
+		return out
 	}
-	sort.Strings(keys)
 	var b strings.Builder
 	b.WriteString(cfg.Command + "|")
 	for _, a := range cfg.Args {
 		b.WriteString(a + "|")
 	}
-	for _, k := range keys {
+	for _, k := range keys(cfg.Env) {
 		b.WriteString(k + "=" + cfg.Env[k] + "|")
 	}
-	return b.String()
+	b.WriteString(cfg.URL + "|")
+	for _, k := range keys(cfg.Headers) {
+		b.WriteString(k + "=" + cfg.Headers[k] + "|")
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 // startMCP is syncMCP over an empty set (first run); kept as the
