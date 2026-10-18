@@ -322,6 +322,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    取、临场运行从记录重建含 after）。zgo workflow list/show/runs 只读
    运维面。
 
+
+49. SSH 连接保活与惰性重连（issue #220）：连接建立即起后台 keepalive
+   循环（30s 量级周期发 keepalive@openssh.com，连续 3 次无回应判
+   死）；Exec/ReadFile/ReadDir/Stat/Glob 等操作入口先确连接——死了
+   用原 Config 透明重连（凭据在内存，in-flight 调用按现有错误路径
+   干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
+   话重建是唯一出路）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
