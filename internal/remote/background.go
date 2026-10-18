@@ -27,7 +27,7 @@ import (
 // 约定）。
 type BgProcess struct {
 	sess   *ssh.Session
-	client *Client // KillTree 的确证击杀经独立 exec 通道
+	client *Client  // KillTree 的确证击杀经独立 exec 通道
 	pw     *os.File // 合并输出的写端；Wait 后关闭让读者收 EOF
 	pr     *os.File // 输出读端（调用方排空）
 	line   string   // 已带 cd 根目录的完整命令

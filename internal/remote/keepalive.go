@@ -78,15 +78,37 @@ func (c *Client) keepAliveLoop() {
 			interval = v // 每轮重读：SetKeepAliveInterval 迟到也生效
 		}
 		time.Sleep(interval)
-		_, _, err := c.conn.SendRequest("keepalive@openssh.com", true, nil)
-		if err == nil {
+		// 探测带看门狗：SendRequest 无超时——半开连接上写入成功沉入
+		// 死 TCP、回应永不到达，失败计数永远凑不齐（Windows CI 上
+		// TestKeepaliveDetectsDeadConnection 5s 超时的根因）。回应
+		// 等待 2×间隔（下限 250ms）即计一次失败。
+		deadline := 2 * interval
+		if deadline < 250*time.Millisecond {
+			deadline = 250 * time.Millisecond
+		}
+		if err := c.probe(deadline); err == nil {
 			c.ka.failures.Store(0)
 			continue
-		}
-		if n := c.ka.failures.Add(1); n >= keepAliveMaxFailures {
+		} else if n := c.ka.failures.Add(1); n >= keepAliveMaxFailures {
 			c.ka.alive.Store(false)
 			return
 		}
+	}
+}
+
+// probe 发一次 keepalive 请求并限时等回应（超时视为失败）。
+func (c *Client) probe(deadline time.Duration) error {
+	type outcome struct{ err error }
+	done := make(chan outcome, 1)
+	go func() {
+		_, _, err := c.conn.SendRequest("keepalive@openssh.com", true, nil)
+		done <- outcome{err}
+	}()
+	select {
+	case r := <-done:
+		return r.err
+	case <-time.After(deadline):
+		return errors.New("keepalive probe timed out")
 	}
 }
 
