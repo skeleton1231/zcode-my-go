@@ -106,16 +106,9 @@ func TestE2ERewindToMiddleTurn(t *testing.T) {
 func TestE2ERewindToRefusesWhileRunning(t *testing.T) {
 	h := New(t, Turn{Text: "慢回复", BlockAfterText: true})
 	go func() { _ = h.Svc.Chat(h.SessionID, "问", func(agent.Event) {}) }()
-	waitRun := func() bool {
-		for i := 0; i < 100; i++ {
-			if h.Svc.SessionRunning(h.SessionID) {
-				return true
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-		return false
-	}()
-	if !waitRun {
+	// 秒级预算：run 启动要过会话查找→wiring→provider，全套件并行下
+	// 500ms 手写预算真实超时过（issue #155）。
+	if !waitFor(5*time.Second, func() bool { return h.Svc.SessionRunning(h.SessionID) }) {
 		t.Fatal("run never started")
 	}
 	h.WriteWorkspace("sentinel.txt", "在跑时不得被动\n")
