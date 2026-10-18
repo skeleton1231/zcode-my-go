@@ -489,6 +489,17 @@ dc907a4 (feat: glob and grep honor .gitignore)
    组（模型可见面稳定；doctor 引导安装）。edit/write 成功回执尾部追
    加该文件即时诊断（gopls check，仅在有错时追加，10s 上限，缺 gopls
    静默跳过）。工具执行超时 30s、输出照家族截断。
+
+68. Stop / Notification 命令钩子（issue #209）：CommandHooks 增
+   `stop` 与 `notification` 两事件。**stop** 在回合自然收尾（无工具调
+   用的 EndTurn，steering 排空之后）触发：payload {event, sessionId,
+   workspace, lastText}；退出码语义对齐 Claude Code——exit 2 阻止收
+   尾，stderr/输出作为原因注入续跑消息（用户消息形态「[stop 钩子] …」）
+   进转录、模型继续工作；其他非零退出记日志不阻断；防死循环由既有
+   MaxTurns 上限兜底。**notification** 在权限询问即将阻塞等待用户时触
+   发（observer：payload {event, sessionId, workspace, tool, reason}，
+   退出码不影响主流程）——headless/TUI 接系统通知的挂点。两钩子超时
+   与 runHook 家族一致（10s，失败记日志放行）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

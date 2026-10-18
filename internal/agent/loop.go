@@ -71,6 +71,8 @@ type LoopConfig struct {
 	Steering func() []ai.Message
 	// SessionID labels AskRequests with the run's session.
 	SessionID string
+	// Workspace 标注钩子 payload 里的工作区（stop 钩子等会话级事件）。
+	Workspace string
 	// RetryBackoff overrides the exponential base for transient-failure
 	// retries (tests inject a millisecond; 0 uses the default).
 	RetryBackoff time.Duration
@@ -177,6 +179,22 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 						if err := appendMessage(m); err != nil {
 							return stopInfo{stop: ai.StopError, usage: total, err: err.Error()}
 						}
+					}
+					continue
+				}
+			}
+			// stop 钩子（spec 规则 68）：自然收尾前询问——exit 2 阻止收
+			// 尾，原因作为用户消息进转录、模型继续工作；MaxTurns 上限
+			// 照常兜底（钩子不能把回合变成死循环）。
+			if l.cfg.Hooks.Stop != nil {
+				if r := l.cfg.Hooks.Stop(StopContext{
+					SessionID: l.cfg.SessionID, Workspace: l.cfg.Workspace,
+					LastText: strings.TrimSpace(msg.Text()),
+				}); r.Blocked {
+					if err := appendMessage(ai.Message{Role: ai.RoleUser,
+						Blocks: []ai.Block{{Kind: ai.BlockText,
+							Text: "[stop 钩子] 收尾被阻止，继续工作：" + r.Reason}}}); err != nil {
+						return stopInfo{stop: ai.StopError, usage: total, err: err.Error()}
 					}
 					continue
 				}
@@ -453,7 +471,8 @@ func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
 		}
 		l.askMu.Lock()
 		resp := l.cfg.Ask(AskRequest{
-			SessionID: l.cfg.SessionID, Tool: call.Name, Args: argsLine,
+			SessionID: l.cfg.SessionID, Workspace: l.cfg.Workspace,
+			Tool: call.Name, Args: argsLine,
 			Reason: decision.Reason, Risk: decision.Risk, Diff: preview})
 		l.askMu.Unlock()
 		if !resp.Deny {
