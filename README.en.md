@@ -64,6 +64,39 @@ settings file).
 
 MIT © 2026 skeleton1231
 
+## v0.8.0 highlights
+
+- Background subagents: the agent tool spawns research agents that
+  return an ID immediately (the parent keeps working); agent_output
+  harvests, agent_stop kills, agent_send resumes a finished agent with
+  its full history. Visible everywhere via /agents, the TUI panel and
+  the desktop status strip.
+- Workspace trust gate: untrusted local workspaces no longer load
+  their .zgorules.json (allow rules are a privilege-escalation
+  surface) or their .zgo commands/skills — a cloned malicious repo
+  can no longer grant itself permissions. /trust reloads rules live;
+  `zgo trust` manages the list; the desktop asks on first open.
+- Skills: SKILL.md instruction packs with frontmatter (workspace
+  overrides global, SSH-native); progressive-disclosure injection into
+  the system prompt and a skill tool that loads by name.
+- webfetch: fetch URLs and extract readable text — per-hop SSRF
+  egress guard (private/loopback ranges all rejected), same-host
+  redirect following (cross-host stops and reports), 10MB/100K caps,
+  15-min cache; curated doc sites auto-allowed, other hosts ask.
+- Workflow persistence: saveAs/run/resume over durable definitions
+  and run records — resume skips completed steps by injecting their
+  recorded results (drift-guarded).
+- Model failover chain: settings.fallbackModels — on retryable
+  failures (429/overload) the request re-issues on the next model;
+  cron jobs can pin their own model.
+- read gains PDFs (text-layer extraction with a readability gate) and
+  images (returned as image blocks across all three protocols).
+- zgo eval: data-driven JSON scenarios (seed files, scripted turns,
+  four assertion kinds) replayed against the real stack; /find adds
+  in-session transcript search. /mcp add/remove configures MCP
+  servers without hand-editing settings.json; zgo bugreport emits a
+  redacted, self-contained issue report.
+
 ## v0.7.0 highlights
 
 - Dual-platform CI (GitHub Actions: windows/ubuntu build/vet/test,
