@@ -1,5 +1,5 @@
 // Package trust 记录用户显式授信的工作区（pi project-trust / CC 信任
-// 提示的 Zgo 落地，spec 规则 53）：未授信工作区的 .zgorules.json 与工
+// 提示的 Zgo 落地，spec 规则 54）：未授信工作区的 .zgorules.json 与工
 // 作区层命令/技能不加载——克隆来的恶意仓库不能靠自带规则文件给自己
 // 放权（allow 规则即提权面）。
 package trust

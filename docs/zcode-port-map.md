@@ -82,6 +82,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    `/attach`，同限校验、随下一条消息发送）；对齐 ZCode attachment-ux 的输入侧。@ 引用：消息内
    @路径 在服务层展开（文本围栏化/图片成块、path jail、60KB/5MB 上限，
    桌面/TUI/print 三端同享），桌面 composer 附文件提示与点选补全。
+   贴图（issue #216，spec desktop-shell 规则 8）：composer Ctrl/Cmd+V
+   探剪贴板位图（internal/clipimg——PNG 注册格式直取优先，CF_DIBV5/
+   CF_DIB 解码 PNG 化），命中走 📎 同一条通道（同一单张/总量上限与
+   notice）；无图放行普通文本粘贴。
 
 **工具 diff 预览**：internal/textdiff（行级 LCS 统一 diff，上下文 3 行，
    输出与规模双上限）+ ToolResult.Diff/Event.Diff 透传 + 桌面工具块与终端
@@ -346,7 +350,6 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    2000px / 3.75MB 目标 / base64 5MB 校验；webp 透传或提示转 png）；
    三协议 wire：Anthropic 混排 user 消息、Gemini inlineData part、
    OpenAI 降级文本说明。SSH 工作区同构。
-1d468ec (feat: read tool returns images — multimodal tool results)
 
 **工作流持久化与复用**（ZCode saved-workflows / workflow-runs 的落地，
    spec 规则 48）：internal/workflow——定义（workflows/<名>.json）与运
@@ -355,17 +358,6 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
 
-<<<<<<< HEAD
-**会话内搜索 /find**（桌面搜索的终端对齐，spec 规则 56）：slash 表面
-   钩子——TUI 标记模式（▶/当前命中、n/N 环绕跳转、空输入区才拦截、
-   Esc 先退搜索）；REPL 列命中清单（回合+片段）。
-=======
-<<<<<<< HEAD
-**模型兜底链**（spec 规则 55）：settings.fallbackModels——主模型可重
-   试失败（429/过载）时 ai.NewFailover 按序换模型重发同一请求；非可
-   重试错误透传（换模型无用）；耗尽透传末次错误保持可重试；e2e 注入
-   不经兜底；zgo config get/set fallbackModels。
-=======
 **后台子代理**（ZCode runtime-task registry / Agent 工具的落地，spec
    规则 50）：agent/agent_output/agent_stop 三件套——启动即回执、父会
    话继续、收割/停止；注册表会话作用域（ctx 派生注册表根，随
@@ -373,34 +365,54 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、
    ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
    一经持锁快照 + ReadOnlyW 拨号工作区。
-**子代理续话**（ZCode SendMessage 的落地，spec 规则 51）：agent_send
+
+**自定义子代理定义**（ZCode agents 文件 / .claude/agents 的 Zgo 形
+   态，spec 规则 51，issue #225）：internal/agents——两层平铺
+   markdown（工作区 `.zgo/agents/*.md` + 用户 `~/.zgo/agents/*.md`，
+   同名工作区优先）；frontmatter name/description/tools（白名单，封闭
+   词表 read/grep/glob/ls/edit/write/patch/todo，只收窄不放宽），正文
+   即 persona；task/dispatch 增可选 agent 参数（命中走 persona，未命
+   中报错列可用项）；可用清单注入主系统提示（对齐技能注入）。
+
+**子代理续话**（ZCode SendMessage 的落地，spec 规则 52）：agent_send
    {id, message} 对终态后台子代理带全部历史续跑（同 ID、收割面不变；
    运行中拒绝）；RunSubtaskSeeded 统一新任务/续跑形态（历史拷贝隔
    离）；注册表终态存转录、续跑翻转持锁原子。
 
+**read 读 PDF**（ZCode read-pdf 的落地，spec 规则 53）：internal/
+   pdftext——词法级 stream 收集 + Flate 解压 + Tj/TJ 文本算子（换行启
+   发）、字面/十六进制串（UTF-16BE BOM）；16MB/256KB 有界；可读率
+   闸门（<85% 报错——CID 无 ToUnicode 宁失败不乱码）。
 **read 读 PDF**（ZCode read-pdf 的落地，spec 规则 52）：internal/
    pdftext——词法级 stream 收集 + Flate 解压 + Tj/TJ 文本算子（换行启
    发）、字面/十六进制串（UTF-16BE BOM）；16MB/256KB 有界；可读率
    闸门（<85% 报错——CID 无 ToUnicode 宁失败不乱码）。
 
 **工作区信任门**（pi project-trust / CC 信任提示的落地，spec 规则
-   53）：internal/trust——未授信本地工作区不加载其 .zgorules.json
+   54）：internal/trust——未授信本地工作区不加载其 .zgorules.json
    （allow 规则即提权面）与 .zgo 命令/技能层（提示注入面）；授信表
    trusted.json（规范化键/原子写）；ssh:// 显式拨号视为授信；/trust
    即时重载在跑会话规则、zgo trust CLI（grant/list/revoke，撤销即时
    清空）；终端三表面未授信提示。
 
-**桌面信任确认**（spec 规则 53 桌面半边，基于工作区信任门堆叠）：
+**桌面信任确认**（spec 规则 54 桌面半边，基于工作区信任门堆叠）：
    首开未授信工作区弹信任确认（路径 + 风险说明——恶意仓库可借规则
    文件放权）；信任并加载经服务授信落表，暂不仅关窗。
 
-**场景评测（zgo eval）**（pi evals 的数据化形态，spec 规则 54）：
+**场景评测（zgo eval）**（pi evals 的数据化形态，spec 规则 55）：
    internal/eval——JSON 场景（种文件/脚本回合/四类断言：转录含工具
    结果块、工作区文件、无错误工具、事件计数）驱动真实 service 回放；
    evals/ 内置三个起步场景（write-read、skill-load、webfetch-guard）；
    --filter 筛选、失败退出码 1 可进 CI。
->>>>>>> origin/feat/zgo-eval
->>>>>>> origin/feat/provider-failover
+
+**模型兜底链**（spec 规则 56）：settings.fallbackModels——主模型可重
+   试失败（429/过载）时 ai.NewFailover 按序换模型重发同一请求；非可
+   重试错误透传（换模型无用）；耗尽透传末次错误保持可重试；e2e 注入
+   不经兜底；zgo config get/set fallbackModels。
+
+**会话内搜索 /find**（桌面搜索的终端对齐，spec 规则 57）：slash 表面
+   钩子——TUI 标记模式（▶/当前命中、n/N 环绕跳转、空输入区才拦截、
+   Esc 先退搜索）；REPL 列命中清单（回合+片段）。
 
 **MCP 配置命令**（spec 规则 57）：/mcp add <名> -- <命令> [参数…] 与
    /mcp remove <名>——此前唯一途径是手编 settings.json；服务面
@@ -411,7 +423,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 任务摘要/折叠）+ TUI 固定块（计划块同款，重画即取快照）——agent 四
 件套此前在终端完全不可见。
 
-**问题报告 zgo bugreport**（pi bug-report 的落地，spec 规则 59）：自
+**问题报告 zgo bugreport**（pi bug-report 的落地，spec 规则 60）：自
    包含 Markdown（版本/平台/脱敏配置/兜底链/MCP 诊断/会话概况元数
    据/工具链）；密钥与转录正文绝不落盘。
 
