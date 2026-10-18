@@ -2,6 +2,35 @@
 
 约定式提交驱动的里程碑摘要；每一行都对应一个经完整验证与 PR 评审的变更。
 
+## v0.6.0 — 终端一等公民与生命周期
+
+- **后台 shell 远程同构**：bash {background:true} 在 ssh:// 工作区走
+  不等待的 exec 通道（KillTree 即关通道），remotetest 流式直写 + 断开
+  杀整树（Job Object 确定性）。
+- **终端会话恢复**：-c/--continue（同工作区最近）与 -r/--resume <前
+  缀>（唯一前缀、可跨工作区）三形态共享；/resume 命令运行中切换并回
+  放转录（TUI 登记导航锚点）。
+- **终端插话**：REPL/TUI 运行中提交的消息经 Steer 入队（下一回合注入
+  不打断当前流），与桌面对齐。
+- **print 自动化**：--output-format json（逐事件 JSONL，稳定字段名、
+  args 原始内嵌）；stdin 管道并入提示词（`git diff | zgo -p`）。
+- **层级项目上下文**：~/.zgo/ZGO.md 用户全局 + 自工作区向 git 顶逐层
+  择一（浅→深、8KB rune 封顶）；远程工作区经网线读根层（修复静默丢
+  失）。
+- **会话自动命名**：首回合成功后小额补全生成 ≤40 字符标题（等值守
+  卫，手动改名优先，失败保留默认）。
+- **会话生命周期钩子**：sessionStart/sessionEnd（观察者）与
+  preCompact（非零阻止压缩），外部命令同机制。
+- **用量可见性**：/usage 与 zgo usage [前缀]——累计输入/输出/缓存读
+  写 + 回合数 + 前缀缓存命中率。
+- **导出携带图片**：用户图片块 HTML 内嵌 data URI img、Markdown 链接
+  ——自包含分享物不缺图。
+- **E2E 远程工作区套件**：ssh:// 会话全栈四场景（往返/jail/bash/后台
+  生命周期）；ParseTarget 还原 Windows 盘符根。
+- **稳定性修复**（含社区）：OAuth 刷新单飞、系统缓存前缀稳定、
+  isAncestor 卷大小写、checkpoint 修剪后回滚中止、remote KillTree 按
+  pid 确认、/attach 预算前置拒绝、e2e 等待预算统一。
+
 ## v0.5.1 — 回滚三面与 TUI 任务面
 
 - **任意回合回滚**：RewindTo(n) 撤掉第 n..末轮（检查点 seq=n-1 恢复 +
