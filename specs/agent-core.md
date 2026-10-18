@@ -88,6 +88,13 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    历史发起新回合，REPL/TUI 回放既有转录后继续（用户回合登记导航锚
    点，恢复行提示会话与标题）；--continue 无候选会话时退回新建（首用
    不报错）。-c 与 -r 同给时 -r 优先。
+23. print 结构化输出（Claude Code --output-format 的落地）：
+   `--output-format text|json`（默认 text）。json 模式每个 agent 事件一
+   行紧凑 JSON 到 stdout（type=text、tool_use、tool_result、
+   compaction、retry、message_end、result），字段名稳定（text/tool/
+   args/result/is_error/diff/stop_reason/error）；args 为原始 JSON 内嵌
+   （非法 JSON 时字符串降级）；错误与用量提示仍走 stderr，文本模式行
+   为不变。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

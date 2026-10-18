@@ -31,13 +31,14 @@ func usage(w io.Writer) {
   -C <dir>               工作区目录（默认当前目录）
   -c, --continue         恢复同工作区最近会话（无则新建）
   -r, --resume <前缀>    恢复指定会话（唯一前缀；-r 优先于 -c）
+  --output-format <格式>  print 输出：text（默认）或 json（逐事件 JSONL）
 
 不带 -p 时进入 REPL。`)
 }
 
 // parseArgs 严格解析 argv：取值型 flag 的值不得形似 flag（否则报错而非
 // 静默吞掉），未知 flag 与缺值一律报错。
-func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images []string, cont bool, resume string, err error) {
+func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images []string, cont bool, resume, format string, err error) {
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
 		next := ""
@@ -47,7 +48,7 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images
 		switch {
 		case arg == "-p" || arg == "--print":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, false, "", fmt.Errorf("-p/--print 需要一个 prompt 值")
+				return "", "", false, nil, false, "", "", fmt.Errorf("-p/--print 需要一个 prompt 值")
 			}
 			i++
 			prompt = argv[i]
@@ -55,34 +56,43 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images
 			fullscreen = true
 		case arg == "-i" || arg == "--image":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, false, "", fmt.Errorf("-i/--image 需要一个图片路径")
+				return "", "", false, nil, false, "", "", fmt.Errorf("-i/--image 需要一个图片路径")
 			}
 			i++
 			images = append(images, argv[i])
 		case arg == "-C":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, false, "", fmt.Errorf("-C 需要一个目录值")
+				return "", "", false, nil, false, "", "", fmt.Errorf("-C 需要一个目录值")
 			}
 			i++
 			workspace = argv[i]
+		case arg == "--output-format":
+			if next == "" || strings.HasPrefix(next, "-") {
+				return "", "", false, nil, false, "", "", fmt.Errorf("--output-format 需要 text 或 json")
+			}
+			i++
+			if next != "text" && next != "json" {
+				return "", "", false, nil, false, "", "", fmt.Errorf("--output-format 只支持 text 或 json，得到 %q", next)
+			}
+			format = next
 		case arg == "-c" || arg == "--continue":
 			cont = true
 		case arg == "-r" || arg == "--resume":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, false, "", fmt.Errorf("-r/--resume 需要一个会话前缀")
+				return "", "", false, nil, false, "", "", fmt.Errorf("-r/--resume 需要一个会话前缀")
 			}
 			i++
 			resume = argv[i]
 		case strings.HasPrefix(arg, "-"):
-			return "", "", false, nil, false, "", fmt.Errorf("未知参数 %q", arg)
+			return "", "", false, nil, false, "", "", fmt.Errorf("未知参数 %q", arg)
 		default:
 			if prompt != "" {
-				return "", "", false, nil, false, "", fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)
+				return "", "", false, nil, false, "", "", fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)
 			}
 			prompt = arg
 		}
 	}
-	return prompt, workspace, fullscreen, images, cont, resume, nil
+	return prompt, workspace, fullscreen, images, cont, resume, format, nil
 }
 
 func main() {
@@ -101,7 +111,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "models" {
 		os.Exit(runModels(os.Args[2:]))
 	}
-	prompt, workspace, fullscreen, images, cont, resume, err := parseArgs(os.Args[1:])
+	prompt, workspace, fullscreen, images, cont, resume, format, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)
 		usage(os.Stderr)
@@ -166,11 +176,15 @@ func main() {
 
 	exit := 0
 	lastStop := ""
+	renderOut := render
+	if format == "json" {
+		renderOut = renderJSON // 规则 23：结构化输出供脚本消费
+	}
 	err = svc.ChatMedia(info.ID, prompt, media, func(ev agent.Event) {
 		if ev.Kind == agent.EvAgentEnd {
 			lastStop = string(ev.StopReason)
 		}
-		render(ev)
+		renderOut(ev)
 	})
 	if err == nil {
 		if total, uerr := svc.SessionUsage(info.ID); uerr == nil &&

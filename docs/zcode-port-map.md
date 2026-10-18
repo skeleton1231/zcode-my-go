@@ -150,6 +150,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    resolveResume——print 携带全部历史发起新回合、REPL 提示恢复行、TUI
    回放既有转录（replayHistory：用户回合登记 Ctrl+↑/↓ 导航锚点、恢复
    行提示会话与标题），恢复会话沿用其自身工作区。
+**print 结构化输出**（Claude Code --output-format json 的落地，spec
+   规则 23）：`--output-format text|json`——json 模式每个 agent 事件一
+   行紧凑 JSON 到 stdout（text/tool_use/tool_result/compaction/retry/
+   message_end/result，字段名稳定；args 原始 JSON 内嵌、畸形降级字符
+   串），流式细节（message_start 等）不外发；错误与用量提示仍走
+   stderr。脚本/管道（cron、编辑器集成）可稳定消费。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
