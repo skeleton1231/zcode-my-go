@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -210,10 +211,18 @@ func TestRemoteSessionSystemContext(t *testing.T) {
 	}
 	defer svc.Close()
 	var systems []string
+	var sysMu sync.Mutex
 	svc.UseProviderForTesting(func() ai.Provider {
-		return oneTextProvider{onReq: func(r ai.Request) { systems = append(systems, r.System) }}
+		// onReq 会从 auto-title 的后台 goroutine 并发到达——裸追加与
+		// 主测试的读取竞态（-race 在 CI 上逮过）；锁 + 关自动命名双保险。
+		return oneTextProvider{onReq: func(r ai.Request) {
+			sysMu.Lock()
+			systems = append(systems, r.System)
+			sysMu.Unlock()
+		}}
 	})
 	t.Cleanup(func() { svc.UseProviderForTesting(nil) })
+	svc.DisableAutoTitleForTesting()
 
 	info, err := svc.NewSession(target)
 	if err != nil {

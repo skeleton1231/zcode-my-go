@@ -40,7 +40,12 @@ func (s *AgentService) SearchSessions(query string) []SearchHit {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, info := range sessions {
-		if len(hits) >= searchHitCap {
+		// len(hits) 必须持锁读：命中在 worker goroutine 里追加（-race
+		// 在 CI 上逮过裸读与持锁写的竞态）。
+		mu.Lock()
+		full := len(hits) >= searchHitCap
+		mu.Unlock()
+		if full {
 			break
 		}
 		wg.Add(1)
