@@ -11,6 +11,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -517,6 +518,14 @@ func mcpReadResource(env *Env, target string) string {
 	if env.Send == nil {
 		return "[mcp 不支持] 此表面不能直接发送，资源内容：\n" + text
 	}
-	env.Send("资源 " + uri + "：\n```\n" + text + "\n```")
+	env.Send(wrapResource(uri, text))
 	return "[mcp] 已发送资源 " + uri
+}
+
+// wrapResource 把资源文本并入可发送消息：「资源 <uri>：」+ 动态围栏
+//（issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
+// @ 引用同一 FenceFor 方案）。
+func wrapResource(uri, text string) string {
+	fence := export.FenceFor(text)
+	return "资源 " + uri + "：\n" + fence + "\n" + text + "\n" + fence
 }

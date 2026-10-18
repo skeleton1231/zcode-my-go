@@ -9,6 +9,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -344,5 +345,18 @@ func TestSlashMCPResource(t *testing.T) {
 	// 列表在没有服务器时给出双能力说明。
 	if !strings.Contains(out, "提示词或资源") {
 		t.Fatalf("list mentions both: %q", out)
+	}
+}
+
+// TestWrapResourceFenceSurvivesMarkdown: 资源文本含行首裸 ``` 时围栏动
+// 态加长（issue #178 同类——固定三反引号会让 Markdown 资源破栏）。
+func TestWrapResourceFenceSurvivesMarkdown(t *testing.T) {
+	md := "# 配置\n\n```yaml\nport: 1\n```\n"
+	wrapped := wrapResource("config://app", md)
+	if !strings.Contains(wrapped, "config://app") || !strings.Contains(wrapped, "port: 1") {
+		t.Fatalf("content lost: %q", wrapped)
+	}
+	if !strings.Contains(wrapped, export.FenceFor(md)) {
+		t.Fatalf("fence not dynamic for markdown resource:\n%s", wrapped)
 	}
 }
