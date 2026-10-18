@@ -322,7 +322,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    取、临场运行从记录重建含 after）。zgo workflow list/show/runs 只读
    运维面。
 
-49. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
    `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
    合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
    本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop
@@ -333,6 +333,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    经持锁快照进入子任务；ssh:// 会话的 task/dispatch/workflow/后台
    agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
    地工具面，远程嵌套循环读的是本地磁盘）。
+
+51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+   对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
+   后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
+   绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
+   RunSubtaskSeeded（prior 为空即新任务、非空即续跑，历史拷贝隔离）；
+   注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
+   有一个生效）。
 
 ## 状态所有者
 

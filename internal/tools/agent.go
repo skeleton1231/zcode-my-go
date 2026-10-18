@@ -17,11 +17,11 @@ import (
 // 接线（provider 与工作区同源）。
 type agentTool struct {
 	jobs  *AgentJobs
-	spawn func(ctx context.Context, prompt string) (agent.SubtaskResult, error)
+	spawn AgentRunFunc
 }
 
 // NewAgentTool 构建后台子代理工具。
-func NewAgentTool(jobs *AgentJobs, spawn func(ctx context.Context, prompt string) (agent.SubtaskResult, error)) agent.Tool {
+func NewAgentTool(jobs *AgentJobs, spawn AgentRunFunc) agent.Tool {
 	return &agentTool{jobs: jobs, spawn: spawn}
 }
 
@@ -184,4 +184,70 @@ func shortDur(d time.Duration) string {
 		return d.Round(time.Second).String()
 	}
 	return fmt.Sprintf("%.0fm", d.Minutes())
+}
+
+// agentSendTool 续话终态子代理（ZCode SendMessage 的落地，spec 规则
+// 51）：追加用户消息、带既有历史后台重跑——同 ID 复用，收割面不变。
+type agentSendTool struct {
+	jobs   *AgentJobs
+	resume AgentRunFunc
+}
+
+// NewAgentSendTool 构建续话工具。
+func NewAgentSendTool(jobs *AgentJobs, resume AgentRunFunc) agent.Tool {
+	return &agentSendTool{jobs: jobs, resume: resume}
+}
+
+// Name implements agent.Tool.
+func (s *agentSendTool) Name() string { return "agent_send" }
+
+// Description implements agent.Tool.
+func (s *agentSendTool) Description() string {
+	return "Send a follow-up message to a finished background subagent: it " +
+		"resumes in the background with its full prior context (investigation, " +
+		"results, answer) and the same agentId. Use for follow-up questions " +
+		"instead of re-spawning with a re-explained prompt. A running agent " +
+		"cannot receive messages — wait for agent_output or stop it first."
+}
+
+// Parameters implements agent.Tool.
+func (s *agentSendTool) Parameters() map[string]any {
+	return objectSchema(map[string]any{
+		"id":      prop("string", "The agentId from the agent tool"),
+		"message": prop("string", "The follow-up question or instruction"),
+	}, "id", "message")
+}
+
+// Execute implements agent.Tool.
+func (s *agentSendTool) Execute(ctx context.Context, args json.RawMessage) agent.ToolResult {
+	var a struct {
+		ID      string `json:"id"`
+		Message string `json:"message"`
+	}
+	if err := decodeArgs(args, &a); err != nil {
+		return errResult("%v", err)
+	}
+	id := strings.TrimSpace(a.ID)
+	message := strings.TrimSpace(a.Message)
+	if id == "" || message == "" {
+		return errResult("id and message are both required")
+	}
+	j, err := s.jobs.Resume(id, message, s.resume)
+	if err != nil {
+		if _, known := s.jobs.Get(id); !known {
+			ids := s.jobs.IDs()
+			if len(ids) == 0 {
+				return errResult("%v（还没有后台子代理）", err)
+			}
+			return errResult("%v；现有：%s", err, strings.Join(ids, ", "))
+		}
+		return errResult("%v", err)
+	}
+	return okResult("子代理 %s 已带全部上下文续跑：%s\n用 agent_output 收割新结论。", j.ID, firstLineOf(message))
+}
+
+// Capability implements agent.Capabler：与 agent 工具同款——后台模型
+// 用量，中等风险。
+func (s *agentSendTool) Capability() permission.Capability {
+	return permission.Capability{Risk: permission.RiskMedium}
 }
