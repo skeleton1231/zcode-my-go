@@ -91,9 +91,11 @@ func TestSettingsModal(t *testing.T) {
 		t.Fatalf("settings fields missing: %q", tt.Texts())
 	}
 
-	a.setAPI = 0
-	a.setModel = "glm-5.2"
-	a.setBaseURL = "https://open.bigmodel.cn/api/anthropic"
+	a.locked(func() {
+		a.setAPI = 0
+		a.setModel = "glm-5.2"
+		a.setBaseURL = "https://open.bigmodel.cn/api/anthropic"
+	})
 	if err := tt.Click("保存"); err != nil {
 		t.Fatalf("clicking save: %v", err)
 	}
@@ -134,7 +136,9 @@ func TestAskModalRoundTrip(t *testing.T) {
 	}()
 	// 等待 modal 打开后点击允许。
 	for range 200 {
-		if a.askOpen {
+		open := false
+		a.locked(func() { open = a.askOpen }) // goroutine 在 update 里写，持锁读
+		if open {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -174,7 +178,9 @@ func TestQuestionModalRoundTrip(t *testing.T) {
 		res <- answer
 	}()
 	for range 200 {
-		if a.qOpen {
+		open := false
+		a.locked(func() { open = a.qOpen })
+		if open {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
