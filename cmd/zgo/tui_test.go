@@ -343,3 +343,47 @@ func TestKeyStreamPasteCapped(t *testing.T) {
 		t.Fatalf("cap note missing: %q…", got[:min(80, len(got))])
 	}
 }
+
+// TestTuiAbortRunOnEsc 验证 Esc 中止（spec 规则 38）：运行中触发 abort
+// 钩子并提示；空闲无操作；粘贴内的 ESC 不触发（保真入输入区）。
+func TestTuiAbortRunOnEsc(t *testing.T) {
+	defer func(enabled bool) { colorEnabled = enabled }(colorEnabled)
+	colorEnabled = false
+
+	called := 0
+	s := &tuiState{width: 80, topIdx: -1, turnCur: -1,
+		abort: func() { called++ }}
+
+	// 空闲：Esc 无操作。
+	s.abortRun()
+	if called != 0 {
+		t.Fatal("idle Esc aborted")
+	}
+	k := &keyStream{}
+	k.feed(s, []byte{0x1b})
+	if called != 0 {
+		t.Fatal("idle Esc via keyStream aborted")
+	}
+
+	// 运行中：Esc 触发钩子 + 提示行。
+	s.setStatus("运行中…", true)
+	k2 := &keyStream{}
+	k2.feed(s, []byte{0x1b})
+	if called != 1 {
+		t.Fatalf("running Esc aborted %d times", called)
+	}
+	if !strings.Contains(strings.Join(s.lines, "\n"), "[已中止]") {
+		t.Fatal("abort notice missing")
+	}
+
+	// 粘贴内的裸 ESC：保真入输入区，不中止（called 仍为 1）。
+	s.setStatus("运行中…", true)
+	k3 := &keyStream{}
+	k3.feedWith(s, []byte("\x1b[200~\x1b\x1b[201~"), func(string) {})
+	if called != 1 {
+		t.Fatalf("pasted ESC aborted: %d", called)
+	}
+	if !strings.Contains(string(s.input), "\x1b") {
+		t.Fatal("pasted ESC lost from input")
+	}
+}
