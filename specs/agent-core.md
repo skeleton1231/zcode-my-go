@@ -343,6 +343,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
    地工具面，远程嵌套循环读的是本地磁盘）。
 
+
 51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
    对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
    后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
@@ -463,7 +464,6 @@ dc907a4 (feat: glob and grep honor .gitignore)
    现。显式重载（设置变更/诊断）仍同步。syncMCP 串行化（并发为同
    名起两个进程）；**Close 守卫**：在途握手于服务关闭后才完成的直接
    关闭服务器不入表（异步启动的进程泄漏面）。
-
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

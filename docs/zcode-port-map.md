@@ -356,6 +356,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、
    ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
    一经持锁快照 + ReadOnlyW 拨号工作区。
+
 **子代理续话**（ZCode SendMessage 的落地，spec 规则 51）：agent_send
    {id, message} 对终态后台子代理带全部历史续跑（同 ID、收割面不变；
    运行中拒绝）；RunSubtaskSeeded 统一新任务/续跑形态（历史拷贝隔

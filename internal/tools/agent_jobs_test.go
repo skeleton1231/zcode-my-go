@@ -8,7 +8,10 @@ import (
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+<<<<<<< HEAD
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+=======
+>>>>>>> origin/main
 )
 
 // waitForJobState 轮询等终态（秒级预算——后台 goroutine 的完成是异步的）。
@@ -25,8 +28,13 @@ func waitForJobState(j *AgentJob, want string) bool {
 
 func TestAgentJobsSpawnDone(t *testing.T) {
 	jobs := NewAgentJobs()
+<<<<<<< HEAD
 	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{Text: "调查结论"}, nil, nil
+=======
+	j := jobs.Spawn(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
+		return agent.SubtaskResult{Text: "调查结论"}, nil
+>>>>>>> origin/main
 	}, "调查一下")
 	if v := j.Snapshot(); v.State != AgentRunning && v.State != AgentDone {
 		t.Fatalf("state = %s", v.State)
@@ -44,8 +52,13 @@ func TestAgentJobsSpawnDone(t *testing.T) {
 
 func TestAgentJobsFailure(t *testing.T) {
 	jobs := NewAgentJobs()
+<<<<<<< HEAD
 	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{}, nil, errors.New("provider down")
+=======
+	j := jobs.Spawn(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
+		return agent.SubtaskResult{}, errors.New("provider down")
+>>>>>>> origin/main
 	}, "x")
 	if !waitForJobState(j, AgentFailed) {
 		t.Fatalf("never failed: %+v", j.Snapshot())
@@ -57,9 +70,15 @@ func TestAgentJobsFailure(t *testing.T) {
 
 func TestAgentJobsStopAndCloseAll(t *testing.T) {
 	jobs := NewAgentJobs()
+<<<<<<< HEAD
 	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		<-ctx.Done() // 挂住直到停止
 		return agent.SubtaskResult{}, nil, ctx.Err()
+=======
+	j := jobs.Spawn(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
+		<-ctx.Done() // 挂住直到停止
+		return agent.SubtaskResult{}, ctx.Err()
+>>>>>>> origin/main
 	}, "长调查")
 	if !jobs.Stop(j.ID) {
 		t.Fatal("stop returned false")
@@ -75,9 +94,15 @@ func TestAgentJobsStopAndCloseAll(t *testing.T) {
 	}
 
 	// CloseAll 全停：root 取消传播到运行中的任务。
+<<<<<<< HEAD
 	j2 := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		<-ctx.Done()
 		return agent.SubtaskResult{}, nil, ctx.Err()
+=======
+	j2 := jobs.Spawn(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
+		<-ctx.Done()
+		return agent.SubtaskResult{}, ctx.Err()
+>>>>>>> origin/main
 	}, "另一个")
 	jobs.CloseAll()
 	if !waitForJobState(j2, AgentStopped) {
@@ -87,8 +112,13 @@ func TestAgentJobsStopAndCloseAll(t *testing.T) {
 
 func TestAgentToolsFlow(t *testing.T) {
 	jobs := NewAgentJobs()
+<<<<<<< HEAD
 	spawn := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{Text: "结论：" + prompt}, nil, nil
+=======
+	spawn := func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
+		return agent.SubtaskResult{Text: "结论：" + prompt}, nil
+>>>>>>> origin/main
 	}
 	spawner := NewAgentTool(jobs, spawn)
 	res := spawner.Execute(context.Background(), []byte(`{"prompt":"查依赖"}`))
@@ -119,6 +149,7 @@ func TestAgentToolsFlow(t *testing.T) {
 		t.Fatalf("stop terminal agent: %s", res.Content)
 	}
 }
+<<<<<<< HEAD
 
 // TestAgentJobsResumeWithHistory 续跑（spec 规则 51）：终态后带历史续
 // 跑——运行器收到的 prior 即首次转录，同 ID 复用，新结论覆盖旧值。
@@ -205,3 +236,5 @@ func TestAgentSendToolFlow(t *testing.T) {
 		t.Fatal("missing message accepted")
 	}
 }
+=======
+>>>>>>> origin/main

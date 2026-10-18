@@ -17,11 +17,19 @@ import (
 // 接线（provider 与工作区同源）。
 type agentTool struct {
 	jobs  *AgentJobs
+<<<<<<< HEAD
 	spawn AgentRunFunc
 }
 
 // NewAgentTool 构建后台子代理工具。
 func NewAgentTool(jobs *AgentJobs, spawn AgentRunFunc) agent.Tool {
+=======
+	spawn func(ctx context.Context, prompt string) (agent.SubtaskResult, error)
+}
+
+// NewAgentTool 构建后台子代理工具。
+func NewAgentTool(jobs *AgentJobs, spawn func(ctx context.Context, prompt string) (agent.SubtaskResult, error)) agent.Tool {
+>>>>>>> origin/main
 	return &agentTool{jobs: jobs, spawn: spawn}
 }
 
@@ -185,6 +193,7 @@ func shortDur(d time.Duration) string {
 	}
 	return fmt.Sprintf("%.0fm", d.Minutes())
 }
+<<<<<<< HEAD
 
 // agentSendTool 续话终态子代理（ZCode SendMessage 的落地，spec 规则
 // 51）：追加用户消息、带既有历史后台重跑——同 ID 复用，收割面不变。
@@ -251,3 +260,5 @@ func (s *agentSendTool) Execute(ctx context.Context, args json.RawMessage) agent
 func (s *agentSendTool) Capability() permission.Capability {
 	return permission.Capability{Risk: permission.RiskMedium}
 }
+=======
+>>>>>>> origin/main

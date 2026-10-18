@@ -71,7 +71,11 @@ internal/agent        agent loop、事件、会话与 JSONL 持久化、子代�
 internal/agent/permission  权限系统（ZCode permission/ 翻译）
 internal/agent/compact    上下文压缩（ZCode compact/ 翻译）
 internal/tools        内置工具：read/write/edit/bash/grep/glob/ls/apply_patch/webfetch/
+<<<<<<< HEAD
                       agent 四件套（后台子代理 spawn/output/stop/send 续话）
+=======
+                      agent 三件套（后台子代理 spawn/output/stop）
+>>>>>>> origin/main
                       todo/ask/memory/task/dispatch/workflow
 internal/prompt       系统提示（环境、git、项目上下文文件）
 internal/service      AgentService：UI 唯一入口（设置、会话、Chat 回调、
