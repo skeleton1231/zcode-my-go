@@ -35,6 +35,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
+	"github.com/skeleton1231/zcode-my-go/internal/trust"
 	"github.com/skeleton1231/zcode-my-go/internal/usage"
 	"github.com/skeleton1231/zcode-my-go/internal/workflow"
 )
@@ -90,6 +91,7 @@ type AgentService struct {
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
+	trustStore       *trust.Store               // 工作区授信表（spec 规则 54）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -103,6 +105,7 @@ func New(dataDir string) (*AgentService, error) {
 		wsClose:     map[string]func(){},
 		autoTitleOn: true,
 		wfStore:     workflow.NewStore(dataDir),
+		trustStore:  trust.NewStore(dataDir),
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -377,9 +380,18 @@ func (s *AgentService) rewire() {
 				skills.Section(skills.Discover(s.skillRoots(sessionID, workspace)), skills.DefaultMetaBudget) +
 				agents.Section(agents.Discover(s.agentRoots(sessionID, workspace)), agents.DefaultMetaBudget)
 		},
-		Ask:          s.ask,
-		ProjectRules: loadProjectRules,
-		Question:     s.question,
+		Ask: s.ask,
+		ProjectRules: func(workspace string) permission.Ruleset {
+			// 工作区信任门（spec 规则 54）：未授信的本地工作区不加载
+			// 其 .zgorules.json——克隆来的恶意仓库不能靠自带 allow
+			// 规则给自己放权（提权面）。ssh:// 目标是用户显式拨号的
+			// 远端，视为授信。
+			if !s.workspaceTrusted(workspace) {
+				return permission.Ruleset{}
+			}
+			return loadProjectRules(workspace)
+		},
+		Question: s.question,
 	})
 }
 
@@ -1094,6 +1106,65 @@ func (s *AgentService) PlanMode(id string, on bool) error {
 	return nil
 }
 
+// workspaceTrusted 报告工作区是否受信（spec 规则 54）：ssh:// 目标是
+// 用户显式拨号的远端——视为授信；本地路径查授信表。
+func (s *AgentService) workspaceTrusted(workspace string) bool {
+	if strings.HasPrefix(workspace, "ssh://") {
+		return true
+	}
+	return s.trustStore.IsTrusted(workspace)
+}
+
+// IsWorkspaceTrusted 是表面查询（终端/桌面的未授信提示用）。
+func (s *AgentService) IsWorkspaceTrusted(workspace string) bool {
+	return s.workspaceTrusted(workspace)
+}
+
+// TrustWorkspace 授信并即时生效：本会话的项目规则重载（若已在跑），
+// 技能/命令的工作区层随下次发现自然生效。
+func (s *AgentService) TrustWorkspace(workspace, via string) error {
+	if err := s.trustStore.Grant(workspace, via); err != nil {
+		return err
+	}
+	rules := loadProjectRules(workspace)
+	for _, info := range s.mgr.List() {
+		if trust.Normalize(info.Workspace) == trust.Normalize(workspace) {
+			if ssn, ok := s.mgr.Get(info.ID); ok {
+				ssn.ApplyProjectRules(rules)
+			}
+		}
+	}
+	return nil
+}
+
+// TrustSession 授信当前会话的工作区（/trust 用）。
+func (s *AgentService) TrustSession(sessionID, via string) error {
+	ssn, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("会话不存在")
+	}
+	return s.TrustWorkspace(ssn.Info().Workspace, via)
+}
+
+// RevokeWorkspace 撤销授信（在跑会话的项目规则即时清空——授信回退
+// 生效，spec 规则 54）。
+func (s *AgentService) RevokeWorkspace(workspace string) error {
+	if err := s.trustStore.Revoke(workspace); err != nil {
+		return err
+	}
+	for _, info := range s.mgr.List() {
+		if trust.Normalize(info.Workspace) == trust.Normalize(workspace) {
+			if ssn, ok := s.mgr.Get(info.ID); ok {
+				ssn.ApplyProjectRules(permission.Ruleset{})
+			}
+		}
+	}
+	return nil
+}
+
+// TrustList 列出授信表。
+func (s *AgentService) TrustList() []trust.Entry { return s.trustStore.List() }
+
 // contextReader returns the remote context-file reader (root-relative),
 // or nil for local workspaces——远程会话的项目上下文经网线读取（此前读
 // 本地路径必然落空、静默丢失）。
@@ -1113,6 +1184,17 @@ const skillsBaseDir = ".zgo/skills"
 func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 	ws := s.workspaceFor(sessionID, workspace)
 	var roots []skills.Root
+	// 信任门（spec 规则 54）：未授信的本地工作区不带其技能层（提示
+	// 注入面）；全局层不受影响。
+	if !ws.IsRemote() && !s.workspaceTrusted(workspace) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return []skills.Root{{
+				Base:  filepath.Join(home, ".zgo", "skills"),
+				Scope: skills.ScopeUser, FS: skills.LocalFS{},
+			}}
+		}
+		return nil
+	}
 	if ws.IsRemote() {
 		roots = append(roots, skills.Root{
 			Base: skillsBaseDir, Scope: skills.ScopeProject,
@@ -1136,6 +1218,18 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 // Skills 列出工作区的可用技能（/skills 终端命令用；与 agent 的发现
 // 同一根源——工作区层经 openWorkspace 解析目标，远程走网线）。
 func (s *AgentService) Skills(workspace string) skills.Outcome {
+	if !s.workspaceTrusted(workspace) {
+		// 信任门与 skillRoots 同款（spec 规则 54）：列表面不显示未
+		// 授信工作区的技能层。
+		var roots []skills.Root
+		if home, err := os.UserHomeDir(); err == nil {
+			roots = append(roots, skills.Root{
+				Base:  filepath.Join(home, ".zgo", "skills"),
+				Scope: skills.ScopeUser, FS: skills.LocalFS{},
+			})
+		}
+		return skills.Discover(roots)
+	}
 	project := skills.Root{
 		Base:  filepath.Join(workspace, filepath.FromSlash(skillsBaseDir)),
 		Scope: skills.ScopeProject, FS: skills.LocalFS{},
@@ -1858,14 +1952,24 @@ const commandCapRunes = 60 << 10
 // spec 规则 39）。SSH 工作区经 path jail 读取，同享。
 func (s *AgentService) CustomCommands(workspace string) []CustomCommand {
 	out := map[string]string{}
-	// 全局先入，工作区覆盖。
+	// 全局先入，工作区覆盖（未授信的本地工作区不带工作区层——提示
+	// 注入面，spec 规则 54）。
 	if home, err := os.UserHomeDir(); err == nil {
 		loadCommandsDir(out, filepath.Join(home, ".zgo", "commands"), nil)
 	}
+	if !s.workspaceTrusted(workspace) {
+		return sortedCommands(out)
+	}
+
 	ws, _, err := s.openWorkspace(workspace)
 	if err == nil {
 		loadCommandsDir(out, customCommandsDir, &ws)
 	}
+	return sortedCommands(out)
+}
+
+// sortedCommands 按名排序出命令表。
+func sortedCommands(out map[string]string) []CustomCommand {
 	var names []string
 	for n := range out {
 		names = append(names, n)

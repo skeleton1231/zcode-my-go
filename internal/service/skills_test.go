@@ -30,6 +30,9 @@ func TestSkillsAccessorDiscoversWorkspaceLayer(t *testing.T) {
 	}
 	t.Cleanup(svc.Close)
 	ws := t.TempDir()
+	if err := svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
 	plantSkill(t, ws, "deploy", "Ship the service")
 	plantSkill(t, ws, "broken", "ok") // 占位：再写一个坏技能验证诊断不吞
 	bad := filepath.Join(ws, ".zgo", "skills", "broken", "SKILL.md")
@@ -60,6 +63,9 @@ func TestSkillRootsShadowing(t *testing.T) {
 	}
 	t.Cleanup(svc.Close)
 	ws := t.TempDir()
+	if err := svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
 	plantSkill(t, ws, "deploy", "工作区版")
 
 	roots := svc.skillRoots("sess-shadow", ws)

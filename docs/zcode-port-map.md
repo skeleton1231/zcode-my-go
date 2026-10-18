@@ -383,3 +383,14 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    pdftext——词法级 stream 收集 + Flate 解压 + Tj/TJ 文本算子（换行启
    发）、字面/十六进制串（UTF-16BE BOM）；16MB/256KB 有界；可读率
    闸门（<85% 报错——CID 无 ToUnicode 宁失败不乱码）。
+**read 读 PDF**（ZCode read-pdf 的落地，spec 规则 52）：internal/
+   pdftext——词法级 stream 收集 + Flate 解压 + Tj/TJ 文本算子（换行启
+   发）、字面/十六进制串（UTF-16BE BOM）；16MB/256KB 有界；可读率
+   闸门（<85% 报错——CID 无 ToUnicode 宁失败不乱码）。
+
+**工作区信任门**（pi project-trust / CC 信任提示的落地，spec 规则
+   54）：internal/trust——未授信本地工作区不加载其 .zgorules.json
+   （allow 规则即提权面）与 .zgo 命令/技能层（提示注入面）；授信表
+   trusted.json（规范化键/原子写）；ssh:// 显式拨号视为授信；/trust
+   即时重载在跑会话规则、zgo trust CLI（grant/list/revoke，撤销即时
+   清空）；终端三表面未授信提示。

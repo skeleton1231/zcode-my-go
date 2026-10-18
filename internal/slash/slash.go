@@ -206,6 +206,20 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/trust", usage: "/trust",
+		help: "授信当前工作区（加载其 .zgorules.json 与命令/技能层）",
+		run: func(env *Env, _ string) string {
+			ws := env.Workspace()
+			if env.Svc.IsWorkspaceTrusted(ws) {
+				return "[信任] 工作区已授信：" + ws
+			}
+			if err := env.Svc.TrustSession(env.SessionID(), "slash"); err != nil {
+				return "[信任失败] " + err.Error()
+			}
+			return "[信任] 已授信并加载工作区规则与命令/技能层：" + ws
+		},
+	},
+	{
 		name: "/skills", usage: "/skills",
 		help: "列出可用技能（工作区 .zgo/skills 与全局 ~/.zgo/skills）",
 		run: func(env *Env, _ string) string {
