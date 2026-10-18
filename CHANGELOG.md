@@ -36,6 +36,18 @@
 - **MCP/运维面**：/mcp add/remove（免手编 settings.json，热重载）、
   cron 任务级模型（Job.Model 补执行面 + 会话模型覆盖）、zgo bugreport
   （脱敏自包含问题报告）。
+- **子代理升级提问**（#254）：后台研究代理遇到只有用户能答的问题时经
+  会话提问通道升级（[后台代理 <id>] 前缀），答案回转录继续跑——ZCode
+  escalate 的落地。
+- **cron 时间窗**（#255）：Job.Window（HH:MM-HH:MM 可跨午夜）——窗口
+  外到期不 fire 不动 LastRun、窗口一开补跑（推迟而非错过）；与任务级
+  模型构成自动化经济学（便宜模型 + 闲时窗口）。
+- **eval 安全回归网 + CI 门禁**（#256）：场景 Trusted:false 模拟未授
+  信工作区——trust-gate/trust-granted 双向断言信任门（门回归即 CI
+  红）；CI 增 zgo eval 门禁步骤。
+- **grep 远程并发**（#257，性能路线第一条）：ssh:// 的 grep 8 路并发
+  拉取（RTT 主导：16×50ms 顺序 800ms→~200ms）；本地保持顺序+早停
+  （实测 Windows+Defender 串行化文件打开，并发零收益）。
 - **稳定性**：调度器 Stop 排空（tick-only 用法的 TempDir 竞态）、
   keepalive 探测看门狗（半开连接判死确定性化）、代理状态条专用锁
   （死锁与竞争双修）。

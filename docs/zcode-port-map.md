@@ -355,17 +355,6 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
 
-<<<<<<< HEAD
-**会话内搜索 /find**（桌面搜索的终端对齐，spec 规则 56）：slash 表面
-   钩子——TUI 标记模式（▶/当前命中、n/N 环绕跳转、空输入区才拦截、
-   Esc 先退搜索）；REPL 列命中清单（回合+片段）。
-=======
-<<<<<<< HEAD
-**模型兜底链**（spec 规则 55）：settings.fallbackModels——主模型可重
-   试失败（429/过载）时 ai.NewFailover 按序换模型重发同一请求；非可
-   重试错误透传（换模型无用）；耗尽透传末次错误保持可重试；e2e 注入
-   不经兜底；zgo config get/set fallbackModels。
-=======
 **后台子代理**（ZCode runtime-task registry / Agent 工具的落地，spec
    规则 50）：agent/agent_output/agent_stop 三件套——启动即回执、父会
    话继续、收割/停止；注册表会话作用域（ctx 派生注册表根，随
@@ -399,8 +388,15 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    结果块、工作区文件、无错误工具、事件计数）驱动真实 service 回放；
    evals/ 内置三个起步场景（write-read、skill-load、webfetch-guard）；
    --filter 筛选、失败退出码 1 可进 CI。
->>>>>>> origin/feat/zgo-eval
->>>>>>> origin/feat/provider-failover
+
+**会话内搜索 /find**（桌面搜索的终端对齐，spec 规则 56）：slash 表面
+   钩子——TUI 标记模式（▶/当前命中、n/N 环绕跳转、空输入区才拦截、
+   Esc 先退搜索）；REPL 列命中清单（回合+片段）。
+
+**模型兜底链**（spec 规则 55）：settings.fallbackModels——主模型可重
+   试失败（429/过载）时 ai.NewFailover 按序换模型重发同一请求；非可
+   重试错误透传（换模型无用）；耗尽透传末次错误保持可重试；e2e 注入
+   不经兜底；zgo config get/set fallbackModels。
 
 **MCP 配置命令**（spec 规则 57）：/mcp add <名> -- <命令> [参数…] 与
    /mcp remove <名>——此前唯一途径是手编 settings.json；服务面
