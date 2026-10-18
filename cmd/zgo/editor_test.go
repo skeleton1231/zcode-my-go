@@ -89,3 +89,27 @@ func TestEditorCursorMovement(t *testing.T) {
 		t.Fatalf("line = %q", line)
 	}
 }
+
+// TestEditorBracketedPaste 验证括号粘贴（spec 规则 33）：粘贴内的 CR/
+// LF 不触发提交、归一为 \n 保留在提交文本中；粘贴后的真实回车才提交。
+func TestEditorBracketedPaste(t *testing.T) {
+	paste := "\x1b[200~line1\r\nline2\rline3\x1b[201~"
+	e, _ := newTestEditor(paste + "\r")
+	line, ok, _ := e.readLine("zgo> ")
+	if !ok || line != "line1\nline2\nline3" {
+		t.Fatalf("pasted line = %q ok=%v", line, ok)
+	}
+}
+
+// TestEditorPasteNotMarker 验证疑似标记的 ESC 序列不是结束标记时原样
+// 吐回（内容不丢）。
+func TestEditorPasteNotMarker(t *testing.T) {
+	// 粘贴里含裸 ESC 但不构成 \x1b[201~：原样保留（ESC 不可打印，仅
+	// 验证后续内容完整）。
+	paste := "\x1b[200~a\x1b[2Xb\x1b[201~"
+	e, _ := newTestEditor(paste + "\r")
+	line, ok, _ := e.readLine("zgo> ")
+	if !ok || !strings.Contains(line, "a") || !strings.Contains(line, "b") {
+		t.Fatalf("content lost: %q", line)
+	}
+}
