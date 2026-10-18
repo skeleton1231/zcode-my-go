@@ -342,6 +342,19 @@ dc907a4 (feat: glob and grep honor .gitignore)
    agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
    地工具面，远程嵌套循环读的是本地磁盘）。
 
+51. 自定义子代理定义（issue #225）：子代理 persona 用户可编程。定义
+   层 internal/agents——两层平铺 markdown：工作区 `.zgo/agents/*.md` +
+   用户家 `~/.zgo/agents/*.md`（同名工作区优先，与技能/命令同约定）；
+   frontmatter：`name`（缺省取文件名主干）、`description`（路由依据，
+   必填、≤1K 字符）、`tools`（逗号分隔白名单，取自子代理工具词表
+   read/grep/glob/ls/edit/write/patch/todo；空即只读族，对齐现状
+   SubtaskSystem）；正文即该子代理的系统提示（persona）。`task`/
+   `dispatch` 增可选 `agent` 参数：命中则以定义 persona 替换
+   SubtaskSystem、工具面按白名单从会话工具集选取（edit 族仍过主权限
+   门——白名单只收窄不放宽，未列出的名字忽略）；未知名报错列出可用
+   项自纠。主系统提示注入可用 agents 清单（name + description 一行
+   式，对齐技能注入）。发现读上限 64KB、persona 载入上限 100KB（超限
+   截断并标注），描述校验 1K——与注入家族同一套约束。
 
 51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
    对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）

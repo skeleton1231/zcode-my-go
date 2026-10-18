@@ -82,6 +82,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    `/attach`，同限校验、随下一条消息发送）；对齐 ZCode attachment-ux 的输入侧。@ 引用：消息内
    @路径 在服务层展开（文本围栏化/图片成块、path jail、60KB/5MB 上限，
    桌面/TUI/print 三端同享），桌面 composer 附文件提示与点选补全。
+   贴图（issue #216，spec desktop-shell 规则 8）：composer Ctrl/Cmd+V
+   探剪贴板位图（internal/clipimg——PNG 注册格式直取优先，CF_DIBV5/
+   CF_DIB 解码 PNG 化），命中走 📎 同一条通道（同一单张/总量上限与
+   notice）；无图放行普通文本粘贴。
 
 **工具 diff 预览**：internal/textdiff（行级 LCS 统一 diff，上下文 3 行，
    输出与规模双上限）+ ToolResult.Diff/Event.Diff 透传 + 桌面工具块与终端
@@ -362,6 +366,14 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、
    ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
    一经持锁快照 + ReadOnlyW 拨号工作区。
+
+**自定义子代理定义**（ZCode agents 文件 / .claude/agents 的 Zgo 形
+   态，spec 规则 51，issue #225）：internal/agents——两层平铺
+   markdown（工作区 `.zgo/agents/*.md` + 用户 `~/.zgo/agents/*.md`，
+   同名工作区优先）；frontmatter name/description/tools（白名单，封闭
+   词表 read/grep/glob/ls/edit/write/patch/todo，只收窄不放宽），正文
+   即 persona；task/dispatch 增可选 agent 参数（命中走 persona，未命
+   中报错列可用项）；可用清单注入主系统提示（对齐技能注入）。
 
 **子代理续话**（ZCode SendMessage 的落地，spec 规则 51）：agent_send
    {id, message} 对终态后台子代理带全部历史续跑（同 ID、收割面不变；
