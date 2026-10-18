@@ -123,6 +123,64 @@ func New(dataDir string) (*AgentService, error) {
 	return s, nil
 }
 
+// mcpNameMax 限制配置的服务器数（防误配炸启动面）。
+const mcpNameMax = 32
+
+// SetMCPServer 配置/更新一个 MCP 服务器并热重载（spec 规则 57）：名
+// 非空且无空白/斜杠（文件与键的安全形态）；命令非空。写盘经
+// saveSettingsLocked，启动经 syncMCP（失败降级不阻断——诊断面可见）。
+func (s *AgentService) SetMCPServer(name string, cfg mcp.Config) error {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.ContainsAny(name, " /\\") {
+		return fmt.Errorf("MCP 服务器名须非空且不含空格/斜杠：%q", name)
+	}
+	if strings.TrimSpace(cfg.Command) == "" {
+		return fmt.Errorf("MCP 服务器 %s 缺少 command", name)
+	}
+	s.mu.Lock()
+	if s.settings.MCPServers == nil {
+		s.settings.MCPServers = map[string]mcp.Config{}
+	}
+	if _, exists := s.settings.MCPServers[name]; !exists && len(s.settings.MCPServers) >= mcpNameMax {
+		s.mu.Unlock()
+		return fmt.Errorf("MCP 服务器已达上限 %d", mcpNameMax)
+	}
+	s.settings.MCPServers[name] = cfg
+	_, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.syncMCP() // 热重载：新服务器握手失败会降级（诊断面可见）
+	}
+	return err
+}
+
+// MCPServers 返回当前配置的服务器表（copy）——/mcp 列表与测试断言面。
+func (s *AgentService) MCPServers() map[string]mcp.Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]mcp.Config, len(s.settings.MCPServers))
+	for k, v := range s.settings.MCPServers {
+		out[k] = v
+	}
+	return out
+}
+
+// RemoveMCPServer 移除一个 MCP 服务器并热重载（不存在的名字报错）。
+func (s *AgentService) RemoveMCPServer(name string) error {
+	s.mu.Lock()
+	if _, ok := s.settings.MCPServers[name]; !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("MCP 服务器 %s 不存在（/mcp 查看）", name)
+	}
+	delete(s.settings.MCPServers, name)
+	_, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.syncMCP()
+	}
+	return err
+}
+
 // syncMCP reconciles running servers with the configured set (hot
 // reload): stopped-and-restarted for changed signatures, closed for
 // removed ones, started for additions; failures degrade, never block.

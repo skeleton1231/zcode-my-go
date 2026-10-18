@@ -395,6 +395,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    命中清单（回合号 + 60 rune 片段，首 20 条 + 余量计数）。无钩子的
    表面明确报不支持。
 
+57. MCP 配置命令（此前唯一途径是手编 settings.json，桌面亦无编辑面）：
+   `/mcp add <名> -- <命令> [参数…]`（`--` 后按空白切分，无引号语义
+   ——复杂命令进 settings.json；名非空无空白/斜杠，命令必填；上限
+   32 个）、`/mcp remove <名>`（不存在报错）。服务面 SetMCPServer/
+   RemoveMCPServer/MCPServers：写盘 + syncMCP 热重载（握手失败降级
+   不阻断——诊断面可见）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

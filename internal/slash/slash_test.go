@@ -540,3 +540,35 @@ func TestSlashFindSurfaceHooks(t *testing.T) {
 		t.Fatalf("empty = %q", out)
 	}
 }
+
+// TestSlashMCPAddRemove MCP 配置命令（spec 规则 57）：add 写盘可回、
+// 名/命令校验、remove 不存在报错、remove 后列表消失。
+func TestSlashMCPAddRemove(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/mcp add fs -- npx -y @mcp/server-fs /ws")
+	if !strings.Contains(out, "已配置 fs") || !strings.Contains(out, "npx -y @mcp/server-fs /ws") {
+		t.Fatalf("add = %q", out)
+	}
+	if cfg, ok := env.Svc.MCPServers()["fs"]; !ok || cfg.Command != "npx" ||
+		len(cfg.Args) != 3 || cfg.Args[2] != "/ws" {
+		t.Fatalf("config = %+v", cfg)
+	}
+	// 校验面。
+	if out := captureOutSlash(t, env, "/mcp add 坏 名 -- cmd"); !strings.Contains(out, "用法") {
+		t.Fatalf("two-name = %q", out)
+	}
+	if out := captureOutSlash(t, env, "/mcp add a/b -- cmd"); !strings.Contains(out, "失败") {
+		t.Fatalf("slash name = %q", out)
+	}
+	if out := captureOutSlash(t, env, "/mcp add fs2 --"); !strings.Contains(out, "用法") {
+		t.Fatalf("no cmd = %q", out)
+	}
+	if out := captureOutSlash(t, env, "/mcp remove nope"); !strings.Contains(out, "不存在") {
+		t.Fatalf("remove missing = %q", out)
+	}
+	out = captureOutSlash(t, env, "/mcp remove fs")
+	if !strings.Contains(out, "已移除 fs") {
+		t.Fatalf("remove = %q", out)
+	}
+
+}

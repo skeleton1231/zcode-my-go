@@ -401,3 +401,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    --filter 筛选、失败退出码 1 可进 CI。
 >>>>>>> origin/feat/zgo-eval
 >>>>>>> origin/feat/provider-failover
+
+**MCP 配置命令**（spec 规则 57）：/mcp add <名> -- <命令> [参数…] 与
+   /mcp remove <名>——此前唯一途径是手编 settings.json；服务面
+   SetMCPServer/RemoveMCPServer（校验+上限 32）写盘并 syncMCP 热重载
+   （握手失败降级，诊断面可见）。

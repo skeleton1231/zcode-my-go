@@ -12,6 +12,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/export"
+	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -183,10 +184,17 @@ var commands = []command{
 		name: "/mcp", usage: "/mcp [server.prompt [k=v…]]",
 		help: "MCP 提示词：列出或展开为消息直接发送",
 		run: func(env *Env, args string) string {
-			if strings.TrimSpace(args) == "" {
+			args = strings.TrimSpace(args)
+			switch {
+			case args == "":
 				return mcpList(env)
+			case strings.HasPrefix(args, "add "):
+				return mcpAdd(env, strings.TrimSpace(strings.TrimPrefix(args, "add ")))
+			case args == "remove" || strings.HasPrefix(args, "remove "):
+				return mcpRemove(env, strings.TrimSpace(strings.TrimPrefix(args, "remove")))
+			default:
+				return mcpRun(env, args)
 			}
-			return mcpRun(env, strings.TrimSpace(args))
 		},
 	},
 	{
@@ -636,4 +644,46 @@ func mcpReadResource(env *Env, target string) string {
 func wrapResource(uri, text string) string {
 	fence := export.FenceFor(text)
 	return "资源 " + uri + "：\n" + fence + "\n" + text + "\n" + fence
+}
+
+// mcpAdd 配置一个 MCP 服务器（spec 规则 57）：/mcp add <名> -- <命令> [参数…]。
+// `--` 后按空白切分（无引号语义——复杂命令进 settings.json）。
+func mcpAdd(env *Env, args string) string {
+	rest := args
+	if i := strings.Index(rest, "--"); i >= 0 {
+		rest = rest[i+2:]
+	} else {
+		return "[MCP] 用法：/mcp add <名> -- <命令> [参数…]"
+	}
+	fields := strings.Fields(args[:strings.Index(args, "--")])
+	if len(fields) != 1 {
+		return "[MCP] 用法：/mcp add <名> -- <命令> [参数…]（名一个、不含空格）"
+	}
+	parts := strings.Fields(rest)
+	if len(parts) == 0 {
+		return "[MCP] 用法：/mcp add <名> -- <命令> [参数…]（命令必填）"
+	}
+	cfg := mcp.Config{Command: parts[0]}
+	if len(parts) > 1 {
+		cfg.Args = parts[1:]
+	}
+	if err := env.Svc.SetMCPServer(fields[0], cfg); err != nil {
+		return "[MCP 失败] " + err.Error()
+	}
+	summary := cfg.Command
+	if len(cfg.Args) > 0 {
+		summary += " " + strings.Join(cfg.Args, " ")
+	}
+	return "[MCP] 已配置 " + fields[0] + "：" + summary + "（热重载；/mcp 查看，握手失败见诊断）"
+}
+
+// mcpRemove 移除一个 MCP 服务器（spec 规则 57）。
+func mcpRemove(env *Env, name string) string {
+	if name == "" {
+		return "[MCP] 用法：/mcp remove <名>"
+	}
+	if err := env.Svc.RemoveMCPServer(name); err != nil {
+		return "[MCP 失败] " + err.Error()
+	}
+	return "[MCP] 已移除 " + name
 }
