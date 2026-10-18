@@ -1,21 +1,27 @@
 // Package prompt builds the agent's system prompt, including the runtime
 // environment (ZCode's environment.ts) and the workspace's project context
-// file (ZGO.md / AGENTS.md / CLAUDE.md).
+// files (ZGO.md / AGENTS.md / CLAUDE.md) collected as a hierarchy.
 package prompt
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
-// contextFiles are looked up in the workspace root, first match wins.
+// contextFiles are looked up per directory, first match wins.
 var contextFiles = []string{"ZGO.md", "AGENTS.md", "CLAUDE.md"}
 
-// contextCapBytes bounds the project context injected into the prompt.
+// contextCapBytes bounds the total context injected into the prompt.
 const contextCapBytes = 8 << 10
+
+// contextMaxDepth bounds the up-walk from workspace to git top.
+const contextMaxDepth = 16
 
 // gitTimeout bounds each best-effort git query.
 const gitTimeout = 3 * time.Second
@@ -24,12 +30,21 @@ const gitTimeout = 3 * time.Second
 // 非缓存路径用；缓存路径分开取 SystemStable/SystemVolatile——git dirty
 // 计数每轮变化，混在缓存前缀里会整块失效，issue #139）。
 func System(workspace string) string {
-	return SystemStable(workspace) + SystemVolatile(workspace)
+	return SystemFS(workspace, nil)
+}
+
+// SystemFS 同 System：read 非 nil 时上下文文件经其根相对读取（远程工作
+// 区的 RemoteFS.ReadFile——此前远程会话读本地路径必然落空、静默丢失项
+// 目上下文），且只读根层（远程 git 顶不可知，不做向上回溯）。
+func SystemFS(workspace string, read func(name string) ([]byte, error)) string {
+	return SystemStableFS(workspace, read) + SystemVolatile(workspace)
 }
 
 // SystemStable is the cacheable system prefix: identity, environment,
 // project context, doctrine——跨轮不变（日期按天粒度）。
-func SystemStable(workspace string) string {
+func SystemStable(workspace string) string { return SystemStableFS(workspace, nil) }
+
+func SystemStableFS(workspace string, read func(name string) ([]byte, error)) string {
 	shell := "bash"
 	if runtime.GOOS == "windows" {
 		shell = "PowerShell"
@@ -43,8 +58,8 @@ Environment:
 		"- Workspace: " + workspace + "\n" +
 		"- Date: " + time.Now().Format("2006-01-02") + "\n")
 
-	if ctx := projectContext(workspace); ctx != "" {
-		b.WriteString("\nProject context (from the workspace's context file):\n" + ctx + "\n")
+	if ctx := projectContext(workspace, read); ctx != "" {
+		b.WriteString("\nProject context (hierarchy: user → repo root → workspace):\n" + ctx + "\n")
 	}
 
 	b.WriteString(`
@@ -102,16 +117,139 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
-// projectContext loads the first context file present in the workspace.
-func projectContext(workspace string) string {
-	for _, name := range contextFiles {
-		data, err := readFileLimited(joinPath(workspace, name), contextCapBytes)
-		if err != nil || len(data) == 0 {
-			continue
-		}
-		return string(data)
+// projectContext collects the context hierarchy（ZCode context-hierarchy
+// 的落地）：全局用户文件（~/.zgo/ZGO.md）+ 自工作区向上到 git 顶（含）
+// 每层第一个命中的上下文文件，浅→深拼接（一般→具体）；总量封顶
+// contextCapBytes，超限截断并说明。read 非 nil（远程）只读根层。
+func projectContext(workspace string, read func(name string) ([]byte, error)) string {
+	var parts []string
+	if g := globalContext(); g != "" {
+		parts = append(parts, "--- user (~/.zgo/ZGO.md) ---\n"+g)
 	}
-	return ""
+	for _, dir := range dirChain(workspace, read) {
+		for _, name := range contextFiles {
+			data := readContextFile(dir, name, read)
+			if len(data) == 0 {
+				continue
+			}
+			parts = append(parts, "--- "+dirLabel(workspace, dir)+" ---\n"+string(data))
+			break
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	joined := strings.Join(parts, "\n\n")
+	if len(joined) > contextCapBytes {
+		joined = truncateRunes(joined, contextCapBytes) + "\n…(context capped at 8KB)"
+	}
+	return joined
+}
+
+// dirChain lists the up-walk chain, shallow → deep（一般 → 具体）：read
+// 非 nil（远程）只含工作区根；本地自工作区向上到 git 顶（含）。git 顶
+// 必须是工作区的真祖先——HOME 自身是 git 仓库的机器上 show-toplevel 会
+// 给出毫不相关的顶，此时退回单层（issue #98 的教训：仓库判定必须
+// show-toplevel 严格归属）。
+func dirChain(workspace string, read func(name string) ([]byte, error)) []string {
+	if read != nil {
+		return []string{workspace}
+	}
+	top := gitToplevel(workspace)
+	if top == "" || !isAncestor(top, workspace) {
+		return []string{workspace}
+	}
+	var deep []string
+	for dir := workspace; len(deep) < contextMaxDepth; dir = filepath.Dir(dir) {
+		deep = append(deep, dir)
+		if filepath.Clean(dir) == filepath.Clean(top) {
+			break
+		}
+	}
+	for i, j := 0, len(deep)-1; i < j; i, j = i+1, j-1 {
+		deep[i], deep[j] = deep[j], deep[i]
+	}
+	return deep
+}
+
+func gitToplevel(workspace string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	out, err := runGit(ctx, workspace, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// isAncestor reports whether base is dir itself or an ancestor of it.
+func isAncestor(base, dir string) bool {
+	base = filepath.Clean(base)
+	dir = filepath.Clean(dir)
+	if base == dir {
+		return true
+	}
+	return strings.HasPrefix(dir, base+string(filepath.Separator))
+}
+
+func dirLabel(workspace, dir string) string {
+	if filepath.Clean(dir) == filepath.Clean(workspace) {
+		return "workspace"
+	}
+	return "parent: " + filepath.Base(dir)
+}
+
+func readContextFile(dir, name string, read func(string) ([]byte, error)) []byte {
+	if read != nil {
+		data, err := read(name)
+		if err != nil || len(data) == 0 {
+			return nil
+		}
+		if len(data) > contextCapBytes {
+			data = []byte(truncateRunes(string(data), contextCapBytes))
+		}
+		return data
+	}
+	data, err := readFileLimited(joinPath(dir, name), contextCapBytes)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	return data
+}
+
+// globalHome is the user-level context directory（测试桩缝）.
+var globalHome = func() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".zgo")
+}
+
+// globalContext reads ~/.zgo/ZGO.md（用户全局上下文，对所有工作区——
+// 含远程——生效）。
+func globalContext() string {
+	dir := globalHome()
+	if dir == "" {
+		return ""
+	}
+	data, err := readFileLimited(joinPath(dir, "ZGO.md"), contextCapBytes)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	return string(data)
+}
+
+// truncateRunes cuts s to at most limit bytes without splitting a rune.
+func truncateRunes(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 func itoa(n int) string {

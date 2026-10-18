@@ -165,6 +165,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    换后表面重置视图并回放目标会话转录（TUI 登记导航锚点，/new 空会话
    天然 no-op），todo/任务注册表随会话隔离；未知名/无历史/重复切换各
    有明确提示。
+**层级项目上下文**（ZCode context-hierarchy）：~/.zgo/ZGO.md 用户全局
+   + 自工作区向上到 git 顶（真祖先才回溯——HOME 即仓库的机器上退单层）
+   每层第一个命中的上下文文件（ZGO/AGENTS/CLAUDE），浅→深拼接、8KB
+   rune 安全封顶；远程工作区经 RemoteFS 根相对读根层（修复远程会话静
+   疑丢失项目上下文）；上下文入稳定缓存前缀。Wiring.System 携带
+   sessionID 以解析会话工作区。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

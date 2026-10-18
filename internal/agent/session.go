@@ -61,7 +61,7 @@ type Session struct {
 	thinking   func() ai.ThinkingLevel
 	hooks      Hooks
 	buildTools func(workspace, sessionID string) []Tool
-	system     func(workspace string) string
+	system     func(workspace, sessionID string) string
 	ask        func(AskRequest) AskResponse
 }
 
@@ -178,7 +178,7 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 	loop := NewLoop(LoopConfig{
 		Provider:  s.provider(),
 		Model:     s.model(),
-		System:    s.system(workspace),
+		System:    s.system(workspace, id),
 		Tools:     s.buildTools(workspace, id),
 		MaxTokens: modelInfo.MaxOutput,
 		MaxTurns:  DefaultMaxTurns,
@@ -768,8 +768,10 @@ type Wiring struct {
 	Model    func() string
 	// Tools builds a session's tool set; sessionID lets stateful tools
 	// (todo) keep their state across turns.
-	Tools  func(workspace, sessionID string) []Tool
-	System func(workspace string) string
+	Tools func(workspace, sessionID string) []Tool
+	// System builds the session's system prompt; sessionID lets the
+	// service resolve the session's workspace（远程上下文读取器）。
+	System func(workspace, sessionID string) string
 	// Ask resolves permission asks with the user; nil denials stay safe.
 	Ask func(AskRequest) AskResponse
 	// Thinking returns the session's reasoning effort ("off" default).
@@ -841,7 +843,7 @@ func (m *Manager) wire(s *Session) {
 	}
 	s.system = m.wiring.System
 	if s.system == nil {
-		s.system = func(string) string { return "" }
+		s.system = func(string, string) string { return "" }
 	}
 	s.ask = m.wiring.Ask
 	if s.permissions == nil {
