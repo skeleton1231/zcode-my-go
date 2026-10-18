@@ -72,16 +72,14 @@ func agentBrief(s string) string {
 	return s
 }
 
-// refreshAgents 拉快照并回主线程（有变化才重画）。id 由调用方给——
-// 轮询 goroutine 不得直接读 a.activeID（与主线程切会话的写竞争，CI
-// -race 在 TestSearchResetsOnSessionSwitch 逮到过）。
+// refreshAgents 拉快照（主线程调用——open/回合收尾的 update 回调内，
+// 不得再经 a.update：a.mu 非重入，update 内嵌 update 自死锁——CI 上
+// TestCrossSearchModalFlow 挂 15 分钟即此）。持锁直改。
 func (a *App) refreshAgents() {
-	a.refreshAgentsOf(a.activeID) // 主线程调用（回合收尾/开会的 update 内）
-}
-
-func (a *App) refreshAgentsOf(id string) {
-	views := a.svc.AgentJobStates(id)
-	a.update(func() { a.agents = views })
+	// 直接赋值：调用方已在主线程的锁上下文里（open/回合收尾的 update
+	// 回调内）——再经 locked 会自死锁（帧内的 View 渲染与点击处理同
+	// 持 a.mu）。跨 goroutine 写者只有轮询，它走 update。
+	a.agents = a.svc.AgentJobStates(a.activeID)
 }
 
 // watchAgents 运行期间轮询快照（每秒）；清单清空即退出。已在watching
