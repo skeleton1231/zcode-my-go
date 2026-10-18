@@ -9,7 +9,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
-// TestBugreport 生成自包含报告（spec 规则 59）：结构齐备、脱敏断言
+// TestBugreport 生成自包含报告（spec 规则 60）：结构齐备、脱敏断言
 // （API key 值/Hint 不落盘）、指定路径写入。
 func TestBugreport(t *testing.T) {
 	dataDir := t.TempDir()

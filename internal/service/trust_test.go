@@ -82,7 +82,7 @@ func runBashTurn(t *testing.T, svc *AgentService, id string) {
 	}
 }
 
-// TestUntrustedWorkspaceRulesNotLoaded 安全主断言（spec 规则 53）：未授
+// TestUntrustedWorkspaceRulesNotLoaded 安全主断言（spec 规则 54）：未授
 // 信工作区自带的 allow 规则不生效——非只读 bash 仍走权限询问；授信后
 // 规则放行（不再询问）。
 func TestUntrustedWorkspaceRulesNotLoaded(t *testing.T) {

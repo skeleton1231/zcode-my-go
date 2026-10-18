@@ -59,7 +59,7 @@ func TestJobWrappersRoundTrip(t *testing.T) {
 	}
 }
 
-// TestScheduleRunnerUsesJobModel 任务级模型（spec 规则 60）：scheduleRunner
+// TestScheduleRunnerUsesJobModel 任务级模型（spec 规则 61）：scheduleRunner
 // 对 job.Model 非空的任务把会话模型覆盖为任务模型——脚本 provider 捕获
 // 请求的 Model 字段断言；空模型不动全局。
 func TestScheduleRunnerUsesJobModel(t *testing.T) {
