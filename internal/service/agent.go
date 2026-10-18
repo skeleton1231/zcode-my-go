@@ -1128,6 +1128,52 @@ func (s *AgentService) SessionUsage(id string) (ai.Usage, error) {
 	return sess.UsageTotal(), nil
 }
 
+// UsageSummary is the /usage surface's data（spec 规则 25）.
+type UsageSummary struct {
+	SessionID string
+	Title     string
+	Usage     ai.Usage
+	Turns     int // 用户回合数
+}
+
+// UsageSummaryOf collects a session's usage accounting for display.
+func (s *AgentService) UsageSummaryOf(id string) (UsageSummary, error) {
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return UsageSummary{}, fmt.Errorf("no session %s", id)
+	}
+	info := sess.Info()
+	return UsageSummary{
+		SessionID: info.ID,
+		Title:     info.Title,
+		Usage:     sess.UsageTotal(),
+		Turns:     userTurnCount(sess.Messages()),
+	}, nil
+}
+
+// FormatUsage renders a summary as the shared display block（/usage 与
+// zgo usage 同一张表）.
+func FormatUsage(u UsageSummary) string {
+	hit := ""
+	total := u.Usage.InputTokens + u.Usage.CacheReadTokens
+	if total > 0 {
+		pct := u.Usage.CacheReadTokens * 100 / total
+		hit = fmt.Sprintf("（前缀缓存命中 %d%%）", pct)
+	}
+	return fmt.Sprintf("会话 %s · %s\n回合 %d\n↑ 输入      %d tokens\n↓ 输出      %d tokens\n⤒ 缓存读    %d tokens %s\n⤓ 缓存写    %d tokens",
+		shortIDOf(u.SessionID), u.Title, u.Turns,
+		u.Usage.InputTokens, u.Usage.OutputTokens,
+		u.Usage.CacheReadTokens, hit, u.Usage.CacheWriteTokens)
+}
+
+// shortIDOf keeps the formatter self-contained（cmd 包另有同名助手）.
+func shortIDOf(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
 // PlanModeState reports a session's plan mode.
 func (s *AgentService) PlanModeState(id string) bool {
 	sess, ok := s.mgr.Get(id)

@@ -117,6 +117,11 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    话）；preCompact 在压缩前同步触发，非零退出阻止压缩并把 stderr 原
    因回给用户。payload 含 sessionId/workspace/title（压缩另含 messages/
    trigger）。
+25. 用量可见性（ZCode usage 面的非 UI 面）：/usage 终端命令与
+   `zgo usage [前缀]`（无参 = 最近会话）展示会话累计 token——输入/输
+   出/缓存读/缓存写（缓存读说明前缀缓存命中）与用户回合数，取自会话
+   持久化的 usage 记账；未产生用量时明确展示零值而非空。桌面状态栏
+   等呈现面按需承接，同一数据源。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

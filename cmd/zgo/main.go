@@ -105,6 +105,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "sessions" {
 		os.Exit(runSessions(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "usage" {
+		os.Exit(runUsage(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "memory" {
 		os.Exit(runMemory(os.Args[2:]))
 	}

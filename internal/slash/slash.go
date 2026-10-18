@@ -154,6 +154,17 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/usage", usage: "/usage",
+		help: "本会话的 token 用量（输入/输出/缓存）",
+		run: func(env *Env, _ string) string {
+			u, err := env.Svc.UsageSummaryOf(env.SessionID())
+			if err != nil {
+				return "[用量失败] " + err.Error()
+			}
+			return "[用量]\n" + service.FormatUsage(u)
+		},
+	},
+	{
 		name: "/export", usage: "/export [md] [路径]",
 		help: "导出当前会话（默认 HTML；md 为 Markdown）",
 		run: func(env *Env, args string) string {
