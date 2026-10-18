@@ -116,20 +116,23 @@ func TestExchangeAndRefresh(t *testing.T) {
 // the "browser" is the test itself calling back with the right state.
 func TestLoginFullFlow(t *testing.T) {
 	srv, _ := fakeTokenServer(t)
-	var link string
+	// link 经 channel 交接（裸变量被 openURL goroutine 写、主测试读——
+	// -race 在 CI 上逮过）。
+	linkCh := make(chan string, 1)
 	got := make(chan Token, 1)
 	go func() {
 		tok, err := LoginOnPort(context.Background(), 0, func(u string) {
-			link = u
+			linkCh <- u
 		}, srv.URL)
 		if err == nil {
 			got <- tok
 		}
 	}()
 	// 等 openURL 拿到链接（回调服务器已就绪）。
-	deadline := time.Now().Add(3 * time.Second)
-	for link == "" && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+	var link string
+	select {
+	case link = <-linkCh:
+	case <-time.After(3 * time.Second):
 	}
 	if link == "" {
 		t.Fatal("no authorize link produced")

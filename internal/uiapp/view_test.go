@@ -16,11 +16,14 @@ import (
 )
 
 // waitIdle waits for the run Send started to end; the tester serializes
-// frames, so this only works without a window attached.
+// frames, so this only works without a window attached——状态经 a.locked
+// 读（Send goroutine 在 update 里写，裸读与之竞态，-race 逮过）。
 func waitIdle(t *testing.T, a *App) {
 	t.Helper()
 	for range 500 {
-		if !a.sending && !a.chat.running {
+		idle := false
+		a.locked(func() { idle = !a.sending && !a.chat.running })
+		if idle {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -52,7 +55,7 @@ func TestViewSmoke(t *testing.T) {
 		t.Fatalf("empty-state text missing: %q", tt.Texts())
 	}
 
-	a.input = "hello"
+	a.locked(func() { a.input = "hello" })
 	tt.Frame()
 	if err := tt.Click("发送"); err != nil {
 		t.Fatalf("clicking send: %v", err)
@@ -88,24 +91,31 @@ func TestSettingsModal(t *testing.T) {
 		t.Fatalf("settings fields missing: %q", tt.Texts())
 	}
 
-	a.setAPI = 0
-	a.setModel = "glm-5.2"
-	a.setBaseURL = "https://open.bigmodel.cn/api/anthropic"
+	a.locked(func() {
+		a.setAPI = 0
+		a.setModel = "glm-5.2"
+		a.setBaseURL = "https://open.bigmodel.cn/api/anthropic"
+	})
 	if err := tt.Click("保存"); err != nil {
 		t.Fatalf("clicking save: %v", err)
 	}
 	for range 500 {
-		if !a.saving {
+		idle := false
+		a.locked(func() { idle = !a.sending && !a.saving }) // saveSettings goroutine 在 update 里写
+		if idle {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	tt.Frame()
 
-	if a.settings == nil || a.settings.Model != "glm-5.2" || a.settings.HasAPIKey {
-		t.Fatalf("settings after save: %+v", a.settings)
+	var st *service.SettingsView
+	var open bool
+	a.locked(func() { st = a.settings; open = a.settingsOpen })
+	if st == nil || st.Model != "glm-5.2" || st.HasAPIKey {
+		t.Fatalf("settings after save: %+v", st)
 	}
-	if a.settingsOpen {
+	if open {
 		t.Fatal("modal still open after save")
 	}
 	if !tt.HasText("glm-5.2") {
@@ -131,7 +141,9 @@ func TestAskModalRoundTrip(t *testing.T) {
 	}()
 	// 等待 modal 打开后点击允许。
 	for range 200 {
-		if a.askOpen {
+		open := false
+		a.locked(func() { open = a.askOpen }) // goroutine 在 update 里写，持锁读
+		if open {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -171,7 +183,9 @@ func TestQuestionModalRoundTrip(t *testing.T) {
 		res <- answer
 	}()
 	for range 200 {
-		if a.qOpen {
+		open := false
+		a.locked(func() { open = a.qOpen })
+		if open {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -451,7 +465,7 @@ func TestComposerSlashCommands(t *testing.T) {
 	a.Init()
 	info, _ := svc.NewSession(t.TempDir())
 	a.OpenSession(info.ID)
-	a.input = "/status"
+	a.locked(func() { a.input = "/status" })
 	a.Send()
 	tt.Frame()
 	// Send 里命令反馈即时入 notice。
@@ -484,19 +498,19 @@ func TestSlashHintsPanel(t *testing.T) {
 	tt.Frame()
 
 	// 普通输入不弹。
-	a.input = "普通问题"
+	a.locked(func() { a.input = "普通问题" })
 	tt.Frame()
 	if tt.HasText("列出全部命令") {
 		t.Fatal("hints on plain input")
 	}
 
 	// "/" 弹出全部；"/mo" 过滤到 /model。
-	a.input = "/"
+	a.locked(func() { a.input = "/" })
 	tt.Frame()
 	if !tt.HasText("/help") || !tt.HasText("/compact") {
 		t.Fatalf("full hints = %q", tt.Texts())
 	}
-	a.input = "/mo"
+	a.locked(func() { a.input = "/mo" })
 	tt.Frame()
 	if !tt.HasText("/model") {
 		t.Fatalf("filtered hints missing /model: %q", tt.Texts())

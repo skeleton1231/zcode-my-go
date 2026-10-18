@@ -31,6 +31,7 @@ type Server struct {
 	nextID    int64
 	tools     []ToolDef
 	prompts   []PromptDef
+	resources []ResourceDef
 }
 
 // ToolDef is a tool an MCP server advertises.
@@ -147,6 +148,15 @@ func Start(ctx context.Context, name string, cfg Config) (*Server, error) {
 	if err := s.call(ctx, "prompts/list", map[string]any{}, &plist); err == nil {
 		s.mu.Lock()
 		s.prompts = plist.Prompts
+		s.mu.Unlock()
+	}
+	// resources 同为可选能力（spec 规则 31）。
+	var rlist struct {
+		Resources []ResourceDef `json:"resources"`
+	}
+	if err := s.call(ctx, "resources/list", map[string]any{}, &rlist); err == nil {
+		s.mu.Lock()
+		s.resources = rlist.Resources
 		s.mu.Unlock()
 	}
 	return s, nil
@@ -406,4 +416,51 @@ func (s *Server) GetPrompt(ctx context.Context, name string, args map[string]str
 		return PromptResult{}, err
 	}
 	return res, nil
+}
+
+// --- resources -------------------------------------------------------------
+
+// ResourceDef is one advertised resource（resources/list）.
+type ResourceDef struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MimeType    string `json:"mimeType"`
+}
+
+// ResourceContent is the resources/read payload（text 块可读；blob 类
+// 资源 base64，超出本面范围）.
+type ResourceContent struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType"`
+	Text     string `json:"text"`
+}
+
+// Resources returns the server's advertised resources（握手时探测；未
+// 声明能力或出错的服务器为空——能力可选）.
+func (s *Server) Resources() []ResourceDef {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resources
+}
+
+// ReadResource reads one resource's text content（resources/read）.
+func (s *Server) ReadResource(ctx context.Context, uri string) (ResourceContent, error) {
+	var res struct {
+		Contents []ResourceContent `json:"contents"`
+	}
+	if err := s.call(ctx, "resources/read", map[string]any{
+		"uri": uri,
+	}, &res); err != nil {
+		return ResourceContent{}, err
+	}
+	for _, c := range res.Contents {
+		if c.URI == uri {
+			return c, nil
+		}
+	}
+	if len(res.Contents) > 0 {
+		return res.Contents[0], nil
+	}
+	return ResourceContent{}, fmt.Errorf("resource %s returned no contents", uri)
 }

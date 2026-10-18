@@ -10,6 +10,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/terminal"
@@ -117,6 +118,11 @@ type App struct {
 	setModel       string
 	saving         bool
 	settingsError  string
+
+	// mu 序列化测试形态的状态访问：无窗口时 update 直接执行 fn，与
+	// Tester 的 View 帧和断言并发（-race 在 CI 上逮过 chat goroutine
+	// 写、视图帧读的竞态）。有窗口时状态只在主线程，锁无竞争。
+	mu sync.Mutex
 }
 
 // New builds the app over the service.
@@ -152,12 +158,24 @@ func (a *App) refreshSessions() {
 }
 
 // update applies fn on the main thread when a window is attached, and
-// directly in tests, where no window exists and the caller serializes.
+// directly in tests under mu — no window means no main thread, and the
+// agent goroutine's writes must not race the Tester's View frames
+//（-race 在 CI 上逮过；View 同锁配对）.
 func (a *App) update(fn func()) {
 	if a.win != nil {
 		a.win.Update(fn)
 		return
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	fn()
+}
+
+// locked runs fn under the test-mode lock（View 帧与测试断言用；有窗口
+// 时调用方本就在主线程，锁无竞争）.
+func (a *App) locked(fn func()) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	fn()
 }
 

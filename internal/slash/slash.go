@@ -11,6 +11,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -422,11 +423,13 @@ func Match(query string) []Command {
 	return out
 }
 
-// mcpList renders every server's prompts（spec 规则 28）.
+// mcpList renders every server's prompts and resources（spec 规则
+// 28/31：提示词按 server.prompt 执行，资源按 @server:uri 读取）.
 func mcpList(env *Env) string {
 	entries := env.Svc.MCPPrompts()
-	if len(entries) == 0 {
-		return "[mcp] 没有可用的提示词（服务器未声明或未运行）"
+	resources := env.Svc.MCPResources()
+	if len(entries) == 0 && len(resources) == 0 {
+		return "[mcp] 没有可用的提示词或资源（服务器未声明或未运行）"
 	}
 	var b strings.Builder
 	b.WriteString("[mcp] 可用提示词：\n")
@@ -448,12 +451,25 @@ func mcpList(env *Env) string {
 		}
 		b.WriteString("  " + line + "\n")
 	}
+	if len(resources) > 0 {
+		b.WriteString("\n[mcp] 可用资源（@server:uri 读取）：\n")
+		for _, e := range resources {
+			line := "  @" + e.Server + ":" + e.Resource.URI
+			if e.Resource.Description != "" {
+				line += " — " + e.Resource.Description
+			}
+			b.WriteString(line + "\n")
+		}
+	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // mcpRun expands and sends one prompt: /mcp server.prompt k=v…
 func mcpRun(env *Env, args string) string {
 	target, rest, _ := strings.Cut(args, " ")
+	if strings.HasPrefix(target, "@") {
+		return mcpReadResource(env, strings.TrimPrefix(target, "@"))
+	}
 	server, prompt, found := strings.Cut(target, ".")
 	if !found || server == "" || prompt == "" {
 		return "[用法] /mcp <server>.<prompt> [k=v…]（/mcp 查看全部）"
@@ -485,4 +501,31 @@ func rerunTurn(env *Env, text string) string {
 		return "[重跑失败] " + err.Error()
 	}
 	return "[重跑] 已撤最后一轮并重发"
+}
+
+// mcpReadResource reads one resource and sends it as a message（spec
+// 规则 31）：@server:uri → resources/read，文本以「资源 <uri>：」围
+// 栏并入直接发送；非文本给可读报错。
+func mcpReadResource(env *Env, target string) string {
+	server, uri, found := strings.Cut(target, ":")
+	if !found || server == "" || uri == "" {
+		return "[用法] /mcp @<server>:<uri>（/mcp 查看全部）"
+	}
+	text, err := env.Svc.MCPReadResource(server, uri)
+	if err != nil {
+		return "[mcp 失败] " + err.Error() + "\n" + mcpList(env)
+	}
+	if env.Send == nil {
+		return "[mcp 不支持] 此表面不能直接发送，资源内容：\n" + text
+	}
+	env.Send(wrapResource(uri, text))
+	return "[mcp] 已发送资源 " + uri
+}
+
+// wrapResource 把资源文本并入可发送消息：「资源 <uri>：」+ 动态围栏
+//（issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
+// @ 引用同一 FenceFor 方案）。
+func wrapResource(uri, text string) string {
+	fence := export.FenceFor(text)
+	return "资源 " + uri + "：\n" + fence + "\n" + text + "\n" + fence
 }
