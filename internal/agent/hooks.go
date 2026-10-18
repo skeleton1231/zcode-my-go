@@ -48,4 +48,20 @@ type AfterToolCallResult struct {
 type Hooks struct {
 	BeforeToolCall func(BeforeToolCallContext) BeforeToolCallResult
 	AfterToolCall  func(AfterToolCallContext) AfterToolCallResult
+	// Stop 在回合自然收尾处询问（spec 规则 68）：Blocked 强制模型继续
+	// 工作（原因进转录）；nil 即无钩子，收尾不受阻。
+	Stop func(StopContext) StopResult
+}
+
+// StopContext describes the natural turn end as the stop hook sees it.
+type StopContext struct {
+	SessionID string
+	Workspace string
+	LastText  string // 本次运行最后一条 assistant 文本
+}
+
+// StopResult shapes the end: Blocked forces one more turn with Reason.
+type StopResult struct {
+	Blocked bool
+	Reason  string
 }

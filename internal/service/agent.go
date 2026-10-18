@@ -878,6 +878,15 @@ func (s *AgentService) SetAsker(ask func(agent.AskRequest) agent.AskResponse) {
 	// 应答 channel。per-Loop 的 askMu 只覆盖单次运行，这里在 asker
 	// 装配处把串行化上移到与单槽同层级。
 	s.ask = func(req agent.AskRequest) agent.AskResponse {
+		// notification 钩子（spec 规则 68）：即将阻塞等待用户——headless/
+		// TUI 接系统通知的挂点；观察者语义，失败只记日志。
+		s.mu.Lock()
+		notify := s.settings.Hooks.Notification
+		s.mu.Unlock()
+		agent.NotificationHooks(notify, map[string]any{
+			"event": "notification", "sessionId": req.SessionID,
+			"workspace": req.Workspace, "tool": req.Tool, "reason": req.Reason,
+		})
 		s.askMu.Lock()
 		defer s.askMu.Unlock()
 		return ask(req)
