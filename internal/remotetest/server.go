@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/pkg/sftp"
 	ssh "golang.org/x/crypto/ssh"
@@ -176,6 +175,10 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 					ssh.Marshal(struct{ Status uint32 }{uint32(127)}))
 				return
 			}
+			// 整树进 kill-on-close 的 Job Object（Windows）：关句柄即
+			// 全树同步死亡——cmd.Wait 只等直接子进程，孙进程的死亡
+			// 时序不能靠 taskkill 的异步宽限（负载下真实竞态过）。
+			tree, _ := attachTreeJob(cmd)
 			done := make(chan error, 1)
 			go func() { done <- cmd.Wait() }()
 			disconnected := make(chan struct{})
@@ -186,6 +189,9 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 			}()
 			select {
 			case err := <-done:
+				if tree != nil {
+					tree.kill() // 命令已退：收拾漏网的孙进程
+				}
 				code := 0
 				if err != nil {
 					code = exitCodeOf(err)
@@ -194,12 +200,12 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 					ssh.Marshal(struct{ Status uint32 }{uint32(code)}))
 				return
 			case <-disconnected:
-				killProcessTree(cmd.Process)
+				if tree != nil {
+					tree.kill()
+				} else {
+					killProcessTree(cmd.Process)
+				}
 				<-done
-				// cmd.Wait 只等 cmd.exe；孙进程（taskkill /T 异步击杀的
-				// ping 等）可能还占着服务器临时目录几个毫秒——留出宽
-				// 限再关通道，客户端测试清理不再撞文件占用。
-				time.Sleep(100 * time.Millisecond)
 				return
 			}
 		case "pty-req":
