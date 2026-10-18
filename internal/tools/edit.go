@@ -102,8 +102,10 @@ func (e *Edit) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	if err := os.WriteFile(abs, []byte(updated), 0o644); err != nil {
 		return errResult("writing %s: %v", a.Path, err)
 	}
+	// 本地路径且 gopls 在位时回灌即时诊断（spec 规则 67）——一行编译
+	// 错胜过下一轮 bash 编译自纠。
 	return agent.ToolResult{Content: fmt.Sprintf("replaced %d occurrence(s) in %s\n%s",
-		count, a.Path, snippet(updated, a.NewString)),
+		count, a.Path, snippet(updated, a.NewString)) + diagTail(ctx, e.ws.Root, abs),
 		Diff: textdiff.Unified(data, []byte(updated))}
 }
 

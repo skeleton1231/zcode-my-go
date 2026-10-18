@@ -83,6 +83,7 @@ internal/checkpoint  工作区检查点与回滚（git 临时索引快照 + read
 internal/schedule    定时自动化（cron 解析/任务存储/分钟调度器，zgo cron）
 internal/skills      技能发现与加载（SKILL.md frontmatter、两层根、按名加载）
 internal/clipimg    剪贴板位图读取（PNG 注册格式优先，DIB→PNG；贴图入口）
+internal/lsp        gopls 集成（definition/references/diagnostics 三工具 + edit 诊断回灌）
 internal/workflow    工作流定义与运行记录持久化（saveAs/run/resume）
 internal/mcp          MCP 客户端（stdio JSON-RPC）
 internal/webfetch    webfetch 工具（URL 归一、SSRF egress 守卫、重定向策略、文本抽取、缓存）
