@@ -487,7 +487,7 @@ func (a *App) Send() {
 			a.refreshSessions()
 			a.RefreshPlan()
 			a.RefreshBudget() // 运行结束即刷新：否则仪表停在运行前的旧值
-			a.refreshAgents() // 后台代理状态条（spec 规则 61）：回合可能刚 spawn
+			a.refreshAgents() // 后台代理状态条（spec 规则 62）：回合可能刚 spawn
 			a.watchAgents()
 		})
 	}()
