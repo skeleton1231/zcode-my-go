@@ -434,3 +434,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **eval 深化：安全回归网 + CI 门禁**：场景 Trusted:false 模拟未授信工
    作区——trust-gate/trust-granted 双向断言信任门（回归即红）；
    edit-roundtrip、glob-find 场景；CI 增 `zgo eval evals` 门禁步骤。
+
+**grep 远程并发**（性能路线第一条，spec 规则 64）：ssh:// 的 grep 逐文
+   件拉取改 8 路并发（RTT 并行化：16×50ms 顺序 800ms→~200ms）；归并
+   语义与顺序版一致。本地保持顺序+早停——实测 Windows+Defender 下
+   文件打开被杀软串行化，并发零收益；稠密命中的早停才是本地大 win。
