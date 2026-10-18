@@ -404,8 +404,11 @@ func chProviderTurn(t *testing.T, env *Env, prompt string) string {
 	env.Svc.UseProviderForTesting(func() ai.Provider { return chP{ch} })
 	defer env.Svc.UseProviderForTesting(nil)
 	var lines []string
+	var lmu sync.Mutex // emit 可来自并行工具/收尾 goroutine——裸追加竞态（-race 逮过）
 	if err := env.Svc.Chat(env.SessionID(), prompt, func(ev agent.Event) {
+		lmu.Lock()
 		lines = append(lines, string(ev.Kind))
+		lmu.Unlock()
 	}); err != nil {
 		t.Fatal(err)
 	}

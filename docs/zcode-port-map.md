@@ -298,3 +298,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    面渲染（TUI 黄显 [预算]、REPL/print stderr、桌面 notice 项）；/perms
    列出本会话累计的总是允许规则（工具+参数模式，随会话消散）——
    SessionPermissionRules 服务面。
+**zgo config CLI**（终端的设置面，spec 规则 37）：list 全量（apiKey 只
+   显 Hint 永不回显）/get 单值/set 各键（api、thinking 同 SaveSettings
+   校验拒绝非法值；budgetDailyTokens 非负；写盘热生效）；SetAPIKey 直
+   写不经 SaveSettings（后者对 model 无条件覆盖，组合写会互相抹）。
+
