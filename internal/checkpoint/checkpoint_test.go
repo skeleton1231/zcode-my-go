@@ -238,7 +238,7 @@ func TestRemoveAllDropsEveryRef(t *testing.T) {
 
 // TestCaptureRestoreViaShortPath: 工作区以 8.3 短名形态传入（CI runner
 // 的 TMP 即 RUNNER~1 形态）时，git toplevel 的长形态对比不得误判非仓库
-//（winpath.Long 归一——CI 首跑 windows 上检查点全军覆没的根因）。
+// （winpath.Long 归一——CI 首跑 windows 上检查点全军覆没的根因）。
 func TestCaptureRestoreViaShortPath(t *testing.T) {
 	short, ok := shortPathOf(t, gitRepo(t))
 	if !ok {

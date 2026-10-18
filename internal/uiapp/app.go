@@ -160,7 +160,7 @@ func (a *App) refreshSessions() {
 // update applies fn on the main thread when a window is attached, and
 // directly in tests under mu — no window means no main thread, and the
 // agent goroutine's writes must not race the Tester's View frames
-//（-race 在 CI 上逮过；View 同锁配对）.
+// （-race 在 CI 上逮过；View 同锁配对）.
 func (a *App) update(fn func()) {
 	if a.win != nil {
 		a.win.Update(fn)

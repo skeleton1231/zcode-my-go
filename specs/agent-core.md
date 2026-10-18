@@ -330,6 +330,8 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
+   （规则 50/51 由 pending 的后台子代理 PR 预留。）
+
 50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
    `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
    合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
@@ -350,7 +352,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
    有一个生效）。
 
-   （规则 52 由 pending 的 read PDF PR 预留。）
+52. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
+   本层抽取——词法级 stream 段收集 + FlateDecode 解压 + Tj/TJ/'/" 文
+   本算子（Td/TD/T* 换行启发），字面串（转义/八进制/嵌套括号）与十六
+   进制串（UTF-16BE BOM 检测）解码。有界：单流 16MB、产出 256KB rune
+   截断标注。**可读率闸门**：产出可打印字符占比 <85% 即报错（CID 编
+   码无 ToUnicode 的中文 PDF 常见）——宁报错并建议 bash 转换，不静默
+   产乱码；无文本层（扫描件/图片型）同样报错。SSH 工作区经网线读字
+   节同构。
 
 53. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
    本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来

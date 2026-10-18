@@ -290,20 +290,8 @@ func (s *AgentService) rewire() {
 				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
 				tools.NewWebFetchTool(tools.WebFetcher),
-<<<<<<< HEAD
-				// 后台子代理三件套（spec 规则 50）。
-				tools.NewAgentTool(state.Agents, func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
-					return agent.RunSubtask(ctx, agent.SubtaskConfig{
-						Provider: provider(),
-						Model:    model,
-						System:   agent.SubtaskSystem(),
-						Tools:    roTools,
-					}, prompt)
-				}),
-=======
 				// 后台子代理三件套 + 续话（spec 规则 50/51）。
 				tools.NewAgentTool(state.Agents, agentRunner),
->>>>>>> origin/feat/agent-send
 				tools.NewAgentOutputTool(state.Agents),
 				tools.NewAgentStopTool(state.Agents),
 				tools.NewAgentSendTool(state.Agents, agentRunner))
