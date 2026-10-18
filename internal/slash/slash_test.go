@@ -2,6 +2,9 @@ package slash
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -418,3 +421,56 @@ func chProviderTurn(t *testing.T, env *Env, prompt string) string {
 type chP struct{ ch <-chan ai.StreamEvent }
 
 func (p chP) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent { return p.ch }
+
+// TestCustomCommands 验证自定义命令（spec 规则 39）：工作区与全局加载、
+// 同名工作区覆盖、$ARGUMENTS 替换、builtin 不被遮蔽、/help 列出。
+func TestCustomCommands(t *testing.T) {
+	dir := t.TempDir()
+	ws := t.TempDir()
+	cmdDir := filepath.Join(ws, ".zgo", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdDir, "deploy.md"),
+		[]byte("部署 $ARGUMENTS 到测试环境"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings := fmt.Sprintf(`{"model":"m"}`)
+	_ = settings
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := service.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	cmds := svc.CustomCommands(ws)
+	if len(cmds) != 1 || cmds[0].Name != "deploy" {
+		t.Fatalf("cmds = %+v", cmds)
+	}
+
+	env, _ := newEnv(t)
+	env.Workspace = func() string { return ws }
+	var sent string
+	env.Send = func(text string) { sent = text }
+
+	// $ARGUMENTS 替换后发送。
+	Run(env, "/deploy --canary")
+	if sent != "部署 --canary 到测试环境" {
+		t.Fatalf("sent = %q", sent)
+	}
+
+	// builtin 优先：/new 仍是内置。
+	out := captureOutSlash(t, env, "/new")
+	if !strings.Contains(out, "新建") {
+		t.Fatalf("builtin shadowed: %q", out)
+	}
+
+	// /help 列出自定义段。
+	out = captureOutSlash(t, env, "/help")
+	if !strings.Contains(out, "自定义命令") || !strings.Contains(out, "deploy") {
+		t.Fatalf("help missing custom: %q", out)
+	}
+}

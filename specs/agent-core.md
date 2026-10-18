@@ -45,6 +45,11 @@
    budgetDailyTokens（≥0 整数，0=不限）。写盘即热生效（rewire/syncMCP
    同既有路径）；未知键/缺值可读报错。
 
+39. 自定义斜杠命令（CC custom commands 的落地）：工作区 `.zgo/commands/
+   *.md` 与全局 `~/.zgo/commands/*.md`（同名工作区覆盖全局）；命令名即文
+   件名去扩展，`/名 [参数]` 执行——内容作为提示词发送，`$ARGUMENTS` 占
+   位替换为参数原文；builtin 优先，自定义不遮蔽；/help 列出自定义段；
+   不可发送的表面展示展开文本。SSH 工作区同享（经 path jail 读取）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

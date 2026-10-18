@@ -1484,3 +1484,81 @@ func (s *AgentService) DailyUsageBudget() int {
 	return s.resolve().BudgetDailyTokens
 
 }
+
+// CustomCommand is one user-defined slash command（spec 规则 39）.
+type CustomCommand struct {
+	Name string // 文件名去扩展
+	Text string // 提示词（$ARGUMENTS 待替换）
+}
+
+// customCommandsDir 是命令目录名（工作区内）.
+const customCommandsDir = ".zgo/commands"
+
+// CustomCommands 列出工作区与全局的自定义命令（同名工作区覆盖全局，
+// spec 规则 39）。SSH 工作区经 path jail 读取，同享。
+func (s *AgentService) CustomCommands(workspace string) []CustomCommand {
+	out := map[string]string{}
+	// 全局先入，工作区覆盖。
+	if home, err := os.UserHomeDir(); err == nil {
+		loadCommandsDir(out, filepath.Join(home, ".zgo", "commands"), nil)
+	}
+	ws, _, err := s.openWorkspace(workspace)
+	if err == nil {
+		loadCommandsDir(out, customCommandsDir, &ws)
+	}
+	var names []string
+	for n := range out {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	cmds := make([]CustomCommand, 0, len(names))
+	for _, n := range names {
+		cmds = append(cmds, CustomCommand{Name: n, Text: out[n]})
+	}
+	return cmds
+}
+
+// loadCommandsDir 把目录下的 *.md 收进 out；ws 非空走 path jail（远
+// 程同享），否则本地读。
+func loadCommandsDir(out map[string]string, rel string, ws *tools.Workspace) {
+	var entries []tools.DirEntry
+	if ws != nil {
+		entries, _ = tools.ListIn(*ws, rel)
+	} else if des, err := os.ReadDir(rel); err == nil {
+		for _, de := range des {
+			entries = append(entries, tools.DirEntry{Name: de.Name(), IsDir: de.IsDir()})
+		}
+	}
+	for _, e := range entries {
+		if e.IsDir || !strings.HasSuffix(e.Name, ".md") {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name, ".md")
+		if !validCommandName(name) {
+			continue
+		}
+		var data []byte
+		if ws != nil {
+			data, _ = tools.ReadFileIn(*ws, customCommandsDir+"/"+e.Name)
+		} else {
+			data, _ = os.ReadFile(filepath.Join(rel, e.Name))
+		}
+		if len(data) == 0 {
+			continue
+		}
+		out[name] = string(data)
+	}
+}
+
+// validCommandName：小写字母数字与连字符（与斜杠命令形态一致）。
+func validCommandName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
