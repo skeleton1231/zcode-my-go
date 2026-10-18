@@ -330,7 +330,8 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
-   50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+
+50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
    `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
    合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
    本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop

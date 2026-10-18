@@ -273,12 +273,6 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    态）；blob 类资源可读报错。
 
 
-**E2E 硬化**：并行批次重叠（权限阻塞不拖累自动放行工具）、流中途中止、
-
-   瞬态重试三条全栈场景；harness 新增 ErrorOnce/BlockAfterText 原语。
-
-
-
 **REPL 行编辑器**（终端一等公民，spec 规则 32）：交互终端下 REPL
    输入进 raw 模式行编辑——插入/退格（整 rune）、←/→/Home/End、↑/↓
    历史召回（与 TUI 同语义：折叠/草稿恢复/边界不动）、Ctrl+C 空行退
