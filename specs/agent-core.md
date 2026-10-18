@@ -30,7 +30,9 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    回退类操作（回滚最近一回合 / 编辑重发 / 重试）先把工作区恢复到对应
    回合的检查点（read-tree -u --reset + clean -fd，不移动分支、不改历史；
    ignored 文件永不被清除），再截断转录。非 git 工作区与 SSH 远程工作区
-   降级为仅回退转录，不报错。
+   降级为仅回退转录，不报错；git 仓库中检查点已被保留窗口修剪时**不降
+   级**——报错中止回退（ErrCheckpointPruned 与 ErrNotARepo 两个哨兵分
+   开，issue #152：静默半回退让模型拿旧假设改新文件）。
 10. 多模态输入：用户消息可携带 BlockImage（Media 为 MIME 类型，Data 为
    base64，位于文本块之后），随转录持久化；三家协议各自翻译（Anthropic
    base64 source、OpenAI image_url data-URL、Gemini inlineData），纯文本

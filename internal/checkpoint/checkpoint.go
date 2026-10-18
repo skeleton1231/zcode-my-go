@@ -28,8 +28,11 @@ var (
 	// ErrNotARepo: the directory is not a git repository (or git is
 	// missing) — callers degrade to conversation-only rewind.
 	ErrNotARepo = errors.New("not a git repository")
-	// ErrNoCheckpoint: the session has no checkpoint for that turn.
-	ErrNoCheckpoint = errors.New("no checkpoint for turn")
+	// ErrCheckpointPruned: the repo is real but the turn's checkpoint ref
+	// is gone (retention window or predates checkpointing). 仓库内不可降
+	// 级为仅回退转录（issue #152：与 ErrNotARepo 曾共用哨兵，静默半回
+	// 退让模型拿旧假设改新文件）——调用方必须中止并告知用户。
+	ErrCheckpointPruned = errors.New("checkpoint pruned (outside retention window)")
 )
 
 func refName(session string, seq int) string {
@@ -140,7 +143,7 @@ func Restore(dir, session string, seq int) error {
 	ref := refName(session, seq)
 	verify := exec.Command(git, baseArgs(dir, "rev-parse", "--verify", ref)...)
 	if err := verify.Run(); err != nil {
-		return fmt.Errorf("%w (%s)", ErrNoCheckpoint, ref)
+		return fmt.Errorf("%w (%s)", ErrCheckpointPruned, ref)
 	}
 	if err := run("read-tree", "-u", "--reset", ref); err != nil {
 		return err

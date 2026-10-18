@@ -835,18 +835,23 @@ func (s *AgentService) captureCheckpoint(sess *agent.Session, seq int) {
 	}
 }
 
-// restoreCheckpoint rolls the workspace back to a turn's start. 非仓库与
-// 无检查点按仅回退转录降级（返回 nil）；其余失败原样返回——调用方必须
-// 中止后续的转录回退（issue #110：restore 失败仍回退转录会造出
-// "对话说改没了、文件还在"的分裂态）。
+// restoreCheckpoint rolls the workspace back to a turn's start. 非仓库按
+// 仅回退转录降级（返回 nil）；仓库里检查点被保留窗口修剪则明确报错
+// 中止——调用方不得回退转录（issue #152：静默半回退让模型拿旧假设改
+// 新文件；issue #110 同族：restore 失败必须中止）。
 func (s *AgentService) restoreCheckpoint(sess *agent.Session, seq int) error {
 	info := sess.Info()
 	if strings.HasPrefix(info.Workspace, "ssh://") {
 		return nil
 	}
-	if err := checkpoint.Restore(info.Workspace, info.ID, seq); err != nil &&
-		!errors.Is(err, checkpoint.ErrNotARepo) &&
-		!errors.Is(err, checkpoint.ErrNoCheckpoint) {
+	err := checkpoint.Restore(info.Workspace, info.ID, seq)
+	if errors.Is(err, checkpoint.ErrNotARepo) {
+		return nil
+	}
+	if errors.Is(err, checkpoint.ErrCheckpointPruned) {
+		return fmt.Errorf("该回合的检查点已修剪（保留最近 %d 回合），文件未回退——为避免对话与文件分裂已中止回退；可回退更近的回合，或用 git 手动恢复", checkpoint.Retention)
+	}
+	if err != nil {
 		return fmt.Errorf("restoring workspace checkpoint: %w", err)
 	}
 	return nil
