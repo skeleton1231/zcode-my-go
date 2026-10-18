@@ -354,3 +354,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    50 条）；workflow 工具 {steps[, saveAs]}/{run: 名}/{resume: 运行
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
+
+**会话内搜索 /find**（桌面搜索的终端对齐，spec 规则 56）：slash 表面
+   钩子——TUI 标记模式（▶/当前命中、n/N 环绕跳转、空输入区才拦截、
+   Esc 先退搜索）；REPL 列命中清单（回合+片段）。

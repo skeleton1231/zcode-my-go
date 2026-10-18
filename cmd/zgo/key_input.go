@@ -97,6 +97,16 @@ loop:
 			k.buf = k.buf[n:]
 		case b < 0x80:
 			k.buf = k.buf[1:]
+			// 搜索激活时 n/N 是跳转键（spec 规则 56）——仅输入区为空
+			// 时拦截，正在打字不受影响（输入含 n 的词不误触）。
+			if s.findQ != "" && len(s.input) == 0 && (b == 'n' || b == 'N') {
+				if b == 'n' {
+					s.findMove(1)
+				} else {
+					s.findMove(-1)
+				}
+				continue
+			}
 			k.appendInput(s, rune(b))
 		default: // 多字节 UTF-8
 			r, size := utf8.DecodeRune(k.buf)
@@ -112,6 +122,10 @@ loop:
 	// 上方 escLen 处理；这里的消费只影响"整 chunk 只有 ESC"的形态。
 	if len(k.buf) == 1 && k.buf[0] == 0x1b {
 		k.buf = k.buf[:0]
+		if s.findQ != "" {
+			s.findClear() // 搜索激活：Esc 先退搜索（spec 规则 56）
+			return keyNone
+		}
 		s.abortRun()
 	}
 	return keyNone

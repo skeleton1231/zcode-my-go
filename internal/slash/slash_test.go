@@ -512,3 +512,22 @@ func TestSlashSkills(t *testing.T) {
 		t.Fatalf("diagnostic missing: %q", out)
 	}
 }
+
+// TestSlashFindSurfaceHooks /find 的表面钩子分发：无钩子报不支持、
+// 带钩子调用（TUI 跳转语义已在上面覆盖）。
+func TestSlashFindSurfaceHooks(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/find 词")
+	if !strings.Contains(out, "不支持") {
+		t.Fatalf("no hook = %q", out)
+	}
+	env2, _ := newEnv(t)
+	env2.Find = func(q string) string { return "找到 " + q }
+	out = captureOutSlash(t, env2, "/find 目标")
+	if !strings.Contains(out, "找到 目标") {
+		t.Fatalf("hook out = %q", out)
+	}
+	if out := captureOutSlash(t, env2, "/find"); !strings.Contains(out, "用法") {
+		t.Fatalf("empty = %q", out)
+	}
+}

@@ -72,6 +72,12 @@ type tuiState struct {
 	onUsage func() string           // 生产读会话累计用量（spec 规则 40），测试注入桩
 	abort   func()                  // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
 
+	// 会话内搜索（spec 规则 56）：findQ 非空即激活；findHits 是命中行
+	// 下标，findCur 是当前命中（渲染 ▶/▶▶ 标记，n/N 跳转，Esc 退出）。
+	findQ    string
+	findHits []int
+	findCur  int
+
 	// 输入历史（spec 规则 30）：已提交的用户消息；histCur==-1 表示在
 	// 实时输入（离开时的草稿保存在 histDraft）。
 	history   []string
@@ -200,6 +206,8 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 			rerun: func(text string) error {
 				return s.rerunChat(svc, info, text)
 			},
+			// /find（spec 规则 56）：进入标记模式并跳到最近命中。
+			find: func(q string) string { return s.findStart(q) },
 		}, line)
 		if quit {
 			s.finish(os.Stdout)
@@ -363,6 +371,54 @@ func (s *tuiState) pushTurn(line string) {
 	s.requestRedraw()
 }
 
+// findStart 开始会话内搜索（/find 钩子的 TUI 实现，spec 规则 56）：
+// 大小写不敏感匹配转录行，跳到最近一处命中；状态行给出跳转键提示。
+func (s *tuiState) findStart(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return s.findClear()
+	}
+	s.mu.Lock()
+	lower := strings.ToLower(q)
+	hits := make([]int, 0, 8)
+	for i, ln := range s.lines {
+		if strings.Contains(strings.ToLower(ln), lower) {
+			hits = append(hits, i)
+		}
+	}
+	s.findQ, s.findHits, s.findCur = q, hits, len(hits)-1
+	if len(hits) > 0 {
+		s.topIdx = hits[s.findCur]
+	}
+	s.requestRedraw()
+	s.mu.Unlock()
+	if len(hits) == 0 {
+		return "未找到 " + q
+	}
+	return fmt.Sprintf("找到 %d 处 · n 下一处 · N 上一处 · Esc 退出搜索", len(hits))
+}
+
+// findMove 在命中间跳转（环绕），并把视口顶行对准当前命中。
+func (s *tuiState) findMove(dir int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.findHits) == 0 {
+		return
+	}
+	s.findCur = (s.findCur + dir + len(s.findHits)) % len(s.findHits)
+	s.topIdx = s.findHits[s.findCur]
+	s.requestRedraw()
+}
+
+// findClear 退出搜索（标记清空、恢复尾随视口）。
+func (s *tuiState) findClear() string {
+	s.mu.Lock()
+	s.findQ, s.findHits, s.findCur = "", nil, -1
+	s.requestRedraw()
+	s.mu.Unlock()
+	return "已退出搜索"
+}
+
 // resetSessionView 清空回合锚点与计划（/new 换会话后旧数据不再有意义）；
 // 转录行保留（跨会话历史本就同屏滚动）。
 func (s *tuiState) resetSessionView() {
@@ -507,6 +563,7 @@ func (s *tuiState) draw(out io.Writer) {
 		body = 1
 	}
 	var visible []string
+	base := 0          // 可见窗口首行的绝对下标（搜索标记用，spec 规则 56）
 	if s.topIdx >= 0 { // 回合导航/滚动：绝对下标窗口，夹紧防越界
 		top := s.topIdx
 		if maxTop := len(s.lines) - body; top > maxTop {
@@ -519,13 +576,29 @@ func (s *tuiState) draw(out io.Writer) {
 		if end > len(s.lines) {
 			end = len(s.lines)
 		}
+		base = top
 		visible = s.lines[top:end]
 	} else if len(s.lines) > body { // 尾随：贴底窗口
-		visible = s.lines[len(s.lines)-body:]
+		base = len(s.lines) - body
+		visible = s.lines[base:]
 	} else {
 		visible = s.lines
 	}
-	for _, line := range visible {
+	hitSet := map[int]bool{}
+	if s.findQ != "" {
+		for _, h := range s.findHits {
+			hitSet[h] = true
+		}
+	}
+	for i, line := range visible {
+		if s.findQ != "" {
+			switch {
+			case s.findCur >= 0 && base+i == s.findHits[s.findCur]:
+				line = ansi(ansiYellow, ">") + line
+			case hitSet[base+i]:
+				line = ansi(ansiYellow, ". ") + line
+			}
+		}
 		b.WriteString(line + "\x1b[K\n")
 	}
 	for i := len(visible); i < body; i++ {

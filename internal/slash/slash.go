@@ -34,6 +34,10 @@ type Env struct {
 	// Send submits a message as if the user typed it（/mcp 展开后直接
 	// 发送；不填即该表面不支持直接发送）.
 	Send func(text string)
+	// Find searches the current session transcript（spec 规则 56：TUI
+	// 返回跳转状态并进入标记模式，REPL 返回命中清单；不填即不支持）.
+	Find func(q string) string
+
 	// Rerun replaces the last user message and reruns the turn
 	//（/retry 与 /resend；EditAndResend 的表面包装）.
 	Rerun func(text string) error
@@ -226,6 +230,20 @@ var commands = []command{
 				b.WriteString("  ⚠ " + d.Path + ": " + d.Message + "\n")
 			}
 			return strings.TrimRight(b.String(), "\n")
+		},
+	},
+	{
+		name: "/find", usage: "/find <词>",
+		help: "在当前会话转录中搜索（TUI 跳转标记 / REPL 列命中）",
+		run: func(env *Env, args string) string {
+			q := strings.TrimSpace(args)
+			if q == "" {
+				return "[搜索] 用法：/find <词>"
+			}
+			if env.Find == nil {
+				return "[搜索] 此表面不支持会话内搜索（TUI 支持）"
+			}
+			return env.Find(q)
 		},
 	},
 	{
@@ -599,7 +617,7 @@ func mcpReadResource(env *Env, target string) string {
 }
 
 // wrapResource 把资源文本并入可发送消息：「资源 <uri>：」+ 动态围栏
-//（issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
+// （issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
 // @ 引用同一 FenceFor 方案）。
 func wrapResource(uri, text string) string {
 	fence := export.FenceFor(text)
