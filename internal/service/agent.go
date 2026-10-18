@@ -46,19 +46,34 @@ const DefaultBaseURL = "https://api.anthropic.com"
 
 // settings is the persisted user configuration.
 type settings struct {
-	BaseURL    string                `json:"baseUrl"`
-	APIKey     string                `json:"apiKey"`
-	Model      string                `json:"model"`
-	API        string                `json:"api"`
-	Thinking   string                `json:"thinking"` // off|low|medium|high
+	BaseURL  string `json:"baseUrl"`
+	APIKey   string `json:"apiKey"`
+	Model    string `json:"model"`
+	API      string `json:"api"`
+	Thinking string `json:"thinking"` // off|low|medium|high
+	// Profiles 是命名 API 剖面（issue #215）：active 剖面物化进上面的扁
+	// 平字段——resolve/env 覆盖与 providerFor 路径零感知；切换即改写扁
+	// 平字段并落盘。key 与扁平 key 同一条脱敏边界。
+	Profiles map[string]profile `json:"profiles"`
+	Active   string             `json:"active"`
+
 	MCPServers map[string]mcp.Config `json:"mcpServers"`
 	Hooks      agent.CommandHooks    `json:"hooks"`
-	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)
+	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)；与剖面正交
 	// BudgetDailyTokens 是每日软预算（0=不限，spec 规则 35）。
 	BudgetDailyTokens int `json:"budgetDailyTokens"`
 	// FallbackModels 是模型兜底链（spec 规则 56）：主模型可重试失败
 	// （429/过载）时按序降级重发。
 	FallbackModels []string `json:"fallbackModels"`
+}
+
+// profile 是一个命名 API 剖面。
+type profile struct {
+	API      string `json:"api"`
+	BaseURL  string `json:"baseUrl"`
+	APIKey   string `json:"apiKey"`
+	Model    string `json:"model"`
+	Thinking string `json:"thinking"`
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
@@ -68,7 +83,9 @@ type SettingsView struct {
 	API       string `json:"api"`
 	Thinking  string `json:"thinking"`
 	HasAPIKey bool   `json:"hasApiKey"`
-	KeyHint   string `json:"keyHint"` // e.g. "sk-…abcd", for display only
+	KeyHint   string `json:"keyHint"`  // e.g. "sk-…abcd", for display only
+	Profile   string `json:"profile"` // 当前活动剖面名（展示/状态栏）
+	Profiles  []string `json:"profiles"` // 可用剖面（下拉/列表）
 }
 
 // AgentService is the application service the UI calls.
@@ -653,19 +670,116 @@ func (s *AgentService) LoginStart(onURL func(string)) <-chan error {
 func (s *AgentService) loadSettings() error {
 	data, err := os.ReadFile(s.path)
 	if os.IsNotExist(err) {
+		s.migrateProfilesLocked() // 首跑也建 default 剖面（无剖面态不做特判）
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("reading settings: %w", err)
 	}
-	return json.Unmarshal(data, &s.settings)
+	if err := json.Unmarshal(data, &s.settings); err != nil {
+		return fmt.Errorf("parsing settings: %w", err)
+	}
+	if s.migrateProfilesLocked() {
+		// 旧版单剖面迁移结果即刻落盘（rewire 尚未装配，纯写文件）。
+		if data, err := json.MarshalIndent(s.settings, "", "  "); err == nil {
+			_ = os.WriteFile(s.path, data, 0o600)
+		}
+	}
+	return nil
+}
+
+// migrateProfilesLocked 把旧版扁平单剖面迁移进 default 剖面；已有剖面
+// 则只补齐缺失的 active。返回是否有变更。扁平字段语义不变——活动剖面
+// 物化进扁平字段，providerFor/resolve 路径零感知。
+func (s *AgentService) migrateProfilesLocked() bool {
+	if len(s.settings.Profiles) > 0 {
+		if s.settings.Active == "" {
+			for name := range s.settings.Profiles {
+				s.settings.Active = name
+				break
+			}
+			return true
+		}
+		return false
+	}
+	cfg := s.settings
+	s.settings.Profiles = map[string]profile{"default": {
+		API: cfg.API, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey,
+		Model: cfg.Model, Thinking: cfg.Thinking,
+	}}
+	s.settings.Active = "default"
+	return true
+}
+
+// AddProfile 把当前活动配置注册为命名剖面（/provider add <名>）。名字
+// 收敛为 ASCII 标识符——命令行解析可预测，map key 不含空白。
+func (s *AgentService) AddProfile(name string) error {
+	if !validProfileName(name) {
+		return fmt.Errorf("invalid profile name %q (letters, digits, - and _)", name)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg := s.settings
+	if cfg.Profiles == nil {
+		cfg.Profiles = map[string]profile{}
+	}
+	if _, dup := cfg.Profiles[name]; dup {
+		return fmt.Errorf("profile %q already exists", name)
+	}
+	cfg.Profiles[name] = profile{API: cfg.API, BaseURL: cfg.BaseURL,
+		APIKey: cfg.APIKey, Model: cfg.Model, Thinking: cfg.Thinking}
+	_, err := s.saveSettingsLocked(cfg)
+	return err
+}
+
+// SwitchProfile 切换活动剖面：剖面值物化进扁平字段并落盘（下回合走新
+// 剖面——rewire 即时生效）。未命中报错列出可用项自纠。
+func (s *AgentService) SwitchProfile(name string) (SettingsView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.settings.Profiles[name]
+	if !ok {
+		return s.view(), fmt.Errorf("unknown profile %q; available: %s",
+			name, strings.Join(s.profileNamesLocked(), ", "))
+	}
+	cfg := s.settings
+	cfg.API, cfg.BaseURL, cfg.APIKey = p.API, p.BaseURL, p.APIKey
+	cfg.Model, cfg.Thinking, cfg.Active = p.Model, p.Thinking, name
+	return s.saveSettingsLocked(cfg)
+}
+
+// profileNamesLocked 列出剖面名（稳定序；调用方持锁）。
+func (s *AgentService) profileNamesLocked() []string {
+	names := make([]string, 0, len(s.settings.Profiles))
+	for n := range s.settings.Profiles {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// validProfileName：非空、限 ASCII 字母/数字/-/_。
+func validProfileName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-' || r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // view projects the resolved settings for the UI.
 func (s *AgentService) view() SettingsView {
 	cfg := s.resolve()
 	v := SettingsView{BaseURL: cfg.BaseURL, Model: cfg.Model, API: cfg.API,
-		Thinking: cfg.Thinking, HasAPIKey: cfg.APIKey != ""}
+		Thinking: cfg.Thinking, HasAPIKey: cfg.APIKey != "",
+		Profile: s.settings.Active, Profiles: s.profileNamesLocked()}
 	if n := len(cfg.APIKey); n > 8 {
 		v.KeyHint = cfg.APIKey[:3] + "…" + cfg.APIKey[n-4:]
 	} else if n > 0 {
@@ -702,6 +816,18 @@ func (s *AgentService) SaveSettings(api, baseURL, apiKey, model, thinking string
 		cfg.APIKey = apiKey
 	}
 	cfg.Model = model
+	// 保存同步回活动剖面存储（剖面与扁平字段永远一致——切换回来看到
+	// 的就是离开时的样子）。
+	if cfg.Active != "" && cfg.Profiles != nil {
+		if _, ok := cfg.Profiles[cfg.Active]; ok {
+			p := cfg.Profiles[cfg.Active]
+			p.API, p.BaseURL, p.Model, p.Thinking = cfg.API, cfg.BaseURL, cfg.Model, cfg.Thinking
+			if apiKey != "" {
+				p.APIKey = apiKey // 空参保留旧 key（同扁平语义）
+			}
+			cfg.Profiles[cfg.Active] = p
+		}
+	}
 	view, err := s.saveSettingsLocked(cfg)
 	s.mu.Unlock()
 	if err == nil {

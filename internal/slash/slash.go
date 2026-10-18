@@ -415,6 +415,39 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/provider", usage: "/provider [add] <名>",
+		help: "切换 API 剖面（无参列出；add 注册当前配置为剖面）",
+		run: func(env *Env, args string) string {
+			args = strings.TrimSpace(args)
+			if args == "" {
+				v := env.Svc.GetSettings()
+				var b strings.Builder
+				b.WriteString("当前剖面：" + orDash(v.Profile) + "；可用：")
+				for _, n := range v.Profiles {
+					if n == v.Profile {
+						n = "→ " + n
+					}
+					b.WriteString(n + " ")
+				}
+				return strings.TrimRight(b.String(), " ") +
+					"；用法：/provider <名> 切换，/provider add <名> 注册当前配置"
+			}
+			if name, ok := strings.CutPrefix(args, "add "); ok {
+				name = strings.TrimSpace(name)
+				if err := env.Svc.AddProfile(name); err != nil {
+					return err.Error()
+				}
+				return "[剖面] 已注册 " + name + "（快照当前配置）；/provider " + name + " 切换"
+			}
+			v, err := env.Svc.SwitchProfile(args)
+			if err != nil {
+				return err.Error()
+			}
+			return "[剖面] 已切换 " + v.Profile + "（模型 " + orDash(v.Model) +
+				" @ " + orDash(hostOf(v.BaseURL)) + "）"
+		},
+	},
+	{
 		name: "/rename", usage: "/rename <标题>",
 		help: "重命名会话",
 		run: func(env *Env, args string) string {
@@ -750,4 +783,18 @@ func firstLineOfAgent(s string) string {
 		return string(r[:40]) + "…"
 	}
 	return s
+}
+
+// hostOf 取端点的主机名（剖面回执展示；无 scheme 直接截断路径段）。
+func hostOf(baseURL string) string {
+	if baseURL == "" {
+		return ""
+	}
+	if i := strings.Index(baseURL, "://"); i >= 0 {
+		baseURL = baseURL[i+3:]
+	}
+	if i := strings.IndexAny(baseURL, "/"); i >= 0 {
+		baseURL = baseURL[:i]
+	}
+	return baseURL
 }

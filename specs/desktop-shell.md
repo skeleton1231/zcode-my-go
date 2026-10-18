@@ -18,6 +18,14 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 3. 设置（baseURL / apiKey / model）经设置弹窗（`ui.Modal`）读写，落盘到
    用户数据目录；API key 只存本地文件，不进日志、不进会话持久化、不在
    界面回显。
+   剖面（issue #215）：settings 增 `profiles`（名 → {api, baseUrl,
+   apiKey, model, thinking}）与 `active`；旧版单剖面设置首启自动迁移
+   进 `default` 剖面（扁平字段语义不变——活动剖面物化进扁平字段，
+   resolve/env 覆盖与 providerFor 路径零改动）。`/provider` 三形态：
+   无参列剖面（当前带 → 标记）；`/provider <名>` 切换——下回合走新剖
+   面，回执带名称/模型/端点；`/provider add <名>` 把当前配置注册为剖
+   面。剖面 key 与扁平 key 同一条脱敏边界（SettingsView/日志/JSONL
+   全链路不回显）；OAuth（订阅登录）与剖面正交，保持全局。
 4. 会话侧栏支持：新建（系统目录选择对话框）、列出（含标题与运行状态）、
    切换、删除（菜单触发）。
 5. 消息区：流式 assistant 文本用 `markdown.Stream`，完成后 `markdown.View`；
@@ -28,6 +36,10 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 8. 附件（多模态输入）：📎 打开图片选择（png/jpg/gif/webp，多选），以
    chips 展示、发送前可移除；随下一条消息发送（文本必填）。单张上限
    5MB，超限或类型不符以 notice 提示。终端形态不支持附件。
+   贴图（issue #216）：composer 的 Ctrl/Cmd+V 先探剪贴板位图（internal/
+   clipimg：PNG 注册格式优先直取，CF_DIBV5/CF_DIB 解码后 PNG 化；非
+   Windows 返回无图）；命中即走 📎 同一条附件通道（同一单张/总量上限
+   与 notice），无图时按普通文本粘贴放行——不报错不吞文本。
 7. 浏览器目标（wasm）：`go tool mygo build -platform web` 产出静态站点，
    `go run ./cmd/webfs` 注入内存文件系统垫片（wasm 的 syscall 层需要 Node
    形态的 fs 对象，wasm_exec.js 的回退只有 stdout）。浏览器上的语义：
