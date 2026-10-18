@@ -8,11 +8,15 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
+	"github.com/skeleton1231/zcode-my-go/internal/winpath"
 )
 
 // Bash timeouts.
@@ -26,6 +30,91 @@ const (
 type Bash struct {
 	ws   Workspace
 	jobs *Jobs
+
+	// cwd 是上次 cd 后的启动目录（jail 内绝对路径；空 = 工作区根，
+	// issue #221）。环境变量不持久——只粘滞目录，降低副作用面。并
+	// 行批次内共享起点、各自收尾 last-write 更新（对齐同路径串行化
+	// 调度的近似）。
+	cwdMu sync.Mutex
+	cwd   string
+
+	// lastOut 是最近一次前台命令的结果文本（测试断言便利）。
+	lastOut string
+}
+
+// cwdMarker 是命令尾部追加的目录哨兵：shell 回显最终目录，工具侧解
+// 析并剥离——不泄漏进模型可见输出（issue #221）。
+const cwdMarker = "__ZGO_CWD__:"
+
+// dirFor 返回本条命令的启动目录（持锁读快照）。
+func (b *Bash) dirFor() string {
+	b.cwdMu.Lock()
+	defer b.cwdMu.Unlock()
+	if b.cwd == "" {
+		return b.ws.Root
+	}
+	return b.cwd
+}
+
+// wrapCwd 给命令追加目录哨兵（平台 shell 各自形态）。
+func wrapCwd(line string) string {
+	if runtime.GOOS == "windows" {
+		return line + "; Write-Output \"" + cwdMarker + "$PWD\""
+	}
+	return line + "; printf '\\n" + cwdMarker + "%s\\n' \"$PWD\""
+}
+
+// absorbCwd 从输出里解析哨兵：剥离标记行、更新粘滞目录（越出工作区
+// 根的不持久——jail 语义）。返回净化后的输出。
+func (b *Bash) absorbCwd(out string) string {
+	i := strings.LastIndex(out, cwdMarker)
+	if i < 0 {
+		return out
+	}
+	rest := out[i+len(cwdMarker):]
+	end := strings.IndexAny(rest, "\r\n")
+	dir := rest
+	if end >= 0 {
+		dir = rest[:end]
+	}
+	dir = strings.TrimSpace(dir)
+	// 剥离标记行（含前导换行）。
+	cut := i
+	if cut > 0 && (out[cut-1] == '\n') {
+		cut--
+		if cut > 0 && out[cut-1] == '\r' {
+			cut--
+		}
+	}
+	tail := ""
+	if end >= 0 {
+		tail = rest[end:]
+	}
+	cleaned := out[:cut] + strings.TrimLeft(tail, "\r\n")
+	if dir != "" && b.underRoot(dir) {
+		b.cwdMu.Lock()
+		b.cwd = dir
+		b.cwdMu.Unlock()
+	}
+	return cleaned
+}
+
+// underRoot 报告 dir 是否在工作区根内（大小写与 8.3 短名归一后）。
+func (b *Bash) underRoot(dir string) bool {
+	if b.ws.IsRemote() {
+		root := strings.TrimSuffix(b.ws.Root, "/")
+		return strings.HasPrefix(strings.ToLower(strings.TrimSuffix(dir, "/")), strings.ToLower(root+"/")) || strings.EqualFold(strings.TrimSuffix(dir, "/"), root)
+	}
+	root, err := filepath.Abs(b.ws.Root)
+	if err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(winpath.Long(root), winpath.Long(abs))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // NewBash builds the bash tool.
@@ -38,7 +127,9 @@ func (b *Bash) Name() string { return "bash" }
 func (b *Bash) Description() string {
 	return "Run a shell command in the workspace directory. On Windows the " +
 		"command runs in PowerShell; elsewhere in bash. stdout and stderr are " +
-		"combined, output is truncated to 30KB. timeout_ms caps the run " +
+		"combined, output is truncated to 30KB. The working directory is " +
+		"sticky: cd persists across calls (staying inside the workspace). " +
+		"timeout_ms caps the run " +
 		"(default 120000, max 600000). background:true launches without " +
 		"waiting (dev servers, watchers) — drain output with bash_output, " +
 		"stop with bash_kill; local and SSH workspaces behave the same."
@@ -89,11 +180,13 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		return b.execRemote(ctx, a.Command)
 	}
 
-	cmd, err := b.command(ctx, a.Command)
+	// cwd 粘滞（issue #221）：从上次 cd 的目录启动，命令尾部追加目录
+	// 哨兵（输出侧解析剥离，不泄漏）。
+	cmd, err := b.command(ctx, wrapCwd(a.Command))
 	if err != nil {
 		return errResult("%v", err)
 	}
-	cmd.Dir = b.ws.Root
+	cmd.Dir = b.dirFor()
 	// 击杀必须覆盖整棵进程树（issue #7）：exec 的默认 kill 只杀直接
 	// 子进程，Start-Process 派生的孙进程会活过超时/中止。平台差异
 	// 在 prockill_*.go。
@@ -125,7 +218,9 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		return errResult("running command: %v\n%s", err,
 			truncateBytes(out.Bytes(), bashHeadTail, bashHeadTail))
 	}
-	return agent.ToolResult{Content: truncateBytes(out.Bytes(), bashHeadTail, bashHeadTail)}
+	cleaned := b.absorbCwd(out.String())
+	b.lastOut = cleaned
+	return agent.ToolResult{Content: truncateBytes([]byte(cleaned), bashHeadTail, bashHeadTail)}
 }
 
 // command builds the platform shell invocation.
