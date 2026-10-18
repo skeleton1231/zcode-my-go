@@ -14,11 +14,13 @@ import (
 // subagents (ZCode's parallel subagents) and collects every answer in
 // order — for questions that depend on each other, use task instead.
 type Dispatch struct {
-	Run func(ctx context.Context, prompts []string) []agent.SubtaskResult
+	// Run 逐批扇出；agentName 语义同 task（spec 规则 51）——同一批全部
+	// prompt 用同一 persona。
+	Run func(ctx context.Context, prompts []string, agentName string) []agent.SubtaskResult
 }
 
 // NewDispatch builds the tool over a parallel runner.
-func NewDispatch(run func(ctx context.Context, prompts []string) []agent.SubtaskResult) *Dispatch {
+func NewDispatch(run func(ctx context.Context, prompts []string, agentName string) []agent.SubtaskResult) *Dispatch {
 	return &Dispatch{Run: run}
 }
 
@@ -30,7 +32,8 @@ func (d *Dispatch) Description() string {
 	return "Fan out 2-4 independent research questions to parallel read-only " +
 		"subagents and collect all answers. Each prompt must be self-contained " +
 		"and independent of the others' results; dependent or sequential work " +
-		"belongs to task or workflow."
+		"belongs to task or workflow. Optional agent names a defined subagent " +
+		"persona (.zgo/agents) applied to the whole batch."
 }
 
 // Parameters implements agent.Tool.
@@ -43,6 +46,7 @@ func (d *Dispatch) Parameters() map[string]any {
 			"minItems":    2,
 			"maxItems":    4,
 		},
+		"agent": prop("string", "Optional named subagent persona for the whole batch (see available agents in the system prompt)"),
 	}, "prompts")
 }
 
@@ -50,9 +54,13 @@ func (d *Dispatch) Parameters() map[string]any {
 func (d *Dispatch) Execute(ctx context.Context, args json.RawMessage) agent.ToolResult {
 	var a struct {
 		Prompts []string `json:"prompts"`
+		Agent   string   `json:"agent"`
 	}
 	if err := decodeArgs(args, &a); err != nil {
 		return errResult("%v", err)
+	}
+	if strings.TrimSpace(a.Agent) != "" && strings.ContainsAny(a.Agent, `/\ `) {
+		return errResult("invalid agent name %q", a.Agent)
 	}
 	if len(a.Prompts) < 2 {
 		return errResult("dispatch needs at least 2 prompts (use task for one)")
@@ -68,7 +76,7 @@ func (d *Dispatch) Execute(ctx context.Context, args json.RawMessage) agent.Tool
 	if d.Run == nil {
 		return errResult("no dispatch runner wired")
 	}
-	results := d.Run(ctx, a.Prompts)
+	results := d.Run(ctx, a.Prompts, strings.TrimSpace(a.Agent))
 	var b strings.Builder
 	for i, res := range results {
 		// 每份报告按 task 工具同型截断（issue #92：4 份无限长回答

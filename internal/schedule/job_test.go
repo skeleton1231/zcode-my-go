@@ -18,12 +18,16 @@ type fakeRunner struct {
 	fail    bool
 	summary string
 	entered chan struct{} // 非空时每次进入 run 发信号（Stop 排空测试）
+	delay   time.Duration // 非零时进入后先睡（排空测试的慢任务）
 }
 
 func (f *fakeRunner) Run(ctx context.Context, job Job) (string, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, job.ID)
 	f.mu.Unlock()
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.entered != nil {
 		f.entered <- struct{}{}
 	}
@@ -170,6 +174,7 @@ func TestSchedulerHotReloads(t *testing.T) {
 	if runner.count() != 1 {
 		t.Fatalf("hot reload failed: %d", runner.count())
 	}
+	s.Stop() // 排空在飞的 record 落盘，TempDir 清理不与之竞争
 }
 
 func TestSummaryAndErrorRecording(t *testing.T) {
@@ -293,5 +298,28 @@ func TestStopDrainsInflightFire(t *testing.T) {
 		if j.ID == "slow" && j.LastSummary != "慢结果" {
 			t.Fatalf("in-flight record lost on Stop: %+v", j)
 		}
+	}
+}
+
+// TestStopDrainsWithoutStart 未 Start 只 tick 的用法，Stop 也排空在飞
+// fire——record 落盘后才返回（CI 上 TestSchedulerHotReloads 的 TempDir
+// 清理竞态根因面：Stop 曾只对 Start 过的调度器排空）。
+func TestStopDrainsWithoutStart(t *testing.T) {
+	store := NewStore(t.TempDir())
+	now := time.Date(2026, 10, 18, 10, 30, 0, 0, time.Local)
+	runner := &fakeRunner{delay: 30 * time.Millisecond}
+	s := NewScheduler(store, runner)
+	s.now = func() time.Time { return now }
+	if err := store.Upsert(job("slow", "* * * * *", true, time.Time{})); err != nil {
+		t.Fatal(err)
+	}
+	s.tick(context.Background())
+	s.Stop() // 未 Start：不得直接返回，须等 fire 的 record 落盘
+	jobs, err := store.List()
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("jobs = %v err = %v", jobs, err)
+	}
+	if jobs[0].LastStatus == "" {
+		t.Fatal("record not persisted before Stop returned")
 	}
 }
