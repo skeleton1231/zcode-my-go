@@ -201,6 +201,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    经 prompts/get 展开为用户消息直接发送（slash.Env.Send 表面钩子，
    TUI 提取 sendChat 共用常规路径、REPL 复用发送闭包；assistant 段加
    角色标注）。
+**终端回合重做**（conversation-branch-rewind 的终端面收口，spec 规
+   则 29）：/retry 取最后一条用户消息原样重跑、/resend <新文本> 编辑重
+   发——经 slash.Env.Rerun 表面钩子走既有 EditAndResend（运行守卫先于
+   文件恢复，检查点同恢复）；TUI rerunChat 与 REPL 闭包装，事件流照常
+   渲染；回滚三面（⟲/RewindTo//rewind）+ 重做三面（桌面编辑重发/终端
+   retry+resend）至此对齐。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

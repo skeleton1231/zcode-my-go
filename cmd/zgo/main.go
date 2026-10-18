@@ -403,6 +403,10 @@ func repl(workspace string, cont bool, resume string) int {
 				}
 				fmt.Println()
 			},
+			rerun: func(text string) error { // /retry、/resend：撤最后一轮重发
+				fmt.Fprintln(os.Stderr, "[重跑] 撤最后一轮并重发：", text)
+				return svc.EditAndResend(info.ID, text, func(ev agent.Event) { render(ev) })
+			},
 		}, line)
 		if quit {
 			return 0
