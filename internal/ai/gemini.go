@@ -305,7 +305,15 @@ func toGemini(messages []Message) []geminiContent {
 		case RoleToolResult:
 			content := geminiContent{Role: "user"}
 			for _, b := range m.Blocks {
-				if b.Kind != BlockToolResult {
+				switch b.Kind {
+				case BlockImage:
+					// 工具结果的图片块（read 读图，spec 规则 47）：user
+					// content 可混排 inlineData part。
+					content.Parts = append(content.Parts, geminiPart{
+						InlineData: &geminiInline{MimeType: b.Media, Data: b.Data}})
+					continue
+				case BlockToolResult:
+				default:
 					continue
 				}
 				name := names[b.ToolCallID]

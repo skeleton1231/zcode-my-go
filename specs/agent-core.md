@@ -294,6 +294,20 @@ dc907a4 (feat: glob and grep honor .gitignore)
    （官方语言/框架文档，路径前缀站点防 %2f 编码绕过）只读自动放行
    （plan 模式可用）；其余主机中等风险询问（会话「总是允许」按 URL
    积累）。
+   （规则 46 由 pending 的 webfetch PR 预留；44 的重号随其合并修正。）
+
+47. read 工具读图片（多模态工具结果，ZCode read-image 的落地）：read
+   对 png/jpeg/gif/webp 文件返回图片块——BlockImage 紧跟工具结果块进入
+   同一工具结果消息（Content 仍是可读摘要：路径/类型/尺寸/字节数），
+   随转录 JSONL 持久化。输入上限 20MB；超 2000px 维度或 3.75MB 二进制
+   的 png/jpeg 缩放重编码（stdlib 双线性；gif 取首帧转 png；jpeg 质量
+   85；收敛循环 0.7 步进），base64 ≤5MB 校验；webp 无 stdlib 解码器
+   ——≤3.75MB 原样透传（尺寸未知不报维度），超限报错并提示先转 png。
+   wire：Anthropic 把图片块与 tool_result 混排在 user 消息；Gemini 以
+   inlineData part 同住 functionResponse 的 user content；OpenAI 的
+   tool 消息只收文本——降级为文本说明（N 张图片未上送），模型至少看
+   到摘要。SSH 工作区经网线读字节，同构。
+1d468ec (feat: read tool returns images — multimodal tool results)
 
 ## 状态所有者
 

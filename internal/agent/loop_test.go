@@ -279,3 +279,32 @@ func TestHistorySnapshotPerTurn(t *testing.T) {
 		t.Fatalf("second call history = %+v", seen[1])
 	}
 }
+
+// TestToolResultCarriesImages 验证工具结果的图片块紧跟结果块进入历史
+// 消息（spec 规则 47）——重放时 provider 可见（含 JSONL 持久化形态）。
+func TestToolResultCarriesImages(t *testing.T) {
+	tool := &fakeTool{name: "read", agent: ToolResult{
+		Content: "图片 s.png：image/png，4×4。",
+		Images:  []ai.Block{{Kind: ai.BlockImage, Media: "image/png", Data: "aGk="}},
+	}}
+	provider := &fakeProvider{turns: []fakeTurn{
+		toolTurn("c1", "read", `{"path":"s.png"}`),
+		textTurn("done", ai.Usage{}),
+	}}
+	c := runLoop(t, provider, []Tool{tool}, nil)
+
+	var trMsg *ai.Message
+	for i := range c.messages {
+		if c.messages[i].Role == ai.RoleToolResult {
+			trMsg = &c.messages[i]
+		}
+	}
+	if trMsg == nil {
+		t.Fatalf("no tool result message: %+v", c.messages)
+	}
+	if len(trMsg.Blocks) != 2 ||
+		trMsg.Blocks[0].Kind != ai.BlockToolResult || trMsg.Blocks[0].ToolCallID != "c1" ||
+		trMsg.Blocks[1].Kind != ai.BlockImage || trMsg.Blocks[1].Data != "aGk=" {
+		t.Fatalf("blocks = %+v", trMsg.Blocks)
+	}
+}

@@ -146,15 +146,15 @@ const (
 )
 
 type Request struct {
-	Model     string
-	System    string
+	Model  string
+	System string
 	// SystemVolatile 是不参与缓存前缀的系统提示尾部（issue #139：git
 	// dirty 计数每轮变化，混在缓存前缀里整块失效）。provider 依此把
 	// system 拆成 稳定块（带断点）+ 易变块（不带）。
 	SystemVolatile string
 	Messages       []Message
-	Tools     []ToolDeclaration
-	MaxTokens int
+	Tools          []ToolDeclaration
+	MaxTokens      int
 	// Thinking selects the reasoning effort (ZCode's reasoningLevel);
 	// providers map it to their budget parameters. Empty means Off.
 	Thinking ThinkingLevel

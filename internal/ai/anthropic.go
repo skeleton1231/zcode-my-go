@@ -494,10 +494,19 @@ func toWire(messages []Message) []wireMessage {
 		case RoleToolResult:
 			wm.Role = "user"
 			for _, b := range m.Blocks {
-				wm.Content = append(wm.Content, wireBlock{
-					Type: "tool_result", ToolUseID: b.ToolCallID, IsError: b.IsError,
-					ResultContent: []wireBlock{{Type: "text", Text: b.Text}},
-				})
+				switch b.Kind {
+				case BlockImage:
+					// 工具结果的图片块（read 读图，spec 规则 47）：与
+					// tool_result 同住 user 消息——API 允许混排。
+					wm.Content = append(wm.Content, wireBlock{Type: "image",
+						Source: &wireSource{Type: "base64",
+							MediaType: b.Media, Data: b.Data}})
+				default:
+					wm.Content = append(wm.Content, wireBlock{
+						Type: "tool_result", ToolUseID: b.ToolCallID, IsError: b.IsError,
+						ResultContent: []wireBlock{{Type: "text", Text: b.Text}},
+					})
+				}
 			}
 		}
 		wire = append(wire, wm)
