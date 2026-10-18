@@ -72,21 +72,15 @@ func agentBrief(s string) string {
 	return s
 }
 
-// refreshAgents 拉快照并回主线程（有变化才重画）。
+// refreshAgents 拉快照并回主线程（有变化才重画）。id 由调用方给——
+// 轮询 goroutine 不得直接读 a.activeID（与主线程切会话的写竞争，CI
+// -race 在 TestSearchResetsOnSessionSwitch 逮到过）。
 func (a *App) refreshAgents() {
-	views := a.svc.AgentJobStates(a.activeID)
-	same := len(views) == len(a.agents)
-	if same {
-		for i := range views {
-			if views[i].ID != a.agents[i].ID || views[i].State != a.agents[i].State {
-				same = false
-				break
-			}
-		}
-	}
-	if same {
-		return
-	}
+	a.refreshAgentsOf(a.activeID) // 主线程调用（回合收尾/开会的 update 内）
+}
+
+func (a *App) refreshAgentsOf(id string) {
+	views := a.svc.AgentJobStates(id)
 	a.update(func() { a.agents = views })
 }
 
@@ -94,18 +88,19 @@ func (a *App) refreshAgents() {
 // 时不重复起（每回合结束都会调一次）；会话切换后旧 goroutine 会因新
 // 会话快照为空而退出。
 func (a *App) watchAgents() {
+	id := a.activeID // 调用方在主线程：捕获此刻的会话 ID 传入 goroutine
 	if !a.agentsWatching.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
 		defer a.agentsWatching.Store(false)
 		for range 3600 { // 上限 1 小时：防孤儿轮询（代理长寿罕见）
-			views := a.svc.AgentJobStates(a.activeID)
+			views := a.svc.AgentJobStates(id)
 			if len(views) == 0 {
 				a.update(func() { a.agents = nil })
 				return
 			}
-			a.refreshAgents()
+			a.update(func() { a.agents = views })
 			time.Sleep(time.Second)
 		}
 	}()
