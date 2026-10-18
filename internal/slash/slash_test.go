@@ -446,7 +446,7 @@ func TestCustomCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	if err := svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 53）：未授信不带工作区层
+	if err := svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 54)：未授信不带工作区层
 		t.Fatal(err)
 	}
 
@@ -493,7 +493,7 @@ func TestSlashSkills(t *testing.T) {
 	}
 
 	ws := env.Workspace()
-	if err := env.Svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 53）：未授信不带工作区层
+	if err := env.Svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 54)：未授信不带工作区层
 		t.Fatal(err)
 	}
 	dir := filepath.Join(ws, ".zgo", "skills", "deploy")
@@ -541,7 +541,7 @@ func TestSlashFindSurfaceHooks(t *testing.T) {
 	}
 }
 
-// TestSlashMCPAddRemove MCP 配置命令（spec 规则 57）：add 写盘可回、
+// TestSlashMCPAddRemove MCP 配置命令（spec 规则 58）：add 写盘可回、
 // 名/命令校验、remove 不存在报错、remove 后列表消失。
 func TestSlashMCPAddRemove(t *testing.T) {
 	env, _ := newEnv(t)
