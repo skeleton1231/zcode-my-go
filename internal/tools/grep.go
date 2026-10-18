@@ -24,10 +24,13 @@ var skipDirs = map[string]bool{
 }
 
 // Grep finds a regex across workspace files, ripgrep-style output.
-type Grep struct{ ws Workspace }
+type Grep struct {
+	ws Workspace
+	ig *ignoreList // .gitignore 规则（issue #208），会话级加载
+}
 
 // NewGrep builds the grep tool.
-func NewGrep(ws Workspace) *Grep { return &Grep{ws: ws} }
+func NewGrep(ws Workspace) *Grep { return &Grep{ws: ws, ig: loadIgnores(ws)} }
 
 // Name implements agent.Tool.
 func (g *Grep) Name() string { return "grep" }
@@ -98,10 +101,13 @@ func (g *Grep) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if skipDirs[name] && path != root {
+			if path != root && (skipDirs[name] || g.ig.match(relToRoot(root, path), true)) {
 				return filepath.SkipDir
 			}
 			return nil
+		}
+		if g.ig.match(relToRoot(root, path), false) {
+			return nil // .gitignore 命中（issue #208）
 		}
 		if include != nil && !include.MatchString(name) {
 			return nil
