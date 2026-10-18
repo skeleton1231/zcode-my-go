@@ -16,11 +16,14 @@ import (
 
 // agentsView 渲染后台代理状态条（planView 同款位置）。
 func (a *App) agentsView(c *ui.Context, t *ui.Theme) {
-	if len(a.agents) == 0 {
+	a.agentsMu.Lock()
+	views := append([]tools.AgentJobView(nil), a.agents...)
+	a.agentsMu.Unlock()
+	if len(views) == 0 {
 		return
 	}
 	running := 0
-	for _, v := range a.agents {
+	for _, v := range views {
 		if v.State == tools.AgentRunning {
 			running++
 		}
@@ -28,9 +31,9 @@ func (a *App) agentsView(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Gap(4).Padding(0, 16).Children(func() {
 		ui.Text(c, fmt.Sprintf("后台代理 · %d 运行/%d", running, len(a.agents))).
 			FontSize(12).TextColor(t.Accent)
-		for i, v := range a.agents {
+		for i, v := range views {
 			if i >= 4 {
-				ui.Text(c, fmt.Sprintf("  …+%d", len(a.agents)-4)).
+				ui.Text(c, fmt.Sprintf("  …+%d", len(views)-4)).
 					FontSize(12).TextColor(t.TextMuted)
 				break
 			}
@@ -76,10 +79,17 @@ func agentBrief(s string) string {
 // 不得再经 a.update：a.mu 非重入，update 内嵌 update 自死锁——CI 上
 // TestCrossSearchModalFlow 挂 15 分钟即此）。持锁直改。
 func (a *App) refreshAgents() {
-	// 直接赋值：调用方已在主线程的锁上下文里（open/回合收尾的 update
-	// 回调内）——再经 locked 会自死锁（帧内的 View 渲染与点击处理同
-	// 持 a.mu）。跨 goroutine 写者只有轮询，它走 update。
-	a.agents = a.svc.AgentJobStates(a.activeID)
+	views := a.svc.AgentJobStates(a.activeID)
+	a.setAgents(views)
+}
+
+// setAgents 独立小锁写快照：a.mu 非重入（refreshAgents 在 open 的锁
+// 上下文里跑，再锁自死锁），而裸写与轮询的锁写不构成同步（CI -race
+// 逮过）——专用 agentsMu 同时避开两者。
+func (a *App) setAgents(views []tools.AgentJobView) {
+	a.agentsMu.Lock()
+	a.agents = views
+	a.agentsMu.Unlock()
 }
 
 // watchAgents 运行期间轮询快照（每秒）；清单清空即退出。已在watching
@@ -95,10 +105,10 @@ func (a *App) watchAgents() {
 		for range 3600 { // 上限 1 小时：防孤儿轮询（代理长寿罕见）
 			views := a.svc.AgentJobStates(id)
 			if len(views) == 0 {
-				a.update(func() { a.agents = nil })
+				a.setAgents(nil)
 				return
 			}
-			a.update(func() { a.agents = views })
+			a.setAgents(views)
 			time.Sleep(time.Second)
 		}
 	}()

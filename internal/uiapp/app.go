@@ -55,6 +55,7 @@ type App struct {
 	// automation panel state（specs/automation.md 的管理面）.
 	jobsOpen                                       bool
 	agents                                         []tools.AgentJobView // 后台子代理状态条（spec 规则 61）
+	agentsMu                                       sync.Mutex           // agents 快照专用锁（a.mu 非重入，见 agents.go）
 	agentsWatching                                 atomic.Bool          // 轮询 goroutine 单飞守卫
 	jobs                                           []schedule.Job
 	jobsErr                                        string
