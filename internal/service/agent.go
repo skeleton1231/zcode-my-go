@@ -1478,9 +1478,18 @@ func (s *AgentService) workspaceFor(sessionID, workspace string) tools.Workspace
 	return ws
 }
 
-// mcpServers snapshots the launched servers. Callers hold s.mu.
+// mcpServers snapshots the launched servers（拷贝出表——异步启动后
+// syncMCP 随时会写表，裸读曾是竞态，CI -race 在 TestMCPPrompts 逮
+// 过）。自身持锁；已持锁的调用方用 mcpServersLocked。
 func (s *AgentService) mcpServers() []*mcp.Server {
-	return s.mcp
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mcpServersLocked()
+}
+
+// mcpServersLocked 是 mcpServers 的持锁形态（调用方持有 s.mu）。
+func (s *AgentService) mcpServersLocked() []*mcp.Server {
+	return append([]*mcp.Server(nil), s.mcp...)
 }
 
 // EditAndResend replaces the session's last user message and reruns.
