@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -69,9 +70,7 @@ func (e *editorState) readLine(prompt string) (line string, ok, quit bool) {
 			e.out.Write([]byte("\r\n"))
 			text := strings.TrimRight(string(buf), "\n")
 			if t := strings.TrimSpace(text); t != "" {
-				if n := len(e.history); n == 0 || e.history[n-1] != t {
-					e.history = append(e.history, t)
-				}
+				e.pushHistory(t)
 			}
 			return text, true, false
 		case 3: // Ctrl+C
@@ -192,10 +191,32 @@ func itoaEd(n int) string {
 	return s
 }
 
-// readPasted 消费到粘贴结束标记（ESC[201~），CR/CRLF 归一为换行——
+// pushHistory 记一条历史：连续重复折叠、超 histMax 丢最旧（与 TUI 同
+// 上限同语义，issue #192——编辑器历史是 TUI 的孪生位点）。
+func (e *editorState) pushHistory(t string) {
+	if n := len(e.history); n == 0 || e.history[n-1] != t {
+		e.history = append(e.history, t)
+	}
+	if over := len(e.history) - histMax; over > 0 {
+		e.history = append([]string(nil), e.history[over:]...)
+	}
+}
+
+// readPasted 消费粘贴并在出口封顶（issue #195：对齐 stdin 管道 60K 口
+// 径——数 MB 剪贴板直入上下文与 JSONL 行是 8MB 家族的交互形态）。
+func (e *editorState) readPasted() string {
+	text := e.readPastedRaw()
+	if r := []rune(text); len(r) > pasteCapRunes {
+		return string(r[:pasteCapRunes]) +
+			"\n…（粘贴超长已截断，原 " + strconv.Itoa(len(r)) + " 字符）"
+	}
+	return text
+}
+
+// readPastedRaw 消费到粘贴结束标记（ESC[201~），CR/CRLF 归一为换行——
 // 粘贴内的回车不触发提交（spec 规则 33）。疑似结束标记的 ESC 序列
 // 先入待定缓冲，不是结束标记则原样吐回内容。
-func (e *editorState) readPasted() string {
+func (e *editorState) readPastedRaw() string {
 	var b strings.Builder
 	var pending []rune
 	for {

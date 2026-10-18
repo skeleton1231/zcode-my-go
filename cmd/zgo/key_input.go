@@ -78,6 +78,9 @@ func (k *keyStream) feedWith(s *tuiState, p []byte, onLine func(string)) int {
 			}
 			seq := string(k.buf[:n])
 			if k.handlePasteMarker(seq) {
+				if !k.pasting { // 刚收到结束标记：粘贴封顶（issue #195）
+					capPasted(s)
+				}
 				k.buf = k.buf[n:]
 				continue
 			}

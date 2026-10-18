@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"strconv"
 	"bytes"
 	"strings"
 	"testing"
@@ -111,5 +112,43 @@ func TestEditorPasteNotMarker(t *testing.T) {
 	line, ok, _ := e.readLine("zgo> ")
 	if !ok || !strings.Contains(line, "a") || !strings.Contains(line, "b") {
 		t.Fatalf("content lost: %q", line)
+	}
+}
+
+// TestEditorHistoryCapped 验证编辑器历史封顶（issue #192：与 TUI 同
+// histMax，超限丢最旧）。
+func TestEditorHistoryCapped(t *testing.T) {
+	var input strings.Builder
+	for i := 0; i < histMax+3; i++ {
+		input.WriteString("m" + strconv.Itoa(i) + "")
+	}
+	e, _ := newTestEditor(input.String())
+	for i := 0; i < histMax+3; i++ {
+		if _, ok, _ := e.readLine("zgo> "); !ok {
+			t.Fatal("submit failed")
+		}
+	}
+	if len(e.history) != histMax {
+		t.Fatalf("history len = %d, want %d", len(e.history), histMax)
+	}
+	if e.history[0] != "m3" {
+		t.Fatalf("oldest = %q, want m3", e.history[0])
+	}
+}
+
+// TestEditorPasteCapped 验证粘贴封顶（issue #195）：超限 rune 截断带尾
+// 注；CR/LF 仍归一为换行。
+func TestEditorPasteCapped(t *testing.T) {
+	big := strings.Repeat("x", pasteCapRunes+7)
+	e, _ := newTestEditor("[200~" + big + "[201~")
+	line, ok, _ := e.readLine("zgo> ")
+	if !ok {
+		t.Fatal("submit failed")
+	}
+	if n := len([]rune(line)); n > pasteCapRunes+30 {
+		t.Fatalf("paste uncapped: %d runes", n)
+	}
+	if !strings.Contains(line, "已截断") {
+		t.Fatal("cap note missing")
 	}
 }

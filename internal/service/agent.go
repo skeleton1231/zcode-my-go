@@ -1377,7 +1377,23 @@ func (s *AgentService) MCPReadResource(server, uri string) (string, error) {
 		if res.Text == "" {
 			return "", fmt.Errorf("资源 %s 无文本内容（mimeType %s，blob 类资源暂不支持）", uri, res.MimeType)
 		}
-		return res.Text, nil
+		return capResourceText(res.Text), nil
 	}
 	return "", fmt.Errorf("没有 MCP 服务器 %q", server)
+}
+
+// mcpResourceCapRunes 封顶资源文本（rune 计，对齐 @提及/stdin 的 60K
+// 口径，issue #194：MCP 资源的典型形态恰是大文本——日志、数据集切片；
+// 无界直入消息即上下文爆炸 + JSONL 行超 8MB 读取上限的家族第三例）。
+const mcpResourceCapRunes = 60 << 10
+
+// capResourceText 截断超限资源并留可读标注（原长度可见，模型可改用别
+// 的途径取全文）。
+func capResourceText(text string) string {
+	r := []rune(text)
+	if len(r) <= mcpResourceCapRunes {
+		return text
+	}
+	return string(r[:mcpResourceCapRunes]) +
+		fmt.Sprintf("\n…（资源超长，已截断，原 %d 字符）", len(r))
 }
