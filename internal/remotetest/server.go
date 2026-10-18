@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pkg/sftp"
 	ssh "golang.org/x/crypto/ssh"
@@ -195,6 +196,10 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 			case <-disconnected:
 				killProcessTree(cmd.Process)
 				<-done
+				// cmd.Wait 只等 cmd.exe；孙进程（taskkill /T 异步击杀的
+				// ping 等）可能还占着服务器临时目录几个毫秒——留出宽
+				// 限再关通道，客户端测试清理不再撞文件占用。
+				time.Sleep(100 * time.Millisecond)
 				return
 			}
 		case "pty-req":
