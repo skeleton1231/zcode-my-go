@@ -165,6 +165,31 @@ func Restore(dir, session string, seq int) error {
 	return run("clean", "-fd")
 }
 
+// RemoveAll deletes every checkpoint ref of the session（issue #224：删
+// 会话不清 refs 是活引用硬泄漏——git gc 永不回收）。非仓库/无 refs 静
+// 默成功（删除路径不强求仓库）；逐 ref 删除失败原样返回。
+func RemoveAll(dir, session string) error {
+	git, err := gitCmd()
+	if err != nil {
+		return nil // 无 git：无 refs 可清（与 ErrNotARepo 的降级语义一致）
+	}
+	prefix := fmt.Sprintf("refs/zgo-checkpoints/%s/", session)
+	out, err := exec.Command(git, baseArgs(dir, "for-each-ref", "--format=%(refname)", prefix)...).Output()
+	if err != nil {
+		return nil // 非仓库：无 refs 可清
+	}
+	for _, line := range strings.Fields(string(out)) {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		cmd := exec.Command(git, baseArgs(dir, "update-ref", "-d", line)...)
+		if o, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git update-ref -d %s: %s", line, strings.TrimSpace(string(o)))
+		}
+	}
+	return nil
+}
+
 // Prune keeps only the newest `keep` checkpoints of the session.
 func Prune(dir, session string, keep int) error {
 	git, err := gitCmd()

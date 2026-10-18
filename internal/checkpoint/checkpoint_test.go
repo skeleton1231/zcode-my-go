@@ -196,6 +196,46 @@ func TestRestoreDistinguishesPrunedFromNonRepo(t *testing.T) {
 	}
 }
 
+// TestRemoveAllDropsEveryRef: 删除会话必须清光其检查点 refs（issue
+// #224：活 ref 永久钉住 git 对象——非回收的硬泄漏）；非仓库目录静默
+// 无操作。
+func TestRemoveAllDropsEveryRef(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := gitRepo(t)
+	for seq := 0; seq < 3; seq++ {
+		write(t, dir, "f.txt", string(rune('a'+seq))+"\n")
+		if err := Capture(dir, "s1", seq); err != nil {
+			t.Fatalf("capture %d: %v", seq, err)
+		}
+	}
+	if err := Capture(dir, "other", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveAll(dir, "s1"); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	out, err := exec.Command("git", "-C", dir, "for-each-ref",
+		"--format=%(refname)", "refs/zgo-checkpoints/s1/").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("s1 refs survived: %s", out)
+	}
+	// 其他会话的 refs 不受影响。
+	out2, _ := exec.Command("git", "-C", dir, "for-each-ref",
+		"--format=%(refname)", "refs/zgo-checkpoints/other/").Output()
+	if !strings.Contains(string(out2), "refs/zgo-checkpoints/other/0") {
+		t.Fatalf("other session refs collateral damage: %s", out2)
+	}
+	// 非仓库目录：静默无操作（删除路径不强求仓库）。
+	if err := RemoveAll(t.TempDir(), "s1"); err != nil {
+		t.Fatalf("RemoveAll on non-repo: %v", err)
+	}
+}
+
 // TestCaptureRestoreViaShortPath: 工作区以 8.3 短名形态传入（CI runner
 // 的 TMP 即 RUNNER~1 形态）时，git toplevel 的长形态对比不得误判非仓库
 //（winpath.Long 归一——CI 首跑 windows 上检查点全军覆没的根因）。
