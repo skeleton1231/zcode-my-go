@@ -59,6 +59,10 @@ type WorkflowConfig struct {
 	Editable    []Tool // edit steps
 	Permissions *permission.Service
 	Ask         func(AskRequest) AskResponse
+	// Prefill 是续跑注入：下标 → 已完成步骤的既往结果（spec 规则
+	// 48）。命中的步骤跳过执行、结果直接进入上下文——依赖它的下游
+	// 照常看到文本；定义不可变，下标即稳定键。
+	Prefill map[int]StepResult
 }
 
 // RunWorkflow executes a plan (ZCode's dynamic workflow). Without After
@@ -69,20 +73,9 @@ type WorkflowConfig struct {
 // already-running steps finish and undispatched dependents are reported as
 // skipped.
 func RunWorkflow(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep) ([]StepResult, error) {
-	if len(steps) == 0 {
-		return nil, fmt.Errorf("workflow has no steps")
-	}
-	dag := false
-	for i, step := range steps {
-		if step.Kind != StepResearch && step.Kind != StepEdit {
-			return nil, fmt.Errorf("step %d has unknown kind %q (research or edit)", i+1, step.Kind)
-		}
-		if strings.TrimSpace(step.Description) == "" {
-			return nil, fmt.Errorf("step %d has no description", i+1)
-		}
-		if len(step.After) > 0 {
-			dag = true
-		}
+	dag, err := ValidateWorkflowSteps(steps)
+	if err != nil {
+		return nil, err
 	}
 	if !dag {
 		return runSequential(ctx, cfg, steps)
@@ -92,6 +85,27 @@ func RunWorkflow(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep) 
 		return nil, err
 	}
 	return runDAG(ctx, cfg, steps, deps)
+}
+
+// ValidateWorkflowSteps 校验步骤表（空表/未知类型/缺描述），并报告是
+// 否进入 DAG 模式——持久化（保存定义）在执行前用同一套校验（spec 规
+// 则 48）。
+func ValidateWorkflowSteps(steps []WorkflowStep) (dag bool, err error) {
+	if len(steps) == 0 {
+		return false, fmt.Errorf("workflow has no steps")
+	}
+	for i, step := range steps {
+		if step.Kind != StepResearch && step.Kind != StepEdit {
+			return false, fmt.Errorf("step %d has unknown kind %q (research or edit)", i+1, step.Kind)
+		}
+		if strings.TrimSpace(step.Description) == "" {
+			return false, fmt.Errorf("step %d has no description", i+1)
+		}
+		if len(step.After) > 0 {
+			dag = true
+		}
+	}
+	return dag, nil
 }
 
 // stepGraph resolves After names to step indices and validates the graph:
@@ -156,6 +170,10 @@ func stepGraph(steps []WorkflowStep) (deps, dependents [][]int, err error) {
 func runSequential(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep) ([]StepResult, error) {
 	var results []StepResult
 	for i, step := range steps {
+		if done, ok := cfg.Prefill[i]; ok && !done.Failed {
+			results = append(results, done) // 续跑：已完成步骤注入既往结果
+			continue
+		}
 		res, err := runStep(ctx, cfg, steps, results, i)
 		results = append(results, res)
 		if err != nil {
@@ -177,6 +195,14 @@ func runDAG(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep, deps 
 	inflight := 0
 	failedAt := -1
 	var firstErr error
+	// 续跑预置：已完成步骤直接置 done、注入既往结果——就绪轮询与
+	// 依赖上下文都从 state/results 取，无需特判（spec 规则 48）。
+	for i, done := range cfg.Prefill {
+		if i < len(steps) && !done.Failed {
+			state[i] = stepDone
+			results[i] = done
+		}
+	}
 
 	type completion struct {
 		i   int

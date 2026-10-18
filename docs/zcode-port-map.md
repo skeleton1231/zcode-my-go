@@ -348,6 +348,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    OpenAI 降级文本说明。SSH 工作区同构。
 1d468ec (feat: read tool returns images — multimodal tool results)
 
+**工作流持久化与复用**（ZCode saved-workflows / workflow-runs 的落地，
+   spec 规则 48）：internal/workflow——定义（workflows/<名>.json）与运
+   行记录（workflow-runs/<id>.json，开跑落盘 running、终态回填、保留
+   50 条）；workflow 工具 {steps[, saveAs]}/{run: 名}/{resume: 运行
+   ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
+   zgo workflow list/show/runs 运维面。
+
 **后台子代理**（ZCode runtime-task registry / Agent 工具的落地，spec
    规则 49）：agent/agent_output/agent_stop 三件套——启动即回执、父会
    话继续、收割/停止；注册表会话作用域（ctx 派生注册表根，随

@@ -9,16 +9,34 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
+// WorkflowRequest 是一次工作流调用的三种形态（spec 规则 48）：临场步
+// 骤表（可附带 saveAs 命名保存）、按名执行已保存定义、按运行 ID 续跑
+// 未完记录。三者互斥，steps 优先。
+type WorkflowRequest struct {
+	Steps  []agent.WorkflowStep
+	SaveAs string
+	Run    string
+	Resume string
+}
+
+// WorkflowOutcome 是执行的回执：结果、运行 ID（记录可续跑）与保存名。
+type WorkflowOutcome struct {
+	Results []agent.StepResult
+	RunID   string
+	SavedAs string
+}
+
 // Workflow runs a multi-step plan (ZCode's dynamic workflow): research
 // steps explore read-only, edit steps carry the session's permission gate.
 type Workflow struct {
-	// Run executes the plan; the service wires it to agent.RunWorkflow.
-	Run func(ctx context.Context, steps []agent.WorkflowStep) ([]agent.StepResult, error)
+	// Exec executes the request; the service wires it to agent.RunWorkflow
+	// with persistence (definition store + run records).
+	Exec func(ctx context.Context, req WorkflowRequest) (WorkflowOutcome, error)
 }
 
-// NewWorkflow builds the workflow tool over a runner.
-func NewWorkflow(run func(ctx context.Context, steps []agent.WorkflowStep) ([]agent.StepResult, error)) *Workflow {
-	return &Workflow{Run: run}
+// NewWorkflow builds the workflow tool over an executor.
+func NewWorkflow(exec func(ctx context.Context, req WorkflowRequest) (WorkflowOutcome, error)) *Workflow {
+	return &Workflow{Exec: exec}
 }
 
 // Name implements agent.Tool.
@@ -31,12 +49,18 @@ func (w *Workflow) Description() string {
 		"after-declarations steps run in order, each seeing the plan and prior " +
 		"results; give steps names and declare after to run independent steps " +
 		"in parallel (up to 4), each seeing its upstream results. Use for " +
-		"tasks that naturally decompose. Keep plans under eight steps."
+		"tasks that naturally decompose. Keep plans under eight steps. " +
+		"Reusable plans: saveAs names the plan for later {run: name} calls; " +
+		"{resume: runID} continues an interrupted run, skipping steps that " +
+		"already completed."
 }
 
 // Parameters implements agent.Tool.
 func (w *Workflow) Parameters() map[string]any {
 	return objectSchema(map[string]any{
+		"run":    prop("string", "Name of a saved workflow to execute (mutually exclusive with steps)"),
+		"resume": prop("string", "ID of an interrupted run to continue: completed steps are skipped, their recorded results feed downstream steps"),
+		"saveAs": prop("string", "Name to save these steps as for later reuse (lowercase letters, digits, hyphens)"),
 		"steps": map[string]any{
 			"type":        "array",
 			"description": "The plan, in execution order",
@@ -65,21 +89,35 @@ func (w *Workflow) Parameters() map[string]any {
 // Execute implements agent.Tool.
 func (w *Workflow) Execute(ctx context.Context, args json.RawMessage) agent.ToolResult {
 	var a struct {
-		Steps []agent.WorkflowStep `json:"steps"`
+		Steps  []agent.WorkflowStep `json:"steps"`
+		SaveAs string               `json:"saveAs"`
+		Run    string               `json:"run"`
+		Resume string               `json:"resume"`
 	}
 	if err := decodeArgs(args, &a); err != nil {
 		return errResult("%v", err)
 	}
-	if w.Run == nil {
+	if w.Exec == nil {
 		return errResult("no workflow runner wired")
 	}
-	results, err := w.Run(ctx, a.Steps)
+	req := WorkflowRequest{Steps: a.Steps, SaveAs: strings.TrimSpace(a.SaveAs),
+		Run: strings.TrimSpace(a.Run), Resume: strings.TrimSpace(a.Resume)}
+	if len(req.Steps) == 0 && req.Run == "" && req.Resume == "" {
+		return errResult("workflow needs steps, run (saved name) or resume (run ID)")
+	}
+	outcome, err := w.Exec(ctx, req)
 	var b strings.Builder
 	if err != nil {
 		b.WriteString("error: " + err.Error() + "\n")
 	}
+	if outcome.SavedAs != "" {
+		b.WriteString("已保存工作流 " + outcome.SavedAs + "，之后可用 run 参数按名执行\n")
+	}
+	if outcome.RunID != "" {
+		b.WriteString("运行记录 " + outcome.RunID + "\n")
+	}
 	b.WriteString("工作流结果：\n")
-	for i, res := range results {
+	for i, res := range outcome.Results {
 		mark := "✓"
 		if res.Failed {
 			mark = "✕"

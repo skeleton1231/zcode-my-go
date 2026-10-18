@@ -117,11 +117,14 @@ func (t *recordingTool) Execute(context.Context, json.RawMessage) ToolResult {
 
 // promptEchoProvider answers with the prompt it was given.
 type promptEchoProvider struct {
+	mu     sync.Mutex // DAG 模式下步骤并行，记录追加须持锁（CI -race 逮过）
 	record *[]string
 }
 
 func (p *promptEchoProvider) Stream(_ context.Context, req ai.Request) <-chan ai.StreamEvent {
+	p.mu.Lock()
 	*p.record = append(*p.record, req.Messages[len(req.Messages)-1].Text())
+	p.mu.Unlock()
 	out := make(chan ai.StreamEvent, 3)
 	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
 	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "step done"}
@@ -461,5 +464,67 @@ func TestDAGAbortLetsInflightFinish(t *testing.T) {
 	}
 	if len(results) != 3 || results[0].Failed || results[1].Failed || results[2].Failed {
 		t.Fatalf("in-flight steps killed by abort: %+v", results)
+	}
+}
+
+// TestWorkflowResumeSequentialPrefill 续跑（spec 规则 48）：顺序模式注
+// 入前两步既往结果——只有第三步真正执行，且其提示携带注入文本。
+func TestWorkflowResumeSequentialPrefill(t *testing.T) {
+	var seen []string
+	provider := &promptEchoProvider{record: &seen}
+	steps := []WorkflowStep{
+		{Description: "扫描", Kind: StepResearch},
+		{Description: "复核", Kind: StepResearch},
+		{Description: "发布", Kind: StepResearch},
+	}
+	cfg := WorkflowConfig{Provider: provider, Model: "m", Prefill: map[int]StepResult{
+		0: {Step: steps[0], Text: "既往扫描结果"},
+		1: {Step: steps[1], Text: "既往复核结果"},
+	}}
+	res, err := RunWorkflow(context.Background(), cfg, steps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 3 || res[0].Text != "既往扫描结果" || res[1].Text != "既往复核结果" {
+		t.Fatalf("prefill results missing: %+v", res)
+	}
+	// 只跑了第三步：provider 只见过一次提示，且该提示包含既往结果。
+	if len(seen) != 1 {
+		t.Fatalf("provider saw %d briefs, want 1", len(seen))
+	}
+	if !strings.Contains(seen[0], "既往扫描结果") || !strings.Contains(seen[0], "既往复核结果") {
+		t.Fatalf("brief misses injected results: %q", seen[0])
+	}
+	if !strings.Contains(seen[0], "▶ 3. [research] 发布") {
+		t.Fatalf("brief assigns step 3: %q", seen[0])
+	}
+}
+
+// TestWorkflowResumeDAGPrefill DAG 续跑：已完成节点置 done——依赖它的
+// 下游直接就绪（其提示携带既往结果），未完成的分支照常执行。
+func TestWorkflowResumeDAGPrefill(t *testing.T) {
+	var seen []string
+	provider := &promptEchoProvider{record: &seen}
+	steps := []WorkflowStep{
+		{Name: "scan", Description: "扫描", Kind: StepResearch},
+		{Name: "audit", Description: "审计", Kind: StepResearch},
+		{Name: "fix", Description: "修复", After: []string{"scan"}, Kind: StepEdit},
+	}
+	cfg := WorkflowConfig{Provider: provider, Model: "m", Prefill: map[int]StepResult{
+		0: {Step: steps[0], Text: "既往扫描结果"},
+	}}
+	res, err := RunWorkflow(context.Background(), cfg, steps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res[0].Text != "既往扫描结果" || res[0].Step.Name != "scan" {
+		t.Fatalf("prefill node missing: %+v", res[0])
+	}
+	if res[2].Failed {
+		t.Fatalf("downstream failed: %+v", res[2])
+	}
+	// 只跑了 audit 与 fix 两个提示。
+	if len(seen) != 2 {
+		t.Fatalf("provider saw %d briefs, want 2", len(seen))
 	}
 }
