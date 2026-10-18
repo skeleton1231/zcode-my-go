@@ -22,19 +22,28 @@ const (
 
 // ReadOnly returns the read-only toolset for subagents.
 func ReadOnly(workspace string) []agent.Tool {
-	w := Workspace{Root: workspace}
+	return ReadOnlyW(Workspace{Root: workspace})
+}
+
+// ReadOnlyW is ReadOnly over a prebuilt workspace——SSH 会话的子代理/
+// 工作流步骤必须用拨号后的 Remote 工作区（此前传字符串重建本地工
+// 具面，远程会话的嵌套循环读的是本地路径，spec 规则 50 顺带修复）。
+func ReadOnlyW(w Workspace) []agent.Tool {
 	return []agent.Tool{NewRead(w), NewGrep(w), NewGlob(w), NewLs(w)}
 }
 
 // States holds the session-scoped tool state (the todo plan), keyed by
 // session; All receives the owning session's slice.
 type States struct {
-	Todo *TodoState
-	Jobs *Jobs
+	Todo   *TodoState
+	Jobs   *Jobs
+	Agents *AgentJobs // 后台子代理注册表（spec 规则 50）
 }
 
 // NewStates builds empty per-session state.
-func NewStates() *States { return &States{Todo: &TodoState{}, Jobs: NewJobs()} }
+func NewStates() *States {
+	return &States{Todo: &TodoState{}, Jobs: NewJobs(), Agents: NewAgentJobs()}
+}
 
 // All returns the built-in tools bound to a workspace. state may be nil —
 // the todo tool then starts empty every turn — and ask may be nil, which

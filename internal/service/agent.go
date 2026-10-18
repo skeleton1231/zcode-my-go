@@ -216,6 +216,7 @@ func (s *AgentService) Close() {
 	s.mcp = nil
 	for _, state := range s.states {
 		state.Jobs.KillAll()
+		state.Agents.CloseAll()
 	}
 	for _, close := range s.wsClose {
 		close()
@@ -245,19 +246,32 @@ func (s *AgentService) rewire() {
 				state = tools.NewStates()
 				s.states[sessionID] = state
 			}
+			// e2e provider 注入的持锁快照：嵌套循环（task/dispatch/
+			// workflow/后台 agent）必须与主循环同一 provider 源——直连
+			// providerFor 会让注入对子任务不生效、真实客户端带着空
+			// key 出网。
 			s.mu.Unlock()
-			provider := func() ai.Provider { return s.providerFor(cfg) }
+			ov := s.providerOverride
+			provider := func() ai.Provider {
+				if ov != nil {
+					return ov()
+				}
+				return s.providerFor(cfg)
+			}
 			model := cfg.Model
 			question := s.question
+			// 先拨号再建嵌套工具面：ssh:// 会话的子代理/工作流步骤经
+			// ReadOnlyW 用 Remote 工作区（此前字符串重建的是本地面）。
+			ws := s.workspaceFor(sessionID, workspace)
+			roTools := tools.ReadOnlyW(ws)
 			task := tools.NewTask(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
 				return agent.RunSubtask(ctx, agent.SubtaskConfig{
 					Provider: provider(),
 					Model:    model,
 					System:   agent.SubtaskSystem(),
-					Tools:    tools.ReadOnly(workspace),
+					Tools:    roTools,
 				}, prompt)
 			})
-			ws := s.workspaceFor(sessionID, workspace)
 			contextRead := contextReader(ws)
 			all := append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)),
@@ -265,29 +279,30 @@ func (s *AgentService) rewire() {
 					return s.skillRoots(sessionID, workspace)
 				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
-				tools.NewWebFetchTool(tools.WebFetcher))
-			wfProvider := func() ai.Provider {
-				if o := s.providerSnapshot(); o != nil {
-					return o()
-				}
-				return s.providerFor(cfg)
-			}
+				tools.NewWebFetchTool(tools.WebFetcher),
+				// 后台子代理三件套（spec 规则 50）。
+				tools.NewAgentTool(state.Agents, func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
+					return agent.RunSubtask(ctx, agent.SubtaskConfig{
+						Provider: provider(),
+						Model:    model,
+						System:   agent.SubtaskSystem(),
+						Tools:    roTools,
+					}, prompt)
+				}),
+				tools.NewAgentOutputTool(state.Agents),
+				tools.NewAgentStopTool(state.Agents))
+			wfProvider := provider
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
 			wfAsk := s.ask
-			dispProvider := func() ai.Provider {
-				if o := s.providerSnapshot(); o != nil {
-					return o()
-				}
-				return s.providerFor(cfg)
-			}
+			dispProvider := provider
 			dispModel := cfg.Model
 			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string) []agent.SubtaskResult {
 				return agent.RunSubtasks(ctx, agent.SubtaskConfig{
 					Provider: dispProvider(),
 					Model:    dispModel,
 					System:   agent.SubtaskSystem(),
-					Tools:    tools.ReadOnly(workspace),
+					Tools:    roTools,
 				}, prompts)
 			}))
 			all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
@@ -297,7 +312,7 @@ func (s *AgentService) rewire() {
 							Provider:    wfProvider(),
 							Model:       wfModel,
 							System:      prompt.SystemFS(workspace, contextRead),
-							ReadOnly:    tools.ReadOnly(workspace),
+							ReadOnly:    roTools,
 							Editable:    tools.AllW(ws, state, question),
 							Permissions: wfPerms,
 							Ask:         wfAsk,
@@ -717,6 +732,7 @@ func (s *AgentService) DeleteSession(id string) error {
 	s.mu.Lock()
 	if state, ok := s.states[id]; ok {
 		state.Jobs.KillAll()
+		state.Agents.CloseAll() // 后台子代理随会话清光（spec 规则 50）
 		delete(s.states, id)
 	}
 	if close, ok := s.wsClose[id]; ok {

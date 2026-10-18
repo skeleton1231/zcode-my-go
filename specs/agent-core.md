@@ -330,8 +330,19 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
-   （规则 50-52 由 pending PR 预留：50/51 后台子代理与续话、52 read
-   读 PDF。）
+50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+   `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
+   合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
+   本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop
+   {id}` 停止（终态保持可读、结论为空）。注册表会话作用域（tools.
+   States.Agents）：ctx 派生自注册表根而非工具调用——不随工具返回取
+   消；DeleteSession/服务 Close 全停（不留僵尸循环）。嵌套循环的
+   provider 与工具面与主循环同源：e2e 注入（UseProviderForTesting）
+   经持锁快照进入子任务；ssh:// 会话的 task/dispatch/workflow/后台
+   agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
+   地工具面，远程嵌套循环读的是本地磁盘）。
+
+   （规则 51/52 由 pending PR 预留：51 子代理续话、52 read 读 PDF。）
 
 53. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
    本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来

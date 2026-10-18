@@ -355,9 +355,19 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
 
+<<<<<<< HEAD
 **工作区信任门**（pi project-trust / CC 信任提示的落地，spec 规则
    53）：internal/trust——未授信本地工作区不加载其 .zgorules.json
    （allow 规则即提权面）与 .zgo 命令/技能层（提示注入面）；授信表
    trusted.json（规范化键/原子写）；ssh:// 显式拨号视为授信；/trust
    即时重载在跑会话规则、zgo trust CLI（grant/list/revoke，撤销即时
    清空）；终端三表面未授信提示。
+=======
+**后台子代理**（ZCode runtime-task registry / Agent 工具的落地，spec
+   规则 50）：agent/agent_output/agent_stop 三件套——启动即回执、父会
+   话继续、收割/停止；注册表会话作用域（ctx 派生注册表根，随
+   DeleteSession/Close 全停）。顺带修复：嵌套循环（task/dispatch/
+   workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、
+   ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
+   一经持锁快照 + ReadOnlyW 拨号工作区。
+>>>>>>> origin/feat/bg-agents
