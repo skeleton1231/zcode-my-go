@@ -57,6 +57,34 @@ func TestAttachmentsQueueLifecycle(t *testing.T) {
 	}
 }
 
+// TestAttachmentsTotalBudgetRejectedEarly: 挂第 2 张时即按编码总量拒绝
+//（与桌面 📎 同限同口径），提示分条——而非发送时才被 session 兜底静默
+// 少发（issue #132）。
+func TestAttachmentsTotalBudgetRejectedEarly(t *testing.T) {
+	dir := t.TempDir()
+	raw := make([]byte, 4<<20) // 4MB 原图 → base64 ~5.6MB，一张在预算内
+	a := filepath.Join(dir, "a.png")
+	b := filepath.Join(dir, "b.png")
+	if err := os.WriteFile(a, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var q attachments
+	if msg := q.add(a); !strings.Contains(msg, "共 1 张") {
+		t.Fatalf("first add = %q", msg)
+	}
+	msg := q.add(b)
+	if !strings.Contains(msg, "总量超过") || !strings.Contains(msg, "分条") {
+		t.Fatalf("second add = %q, want early total-budget rejection", msg)
+	}
+	if len(q.pending) != 1 || q.status() != "📎×1" {
+		t.Fatalf("over-budget image queued: pending=%d status=%q", len(q.pending), q.status())
+	}
+}
+
 // TestSlashAttachRoutes: /attach reaches the surface callback; without
 // one it says unsupported; missing arg prints usage.
 func TestSlashAttachRoutes(t *testing.T) {

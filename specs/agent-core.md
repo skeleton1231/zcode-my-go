@@ -68,7 +68,9 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
 14. 终端附件形态：print 模式 `-i/--image <路径>`（可重复）随提示发送；
   REPL/TUI 的 `/attach <路径>` 攒待发附件（状态栏 📎×N 指示），随下一条
   消息经 ChatMedia 发送后清空；类型/大小校验与桌面 📎 同限（5MB），失败
-  逐项提示不阻断发送。
+  逐项提示不阻断发送。总量预算同样提前拒绝（issue #132）：挂载时按编码
+  字节计，超 6MB 即拒并提示分条发送（与桌面 attachmentTotalCapBytes
+  同口径同文案），不再等发送时的 session 兜底。
 16. 前缀缓存（Anthropic 协议）：请求在稳定前缀的末尾打 ephemeral 断点——
    工具表末项、系统提示尾部、倒数第二条消息的最后一块（滚动前缀），总数
    不超过 API 上限 4；空前缀自动少打。兼容端点不识别 cache_control 时按
