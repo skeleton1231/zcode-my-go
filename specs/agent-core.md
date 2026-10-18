@@ -428,7 +428,7 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    条元数据**——转录正文绝不进报告）、git/ssh 工具链探测。默认写工
    作区 `zgo-bugreport-<时间戳>.md`。
 
-60. cron 任务级模型：`Job.Model`（cron add --model，此前只存不用——
+61. cron 任务级模型：`Job.Model`（cron add --model，此前只存不用——
    scheduleRunner 一直跑全局模型）。执行面 Manager.SetSessionModel：替
    换会话的模型解析闭包（s.model 是每次请求的实时读取点——后续回合
    与压缩即刻生效；空串恢复全局解析）；scheduleRunner 对 job.Model
