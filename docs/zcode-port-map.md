@@ -254,6 +254,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    局）；`/名 [参数]` 展开 $ARGUMENTS 后作为消息发送（Env.Send）；builtin
    优先不遮蔽；/help 列自定义段（名字补斜杠对齐）；SSH 工作区经 path
    jail 同享。
+**TUI Esc 中止**（CC Esc-to-interrupt 的对应，spec 规则 38）：裸
+   Esc（chunk 末尾孤立形态——CSI 序列同 read 原子到达不受影响）在运
+   行中触发 Abort 并提示「已中止」；空闲无操作；粘贴内 ESC 保真；与
+   Ctrl+C 退出、括号粘贴、方向键互不冲突（escLen 不完整路径改标签
+   break 落穿判定）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
