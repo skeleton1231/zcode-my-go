@@ -100,17 +100,22 @@ func TestSettingsModal(t *testing.T) {
 		t.Fatalf("clicking save: %v", err)
 	}
 	for range 500 {
-		if !a.saving {
+		idle := false
+		a.locked(func() { idle = !a.sending && !a.saving }) // saveSettings goroutine 在 update 里写
+		if idle {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	tt.Frame()
 
-	if a.settings == nil || a.settings.Model != "glm-5.2" || a.settings.HasAPIKey {
-		t.Fatalf("settings after save: %+v", a.settings)
+	var st *service.SettingsView
+	var open bool
+	a.locked(func() { st = a.settings; open = a.settingsOpen })
+	if st == nil || st.Model != "glm-5.2" || st.HasAPIKey {
+		t.Fatalf("settings after save: %+v", st)
 	}
-	if a.settingsOpen {
+	if open {
 		t.Fatal("modal still open after save")
 	}
 	if !tt.HasText("glm-5.2") {
