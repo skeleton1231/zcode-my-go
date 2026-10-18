@@ -88,6 +88,9 @@ func cronList(store *schedule.Store) int {
 			status = status[:24] + "…"
 		}
 		model := j.Model
+		if j.Window != "" {
+			model += " ⏰" + j.Window
+		}
 		if model == "" {
 			model = "（默认）"
 		}
@@ -104,6 +107,7 @@ func cronAdd(store *schedule.Store, args []string) int {
 	prompt := fs.String("prompt", "", "要运行的提示")
 	workspace := fs.String("workspace", "", "会话工作区")
 	model := fs.String("model", "", "覆盖模型（可选）")
+	window := fs.String("window", "", "时间窗 HH:MM-HH:MM（可选，可跨午夜；空即不限）")
 	id := fs.String("id", "", "任务 ID（缺省按提示生成）")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -111,6 +115,10 @@ func cronAdd(store *schedule.Store, args []string) int {
 	if *scheduleExpr == "" || strings.TrimSpace(*prompt) == "" || *workspace == "" {
 		fmt.Fprintln(os.Stderr, "需要 --schedule --prompt --workspace")
 		return 2
+	}
+	if _, _, err := schedule.ParseWindow(*window); err != nil { // add 即校验（spec 规则 63）
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
 	}
 	if _, err := schedule.ParseCron(*scheduleExpr); err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
@@ -126,7 +134,7 @@ func cronAdd(store *schedule.Store, args []string) int {
 		return 1
 	}
 	job := schedule.Job{ID: jobID, Schedule: *scheduleExpr, Prompt: strings.TrimSpace(*prompt),
-		Workspace: abs, Model: *model, Enabled: true}
+		Workspace: abs, Model: *model, Window: *window, Enabled: true}
 	if err := store.Upsert(job); err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		return 1

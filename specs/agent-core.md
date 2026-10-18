@@ -436,6 +436,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    级前缀的来源）；ask 保持 SerialOnly 与只读风险。前台 task/
    dispatch/workflow 的研究步骤不带（短任务自纠，ZCode 同款取舍）。
 
+63. cron 时间窗（pi off-peak 的 Zgo 形态）：`Job.Window`（"HH:MM-
+   HH:MM" 本地时区，可跨午夜——22:00-06:00 取 [22:00,24:00)∪[0,
+   06:00)；空即不限）——到期时刻在窗口外则**不 fire 也不动 LastRun**，
+   任务保持到期，窗口一开的下一个 tick 补跑（语义是「推迟到窗口」而
+   非「错过」）。cron add --window add 即校验；cron list 模型列附 ⏰
+   窗口。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

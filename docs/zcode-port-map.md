@@ -426,3 +426,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **子代理升级提问**（ZCode escalate 的落地，spec 规则 62）：后台子代
    理工具面加 ask——问题经会话提问通道升级（带 [后台代理 <id>] 前
    缀），答案回转录继续跑；AgentRunFunc 增 id；前台短任务不带。
+
+**cron 时间窗**（pi off-peak 的 Zgo 形态，spec 规则 63）：Job.Window
+   （HH:MM-HH:MM 可跨午夜）——窗口外到期不 fire 不动 LastRun，窗口
+   一开补跑（推迟而非错过）；cron add --window 即校验，list 附 ⏰。
