@@ -249,6 +249,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    实时输入保存草稿、回到最新一行恢复；编辑召回文本可改后直接发送；
    历史跨会话切换保留。
 
+**自定义斜杠命令**（CC custom commands 的落地，spec 规则 39）：工作区
+   `.zgo/commands/*.md` 与全局 `~/.zgo/commands/*.md`（同名工作区覆盖全
+   局）；`/名 [参数]` 展开 $ARGUMENTS 后作为消息发送（Env.Send）；builtin
+   优先不遮蔽；/help 列自定义段（名字补斜杠对齐）；SSH 工作区经 path
+   jail 同享。
 **TUI Esc 中止**（CC Esc-to-interrupt 的对应，spec 规则 38）：裸
    Esc（chunk 末尾孤立形态——CSI 序列同 read 原子到达不受影响）在运
    行中触发 Abort 并提示「已中止」；空闲无操作；粘贴内 ESC 保真；与

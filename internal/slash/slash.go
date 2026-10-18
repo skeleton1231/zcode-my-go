@@ -65,7 +65,7 @@ func Run(env *Env, line string) (handled, quit bool) {
 		return true, false
 	}
 	if name == "/help" {
-		env.Out(helpText())
+		env.Out(helpText() + customCommandsHelp(env))
 		return true, false
 	}
 	for _, c := range commands {
@@ -73,6 +73,21 @@ func Run(env *Env, line string) (handled, quit bool) {
 			continue
 		}
 		env.Out(c.run(env, strings.TrimSpace(args)))
+		return true, false
+	}
+	// 自定义命令（spec 规则 39）：builtin 优先，同名不遮蔽（名字补斜杠
+	// 对齐 builtin 的 "/name" 形态）。
+	for _, cc := range env.Svc.CustomCommands(env.Workspace()) {
+		if "/"+cc.Name != name {
+			continue
+		}
+		text := strings.ReplaceAll(cc.Text, "$ARGUMENTS", strings.TrimSpace(args))
+		if env.Send == nil {
+			env.Out("[自定义命令 /" + cc.Name + " 展开如下（此表面不能直接发送）：\n" + text)
+			return true, false
+		}
+		env.Send(text)
+		env.Out("[自定义命令] 已发送 /" + cc.Name)
 		return true, false
 	}
 	env.Out("未知命令 " + name + "，/help 查看全部")
@@ -390,6 +405,24 @@ func helpText() string {
 	b.WriteString("  /exit /quit /q              退出\n")
 	for _, c := range commands {
 		fmt.Fprintf(&b, "  %-28s %s\n", c.usage, c.help)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// customCommandsHelp 附自定义命令段（spec 规则 39；/help 调用）。
+func customCommandsHelp(env *Env) string {
+	cmds := env.Svc.CustomCommands(env.Workspace())
+	if len(cmds) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n自定义命令（.zgo/commands/）：\n")
+	for _, c := range cmds {
+		first := strings.SplitN(strings.TrimSpace(c.Text), "\n", 2)[0]
+		if r := []rune(first); len(r) > 24 {
+			first = string(r[:24]) + "…"
+		}
+		fmt.Fprintf(&b, "  /%-26s %s\n", c.Name, first)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

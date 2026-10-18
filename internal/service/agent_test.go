@@ -480,3 +480,29 @@ type fixedProvider struct {
 func (p fixedProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
 	return p.ch
 }
+
+// TestCustomCommandTextCapped 验证命令文件封顶（issue #195 家族清单
+// 的第五个入口——60K rune 对齐 stdin/粘贴/资源口径；超限截断 + 标注）。
+func TestCustomCommandTextCapped(t *testing.T) {
+	svc, _ := New(t.TempDir())
+	t.Cleanup(svc.Close)
+	ws := t.TempDir()
+	dir := filepath.Join(ws, ".zgo", "commands")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("字", commandCapRunes+9)
+	if err := os.WriteFile(filepath.Join(dir, "big.md"), []byte(big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmds := svc.CustomCommands(ws)
+	if len(cmds) != 1 || cmds[0].Name != "big" {
+		t.Fatalf("cmds = %+v", cmds)
+	}
+	if n := len([]rune(cmds[0].Text)); n > commandCapRunes+40 {
+		t.Fatalf("command text uncapped: %d runes", n)
+	}
+	if !strings.Contains(cmds[0].Text, "已截断") {
+		t.Fatal("cap annotation missing")
+	}
+}
