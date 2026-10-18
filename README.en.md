@@ -64,7 +64,23 @@ settings file).
 
 MIT © 2026 skeleton1231
 
+## v0.5.1 highlights
+
+- Rewind to any turn: RewindTo(n) drops turns n..latest (checkpoint
+  restore + transcript truncation); desktop offers "⟲ rewind to here"
+  on every user turn, terminals get `/rewind [n]`.
+- `/export [md] [path]` brings session export to the REPL/TUI/print.
+- TUI task surface: pinned todo plan block (refreshed on every todo
+  write, folded past six rows) plus Ctrl+Up/Down turn navigation and
+  PageUp/PageDown half-screen scrolling, mirroring desktop semantics.
+- Desktop turn navigation: Ctrl+Up/Down jumps between user turns
+  (stops tail-follow, centers the target, walks search matches).
+- `zgo sessions search` — the CLI face of cross-session search.
+- Stability: OAuth refresh single-flight (in-lock re-read) and a
+  stable system-prompt cache prefix (volatile tail split out).
+
 ## v0.5.0 highlights
+
 
 - SSH terminal: the terminal panel runs a remote interactive shell on
   ssh:// workspaces (PTY + WindowChange).

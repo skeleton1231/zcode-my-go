@@ -46,6 +46,11 @@ func (c Config) String() string {
 	return "ssh://" + host + c.Root
 }
 
+// isASCIILetter reports a single-byte ASCII letter (drive-letter check).
+func isASCIILetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
 // ParseTarget parses ssh://user@host:port/path (ZCode's remote workspace
 // address); an empty scheme means a local workspace and errors here.
 func ParseTarget(target string) (Config, error) {
@@ -59,6 +64,13 @@ func ParseTarget(target string) (Config, error) {
 		rest = rest[:i]
 	}
 	cfg := Config{Root: path.Clean("/" + root)}
+	// Windows 盘符根（"/C:/…"）：真 SSH 到 Windows 主机的路径不带前导
+	// 斜杠，URL 解析还原时要剥掉——否则 "/C:/…" 在任何一侧的 fs 上都
+	// 无法解析（服务层 openWorkspace 即经 ParseTarget 走这条路）。
+	if n := len(cfg.Root); n >= 3 && cfg.Root[0] == '/' && cfg.Root[2] == ':' &&
+		(isASCIILetter(cfg.Root[1])) {
+		cfg.Root = cfg.Root[1:]
+	}
 	if rest == "" {
 		return Config{}, fmt.Errorf("ssh target needs a host")
 	}
