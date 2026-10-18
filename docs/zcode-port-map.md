@@ -347,3 +347,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    三协议 wire：Anthropic 混排 user 消息、Gemini inlineData part、
    OpenAI 降级文本说明。SSH 工作区同构。
 1d468ec (feat: read tool returns images — multimodal tool results)
+
+**后台子代理**（ZCode runtime-task registry / Agent 工具的落地，spec
+   规则 49）：agent/agent_output/agent_stop 三件套——启动即回执、父会
+   话继续、收割/停止；注册表会话作用域（ctx 派生注册表根，随
+   DeleteSession/Close 全停）。顺带修复：嵌套循环（task/dispatch/
+   workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、
+   ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
+   一经持锁快照 + ReadOnlyW 拨号工作区。

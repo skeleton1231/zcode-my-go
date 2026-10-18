@@ -309,6 +309,20 @@ dc907a4 (feat: glob and grep honor .gitignore)
    到摘要。SSH 工作区经网线读字节，同构。
 1d468ec (feat: read tool returns images — multimodal tool results)
 
+   （规则 48 由 pending 的工作流持久化 PR 预留。）
+
+49. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+   `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
+   合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
+   本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop
+   {id}` 停止（终态保持可读、结论为空）。注册表会话作用域（tools.
+   States.Agents）：ctx 派生自注册表根而非工具调用——不随工具返回取
+   消；DeleteSession/服务 Close 全停（不留僵尸循环）。嵌套循环的
+   provider 与工具面与主循环同源：e2e 注入（UseProviderForTesting）
+   经持锁快照进入子任务；ssh:// 会话的 task/dispatch/workflow/后台
+   agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
+   地工具面，远程嵌套循环读的是本地磁盘）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
