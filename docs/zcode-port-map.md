@@ -357,6 +357,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
    一经持锁快照 + ReadOnlyW 拨号工作区。
 
+<<<<<<< HEAD
 **子代理续话**（ZCode SendMessage 的落地，spec 规则 52）：agent_send
    {id, message} 对终态后台子代理带全部历史续跑（同 ID、收割面不变；
    运行中拒绝）；RunSubtaskSeeded 统一新任务/续跑形态（历史拷贝隔
@@ -434,3 +435,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **MCP 启动异步**（性能路线第二条，spec 规则 66）：构造期 startMCP 后
    台跑——握手 20s 曾把每个 zgo 命令卡满超时；显式重载仍同步；
    syncMCP 串行化 + Close 守卫（在途握手不泄漏进程）。
+=======
+**自定义子代理定义**（ZCode agents 文件 / .claude/agents 的 Zgo 形
+   态，spec 规则 51，issue #225）：internal/agents——两层平铺
+   markdown（工作区 `.zgo/agents/*.md` + 用户 `~/.zgo/agents/*.md`，
+   同名工作区优先）；frontmatter name/description/tools（白名单，封闭
+   词表 read/grep/glob/ls/edit/write/patch/todo，只收窄不放宽），正文
+   即 persona；task/dispatch 增可选 agent 参数（命中走 persona，未命
+   中报错列可用项）；可用清单注入主系统提示（对齐技能注入）。
+>>>>>>> origin/main
