@@ -16,7 +16,7 @@ type Day struct {
 	mu   sync.Mutex
 	dir  string // dataDir：翻日时按新日期重建 path
 	path string
-	day  string // 当日 YYYYMMDD（进程内翻滚检测，issue #199）
+	day  string           // 当日 YYYYMMDD（进程内翻滚检测，issue #199）
 	now  func() time.Time // 注入时钟（测试跨零点）；nil = time.Now
 
 	Tokens int `json:"tokens"` // 今日累计（缓存读按 0.1 计价后的整数）

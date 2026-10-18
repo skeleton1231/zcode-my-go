@@ -1,0 +1,15 @@
+{
+  "name": "skill-load",
+  "description": "技能发现与按名加载（工作区层经授信生效）",
+  "files": {
+    ".zgo/skills/deploy/SKILL.md": "---\nname: deploy\ndescription: Ship the service\n---\n\n1. 跑全量测试\n2. 打镜像"
+  },
+  "turns": [
+    {"tool": "skill", "args": {"skill": "deploy"}},
+    {"text": "已加载"}
+  ],
+  "expect": {
+    "transcript_contains": ["跑全量测试", "打镜像"],
+    "no_tool_errors": true
+  }
+}

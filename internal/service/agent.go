@@ -34,6 +34,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
+	"github.com/skeleton1231/zcode-my-go/internal/trust"
 	"github.com/skeleton1231/zcode-my-go/internal/usage"
 	"github.com/skeleton1231/zcode-my-go/internal/workflow"
 )
@@ -54,6 +55,9 @@ type settings struct {
 	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)
 	// BudgetDailyTokens 是每日软预算（0=不限，spec 规则 35）。
 	BudgetDailyTokens int `json:"budgetDailyTokens"`
+	// FallbackModels 是模型兜底链（spec 规则 55）：主模型可重试失败
+	// （429/过载）时按序降级重发。
+	FallbackModels []string `json:"fallbackModels"`
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
@@ -89,6 +93,7 @@ type AgentService struct {
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
+	trustStore       *trust.Store               // 工作区授信表（spec 规则 53）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -102,6 +107,7 @@ func New(dataDir string) (*AgentService, error) {
 		wsClose:     map[string]func(){},
 		autoTitleOn: true,
 		wfStore:     workflow.NewStore(dataDir),
+		trustStore:  trust.NewStore(dataDir),
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -213,6 +219,7 @@ func (s *AgentService) Close() {
 	s.mcp = nil
 	for _, state := range s.states {
 		state.Jobs.KillAll()
+		state.Agents.CloseAll()
 	}
 	for _, close := range s.wsClose {
 		close()
@@ -226,9 +233,9 @@ func (s *AgentService) rewire() {
 	s.mgr.Wire(agent.Wiring{
 		Provider: func() ai.Provider {
 			if s.providerOverride != nil {
-				return s.providerOverride()
+				return s.providerOverride() // e2e 注入不套兜底——脚本按模型无关回放
 			}
-			return s.providerFor(cfg)
+			return s.providerWithFailover(cfg, s.providerFor(cfg))
 		},
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
@@ -242,49 +249,67 @@ func (s *AgentService) rewire() {
 				state = tools.NewStates()
 				s.states[sessionID] = state
 			}
+			// e2e provider 注入的持锁快照：嵌套循环（task/dispatch/
+			// workflow/后台 agent）必须与主循环同一 provider 源——直连
+			// providerFor 会让注入对子任务不生效、真实客户端带着空
+			// key 出网。
 			s.mu.Unlock()
-			provider := func() ai.Provider { return s.providerFor(cfg) }
+			ov := s.providerOverride
+			provider := func() ai.Provider {
+				if ov != nil {
+					return ov()
+				}
+				return s.providerFor(cfg)
+			}
 			model := cfg.Model
 			question := s.question
+			// 先拨号再建嵌套工具面：ssh:// 会话的子代理/工作流步骤经
+			// ReadOnlyW 用 Remote 工作区（此前字符串重建的是本地面）。
+			ws := s.workspaceFor(sessionID, workspace)
+			roTools := tools.ReadOnlyW(ws)
 			task := tools.NewTask(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
 				return agent.RunSubtask(ctx, agent.SubtaskConfig{
 					Provider: provider(),
 					Model:    model,
 					System:   agent.SubtaskSystem(),
-					Tools:    tools.ReadOnly(workspace),
+					Tools:    roTools,
 				}, prompt)
 			})
-			ws := s.workspaceFor(sessionID, workspace)
 			contextRead := contextReader(ws)
+			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
+			// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
+			agentRunner := func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+				return agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
+					Provider: provider(),
+					Model:    model,
+					System:   agent.SubtaskSystem(),
+					Tools:    roTools,
+				}, prior, prompt)
+			}
 			all := append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)),
 				tools.NewSkillTool(func() []skills.Root {
 					return s.skillRoots(sessionID, workspace)
 				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
-				tools.NewWebFetchTool(tools.WebFetcher))
-			wfProvider := func() ai.Provider {
-				if o := s.providerSnapshot(); o != nil {
-					return o()
-				}
-				return s.providerFor(cfg)
-			}
+				tools.NewWebFetchTool(tools.WebFetcher),
+				// 后台子代理三件套 + 续话（spec 规则 50/51）。
+				tools.NewAgentTool(state.Agents, agentRunner),
+				tools.NewAgentOutputTool(state.Agents),
+				tools.NewAgentStopTool(state.Agents),
+				tools.NewAgentSendTool(state.Agents, agentRunner))
+			wfProvider := provider
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
 			wfAsk := s.ask
-			dispProvider := func() ai.Provider {
-				if o := s.providerSnapshot(); o != nil {
-					return o()
-				}
-				return s.providerFor(cfg)
-			}
+			dispProvider := provider
 			dispModel := cfg.Model
 			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string) []agent.SubtaskResult {
 				return agent.RunSubtasks(ctx, agent.SubtaskConfig{
 					Provider: dispProvider(),
 					Model:    dispModel,
 					System:   agent.SubtaskSystem(),
-					Tools:    tools.ReadOnly(workspace),
+					Tools:    roTools,
 				}, prompts)
 			}))
 			all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
@@ -294,7 +319,7 @@ func (s *AgentService) rewire() {
 							Provider:    wfProvider(),
 							Model:       wfModel,
 							System:      prompt.SystemFS(workspace, contextRead),
-							ReadOnly:    tools.ReadOnly(workspace),
+							ReadOnly:    roTools,
 							Editable:    tools.AllW(ws, state, question),
 							Permissions: wfPerms,
 							Ask:         wfAsk,
@@ -314,9 +339,18 @@ func (s *AgentService) rewire() {
 			// 不在缓存稳定前缀里）。
 			return sys + skills.Section(skills.Discover(s.skillRoots(sessionID, workspace)), skills.DefaultMetaBudget)
 		},
-		Ask:          s.ask,
-		ProjectRules: loadProjectRules,
-		Question:     s.question,
+		Ask: s.ask,
+		ProjectRules: func(workspace string) permission.Ruleset {
+			// 工作区信任门（spec 规则 53）：未授信的本地工作区不加载
+			// 其 .zgorules.json——克隆来的恶意仓库不能靠自带 allow
+			// 规则给自己放权（提权面）。ssh:// 目标是用户显式拨号的
+			// 远端，视为授信。
+			if !s.workspaceTrusted(workspace) {
+				return permission.Ruleset{}
+			}
+			return loadProjectRules(workspace)
+		},
+		Question: s.question,
 	})
 }
 
@@ -373,6 +407,16 @@ func (s *AgentService) providerSnapshot() func() ai.Provider {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.providerOverride
+}
+
+// providerWithFailover 按设置把 provider 包成模型兜底链（spec 规则
+// 55）；无 fallback 即原 provider。
+func (s *AgentService) providerWithFailover(cfg settings, p ai.Provider) ai.Provider {
+	if len(cfg.FallbackModels) == 0 {
+		return p
+	}
+	models := append([]string{cfg.Model}, cfg.FallbackModels...)
+	return ai.NewFailover(p, models)
 }
 
 func (s *AgentService) providerFor(cfg settings) ai.Provider {
@@ -705,6 +749,7 @@ func (s *AgentService) DeleteSession(id string) error {
 	s.mu.Lock()
 	if state, ok := s.states[id]; ok {
 		state.Jobs.KillAll()
+		state.Agents.CloseAll() // 后台子代理随会话清光（spec 规则 50）
 		delete(s.states, id)
 	}
 	if close, ok := s.wsClose[id]; ok {
@@ -1030,6 +1075,65 @@ func (s *AgentService) PlanMode(id string, on bool) error {
 	return nil
 }
 
+// workspaceTrusted 报告工作区是否受信（spec 规则 53）：ssh:// 目标是
+// 用户显式拨号的远端——视为授信；本地路径查授信表。
+func (s *AgentService) workspaceTrusted(workspace string) bool {
+	if strings.HasPrefix(workspace, "ssh://") {
+		return true
+	}
+	return s.trustStore.IsTrusted(workspace)
+}
+
+// IsWorkspaceTrusted 是表面查询（终端/桌面的未授信提示用）。
+func (s *AgentService) IsWorkspaceTrusted(workspace string) bool {
+	return s.workspaceTrusted(workspace)
+}
+
+// TrustWorkspace 授信并即时生效：本会话的项目规则重载（若已在跑），
+// 技能/命令的工作区层随下次发现自然生效。
+func (s *AgentService) TrustWorkspace(workspace, via string) error {
+	if err := s.trustStore.Grant(workspace, via); err != nil {
+		return err
+	}
+	rules := loadProjectRules(workspace)
+	for _, info := range s.mgr.List() {
+		if trust.Normalize(info.Workspace) == trust.Normalize(workspace) {
+			if ssn, ok := s.mgr.Get(info.ID); ok {
+				ssn.ApplyProjectRules(rules)
+			}
+		}
+	}
+	return nil
+}
+
+// TrustSession 授信当前会话的工作区（/trust 用）。
+func (s *AgentService) TrustSession(sessionID, via string) error {
+	ssn, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("会话不存在")
+	}
+	return s.TrustWorkspace(ssn.Info().Workspace, via)
+}
+
+// RevokeWorkspace 撤销授信（在跑会话的项目规则即时清空——授信回退
+// 生效，spec 规则 53）。
+func (s *AgentService) RevokeWorkspace(workspace string) error {
+	if err := s.trustStore.Revoke(workspace); err != nil {
+		return err
+	}
+	for _, info := range s.mgr.List() {
+		if trust.Normalize(info.Workspace) == trust.Normalize(workspace) {
+			if ssn, ok := s.mgr.Get(info.ID); ok {
+				ssn.ApplyProjectRules(permission.Ruleset{})
+			}
+		}
+	}
+	return nil
+}
+
+// TrustList 列出授信表。
+func (s *AgentService) TrustList() []trust.Entry { return s.trustStore.List() }
+
 // contextReader returns the remote context-file reader (root-relative),
 // or nil for local workspaces——远程会话的项目上下文经网线读取（此前读
 // 本地路径必然落空、静默丢失）。
@@ -1049,6 +1153,17 @@ const skillsBaseDir = ".zgo/skills"
 func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 	ws := s.workspaceFor(sessionID, workspace)
 	var roots []skills.Root
+	// 信任门（spec 规则 53）：未授信的本地工作区不带其技能层（提示
+	// 注入面）；全局层不受影响。
+	if !ws.IsRemote() && !s.workspaceTrusted(workspace) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return []skills.Root{{
+				Base:  filepath.Join(home, ".zgo", "skills"),
+				Scope: skills.ScopeUser, FS: skills.LocalFS{},
+			}}
+		}
+		return nil
+	}
 	if ws.IsRemote() {
 		roots = append(roots, skills.Root{
 			Base: skillsBaseDir, Scope: skills.ScopeProject,
@@ -1072,6 +1187,18 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 // Skills 列出工作区的可用技能（/skills 终端命令用；与 agent 的发现
 // 同一根源——工作区层经 openWorkspace 解析目标，远程走网线）。
 func (s *AgentService) Skills(workspace string) skills.Outcome {
+	if !s.workspaceTrusted(workspace) {
+		// 信任门与 skillRoots 同款（spec 规则 53）：列表面不显示未
+		// 授信工作区的技能层。
+		var roots []skills.Root
+		if home, err := os.UserHomeDir(); err == nil {
+			roots = append(roots, skills.Root{
+				Base:  filepath.Join(home, ".zgo", "skills"),
+				Scope: skills.ScopeUser, FS: skills.LocalFS{},
+			})
+		}
+		return skills.Discover(roots)
+	}
 	project := skills.Root{
 		Base:  filepath.Join(workspace, filepath.FromSlash(skillsBaseDir)),
 		Scope: skills.ScopeProject, FS: skills.LocalFS{},
@@ -1452,6 +1579,18 @@ func (s *AgentService) ExportSessionHTML(id, dest string) error {
 	return os.WriteFile(dest, []byte(doc), 0o644)
 }
 
+// AgentJobStates 返回会话的后台子代理快照（e2e 等待终态、后续 UI 面
+// 同源）。
+func (s *AgentService) AgentJobStates(sessionID string) []tools.AgentJobView {
+	s.mu.Lock()
+	state, ok := s.states[sessionID]
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return state.Agents.Snapshots()
+}
+
 // TodoPlan returns the session's live task plan (the todo tool's state).
 func (s *AgentService) TodoPlan(sessionID string) []tools.TodoTask {
 	s.mu.Lock()
@@ -1660,6 +1799,37 @@ func (s *AgentService) SessionPermissionRules(sessionID string) []permission.Rul
 	return s.mgr.SessionPermissions(sessionID).SessionRules()
 }
 
+// SetFallbackModels 更新模型兜底链（spec 规则 55；空即关闭）。模型名
+// 去重且首项不得与自身重复；写盘热生效（rewire 同既有路径）。
+func (s *AgentService) SetFallbackModels(models []string) error {
+	seen := map[string]bool{}
+	var clean []string
+	for _, m := range models {
+		m = strings.TrimSpace(m)
+		if m == "" || seen[m] {
+			continue
+		}
+		seen[m] = true
+		clean = append(clean, m)
+	}
+	s.mu.Lock()
+	s.settings.FallbackModels = clean
+	view, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.rewire()
+		_ = view
+	}
+	return err
+}
+
+// FallbackModels 返回当前兜底链（copy）。
+func (s *AgentService) FallbackModels() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.settings.FallbackModels...)
+}
+
 // SetBudgetDailyTokens updates the daily budget（0=不限，spec 规则 37
 // 的 config set 数据面——热生效同 SaveSettings 路径）.
 func (s *AgentService) SetBudgetDailyTokens(v int) error {
@@ -1708,14 +1878,24 @@ const commandCapRunes = 60 << 10
 // spec 规则 39）。SSH 工作区经 path jail 读取，同享。
 func (s *AgentService) CustomCommands(workspace string) []CustomCommand {
 	out := map[string]string{}
-	// 全局先入，工作区覆盖。
+	// 全局先入，工作区覆盖（未授信的本地工作区不带工作区层——提示
+	// 注入面，spec 规则 53）。
 	if home, err := os.UserHomeDir(); err == nil {
 		loadCommandsDir(out, filepath.Join(home, ".zgo", "commands"), nil)
 	}
+	if !s.workspaceTrusted(workspace) {
+		return sortedCommands(out)
+	}
+
 	ws, _, err := s.openWorkspace(workspace)
 	if err == nil {
 		loadCommandsDir(out, customCommandsDir, &ws)
 	}
+	return sortedCommands(out)
+}
+
+// sortedCommands 按名排序出命令表。
+func sortedCommands(out map[string]string) []CustomCommand {
 	var names []string
 	for n := range out {
 		names = append(names, n)

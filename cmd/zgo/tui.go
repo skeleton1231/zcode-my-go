@@ -125,6 +125,7 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 			fmt.Fprintln(os.Stderr, "错误：", err)
 			return 1
 		}
+		trustHint(os.Stderr, svc, workspace)
 	}
 	// 闭包按引用捕获 info：/new 经 SetSession 换 ID 后面板读到新会话。
 	s.onPlan = func() []tools.TodoTask { return svc.TodoPlan(info.ID) }

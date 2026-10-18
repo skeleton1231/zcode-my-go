@@ -117,6 +117,13 @@ func (s *Service) GrantSession(rule Rule) {
 	s.session.Rules = append(s.session.Rules, rule)
 }
 
+// SetProjectRules 替换项目规则集（工作区授信后重载，spec 规则 53）。
+func (s *Service) SetProjectRules(project Ruleset) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.project = project
+}
+
 // SessionRules returns the session rules for display.
 func (s *Service) SessionRules() []Rule {
 	s.mu.Lock()

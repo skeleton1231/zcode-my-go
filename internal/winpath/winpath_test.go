@@ -61,7 +61,7 @@ func TestLongExpandsShortName(t *testing.T) {
 
 // TestLongPassthrough: 不存在/空路径原样返回（不因坏输入失败）。
 func TestLongPassthrough(t *testing.T) {
-	for _, p := range []string{"", `Z:\no\such\dir\probably`, `relative\path` } {
+	for _, p := range []string{"", `Z:\no\such\dir\probably`, `relative\path`} {
 		if got := Long(p); got != p {
 			t.Fatalf("Long(%q) = %q, want identity", p, got)
 		}

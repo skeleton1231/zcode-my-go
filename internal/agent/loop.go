@@ -290,7 +290,7 @@ func (l *Loop) executeBatch(ctx context.Context, turn int, msg ai.Message, calls
 }
 
 // executeOne runs a single call, wrapping its outcome as a result block
-//（工具携带图片时，图片块紧随其后——同一工具结果消息内，spec 规则 47）。
+// （工具携带图片时，图片块紧随其后——同一工具结果消息内，spec 规则 47）。
 func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai.Block, stop ai.StopReason) []ai.Block {
 	var result ToolResult
 	if stop == ai.StopLength {

@@ -877,6 +877,14 @@ func (m *Manager) wire(s *Session) {
 	}
 }
 
+// ApplyProjectRules 替换本会话的项目规则（工作区授信后由服务层调用，
+// spec 规则 53：未授信时规则为空，授信后重载 .zgorules.json）。
+func (s *Session) ApplyProjectRules(rules permission.Ruleset) {
+	if s.permissions != nil {
+		s.permissions.SetProjectRules(rules)
+	}
+}
+
 // New creates a session for a workspace.
 func (m *Manager) New(workspace string) (*Session, error) {
 	// ID 是时间戳：同一时钟节拍内的两次创建会撞 ID 互相覆盖（Windows

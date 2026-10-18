@@ -204,7 +204,7 @@ func equalFoldPath(a, b string) bool {
 }
 
 // isAncestor reports whether base is dir itself or an ancestor of it
-//（大小写按平台规则折，前缀落在段边界）.
+// （大小写按平台规则折，前缀落在段边界）.
 func isAncestor(base, dir string) bool {
 	base = filepath.Clean(base)
 	dir = filepath.Clean(dir)
