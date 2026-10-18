@@ -356,7 +356,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    zgo workflow list/show/runs 运维面。
 
 **后台子代理**（ZCode runtime-task registry / Agent 工具的落地，spec
-   规则 49）：agent/agent_output/agent_stop 三件套——启动即回执、父会
+   规则 50）：agent/agent_output/agent_stop 三件套——启动即回执、父会
    话继续、收割/停止；注册表会话作用域（ctx 派生注册表根，随
    DeleteSession/Close 全停）。顺带修复：嵌套循环（task/dispatch/
    workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、

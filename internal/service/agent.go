@@ -277,7 +277,7 @@ func (s *AgentService) rewire() {
 				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
 				tools.NewWebFetchTool(tools.WebFetcher),
-				// 后台子代理三件套（spec 规则 49）。
+				// 后台子代理三件套（spec 规则 50）。
 				tools.NewAgentTool(state.Agents, func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
 					return agent.RunSubtask(ctx, agent.SubtaskConfig{
 						Provider: provider(),
@@ -720,7 +720,7 @@ func (s *AgentService) DeleteSession(id string) error {
 	s.mu.Lock()
 	if state, ok := s.states[id]; ok {
 		state.Jobs.KillAll()
-		state.Agents.CloseAll() // 后台子代理随会话清光（spec 规则 49）
+		state.Agents.CloseAll() // 后台子代理随会话清光（spec 规则 50）
 		delete(s.states, id)
 	}
 	if close, ok := s.wsClose[id]; ok {

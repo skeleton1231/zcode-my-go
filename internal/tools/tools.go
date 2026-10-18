@@ -27,7 +27,7 @@ func ReadOnly(workspace string) []agent.Tool {
 
 // ReadOnlyW is ReadOnly over a prebuilt workspace——SSH 会话的子代理/
 // 工作流步骤必须用拨号后的 Remote 工作区（此前传字符串重建本地工
-// 具面，远程会话的嵌套循环读的是本地路径，spec 规则 49 顺带修复）。
+// 具面，远程会话的嵌套循环读的是本地路径，spec 规则 50 顺带修复）。
 func ReadOnlyW(w Workspace) []agent.Tool {
 	return []agent.Tool{NewRead(w), NewGrep(w), NewGlob(w), NewLs(w)}
 }
@@ -37,7 +37,7 @@ func ReadOnlyW(w Workspace) []agent.Tool {
 type States struct {
 	Todo   *TodoState
 	Jobs   *Jobs
-	Agents *AgentJobs // 后台子代理注册表（spec 规则 49）
+	Agents *AgentJobs // 后台子代理注册表（spec 规则 50）
 }
 
 // NewStates builds empty per-session state.
