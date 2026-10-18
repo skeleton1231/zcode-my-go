@@ -396,6 +396,11 @@ func repl(workspace string, cont bool, resume string) int {
 		if handled {
 			continue
 		}
+		// 运行中插话（spec 规则 26）：入队下一回合生效。
+		if steered, notice := maybeSteer(svc, info.ID, line); steered {
+			fmt.Fprintln(os.Stderr, notice)
+			continue
+		}
 		if err := svc.ChatMedia(info.ID, line, pending.take(), func(ev agent.Event) { render(ev) }); err != nil {
 			fmt.Fprintln(os.Stderr, "错误：", err)
 		}

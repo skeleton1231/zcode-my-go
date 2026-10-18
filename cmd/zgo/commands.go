@@ -35,3 +35,15 @@ func runSlashCommand(env *commandEnv, line string) (handled, quit bool) {
 		Attach: attachFn,
 	}, line)
 }
+
+// maybeSteer 运行中把消息入队为插话（spec 规则 26，与桌面对齐）：下
+// 一回合生效、不打断当前流。空闲会话返回 false——调用方走常规发送。
+func maybeSteer(svc *service.AgentService, sessionID, text string) (steered bool, notice string) {
+	if !svc.SessionRunning(sessionID) {
+		return false, ""
+	}
+	if err := svc.Steer(sessionID, text); err != nil {
+		return true, "[插话失败] " + err.Error()
+	}
+	return true, "[插话] 已入队，当前回合结束后生效"
+}
