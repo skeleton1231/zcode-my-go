@@ -109,6 +109,14 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    args/result/is_error/diff/stop_reason/error）；args 为原始 JSON 内嵌
    （非法 JSON 时字符串降级）；错误与用量提示仍走 stderr，文本模式行
    为不变。
+24. 会话生命周期钩子（ZCode/CC SessionStart/SessionEnd/PreCompact）：
+   settings.hooks 增 sessionStart/sessionEnd/preCompact（外部命令，与工
+   具钩子同机制：JSON 上 stdin、10s 超时）。sessionStart 在新建会话后
+   异步触发、sessionEnd 在删除与 Close（全部存活会话，reason=delete/
+   close）同步触发——两者皆观察者（失败/非零退出记日志，绝不影响会
+   话）；preCompact 在压缩前同步触发，非零退出阻止压缩并把 stderr 原
+   因回给用户。payload 含 sessionId/workspace/title（压缩另含 messages/
+   trigger）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

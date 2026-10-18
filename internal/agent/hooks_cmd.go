@@ -29,8 +29,11 @@ type CommandHook struct {
 
 // CommandHooks is the settings shape.
 type CommandHooks struct {
-	PreToolUse  []CommandHook `json:"preToolUse"`
-	PostToolUse []CommandHook `json:"postToolUse"`
+	PreToolUse   []CommandHook `json:"preToolUse"`
+	PostToolUse  []CommandHook `json:"postToolUse"`
+	SessionStart []CommandHook `json:"sessionStart"`
+	SessionEnd   []CommandHook `json:"sessionEnd"`
+	PreCompact   []CommandHook `json:"preCompact"`
 }
 
 // matches reports whether the hook applies to a tool.
@@ -140,4 +143,57 @@ func runHook(command string, payload []byte) (string, int, error) {
 		return "", 0, err
 	}
 	return out.String(), 0, nil
+}
+
+// SessionStartHooks runs sessionStart hooks（观察者：payload JSON 上
+// stdin；失败或非零退出记日志，绝不影响会话——启动钩子不该能把工具
+// 变砖）.
+func SessionStartHooks(hooks []CommandHook, payload any) {
+	runObserverHooks("sessionStart", hooks, payload)
+}
+
+// SessionEndHooks runs sessionEnd hooks（同观察者语义）.
+func SessionEndHooks(hooks []CommandHook, payload any) {
+	runObserverHooks("sessionEnd", hooks, payload)
+}
+
+// PreCompactHooks runs preCompact hooks before compaction; the first
+// non-zero exit aborts it（其 stderr 作为原因回给用户）——压缩时机
+// 可被策略约束.
+func PreCompactHooks(hooks []CommandHook, payload any) (blocked bool, reason string) {
+	if len(hooks) == 0 {
+		return false, ""
+	}
+	data, _ := json.Marshal(payload)
+	for _, h := range hooks {
+		out, code, err := runHook(h.Command, data)
+		if err != nil {
+			log.Printf("preCompact hook %q: %v", h.Command, err)
+			continue
+		}
+		if code != 0 {
+			return true, strings.TrimSpace(out)
+		}
+	}
+	return false, ""
+}
+
+// runObserverHooks runs a lifecycle hook list, logging every failure
+// (AGENTS.md：不吞错——观察者也不静默).
+func runObserverHooks(point string, hooks []CommandHook, payload any) {
+	if len(hooks) == 0 {
+		return
+	}
+	data, _ := json.Marshal(payload)
+	for _, h := range hooks {
+		out, code, err := runHook(h.Command, data)
+		if err != nil {
+			log.Printf("%s hook %q: %v", point, h.Command, err)
+			continue
+		}
+		if code != 0 {
+			log.Printf("%s hook %q: exit %d: %s", point, h.Command, code,
+				strings.TrimSpace(out))
+		}
+	}
 }
