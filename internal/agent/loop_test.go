@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -71,15 +72,23 @@ func toolTurn(callID, name, args string) fakeTurn {
 	}}
 }
 
-// collector gathers events and transcripts for assertions.
+// collector gathers events and transcripts for assertions. emit 会并发出
+// 现在并行工具的 goroutine 上——互斥保护（-race 在 CI 上逮过裸追加）。
 type collector struct {
+	mu       sync.Mutex
 	events   []Event
 	messages []ai.Message
 }
 
-func (c *collector) emit(ev Event) { c.events = append(c.events, ev) }
+func (c *collector) emit(ev Event) {
+	c.mu.Lock()
+	c.events = append(c.events, ev)
+	c.mu.Unlock()
+}
 func (c *collector) append(m ai.Message) error {
+	c.mu.Lock()
 	c.messages = append(c.messages, m)
+	c.mu.Unlock()
 	return nil
 }
 

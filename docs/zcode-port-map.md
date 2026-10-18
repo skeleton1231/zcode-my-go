@@ -212,6 +212,15 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    转录 JSONL 持久化（此前只在事件流上存在，重载即丢）；HTML 导出彩
    色 diff（+绿/-红，context 不着色）+ 补齐 thinking 折叠（与 Markdown
    对称）；Markdown 导出 ```diff 围栏。
+**TUI 输入历史**（CC ↑/↓ 召回的对应，spec 规则 30）：每条已提交消
+   息入历史（连续重复折叠）；输入行 ↑ 向旧召回、↓ 回新——首次离开
+   实时输入保存草稿、回到最新一行恢复；编辑召回文本可改后直接发送；
+   历史跨会话切换保留。
+**MCP 资源**（MCP 三件套收口：tools/prompts/resources，spec 规则
+   31）：握手并行探测 resources/list（能力可选）；/mcp 列表同时列出
+   资源（@server:uri 形态）；`/mcp @server:uri` 经 resources/read 读
+   文本并以「资源 <uri>：」围栏并入消息直接发送（同 stdin 管道形
+   态）；blob 类资源可读报错。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

@@ -65,7 +65,7 @@ func TestRunExportDefaultsAndExplicit(t *testing.T) {
 
 	// /help 收录。
 	Run(env, "/help")
-	if !strings.Contains(strings.Join(*out, "\n"), "/export") {
+	if !strings.Contains(strings.Join(out.All(), "\n"), "/export") {
 		t.Fatal("/help missing /export")
 	}
 }

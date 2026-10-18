@@ -68,6 +68,12 @@ type tuiState struct {
 
 	plan   []tools.TodoTask     // 任务面板：todo 工具落盘后刷新
 	onPlan func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
+
+	// 输入历史（spec 规则 30）：已提交的用户消息；histCur==-1 表示在
+	// 实时输入（离开时的草稿保存在 histDraft）。
+	history   []string
+	histCur   int
+	histDraft []rune
 }
 
 // runTUI drives the interactive full-screen interface. It returns the
@@ -307,6 +313,11 @@ func (s *tuiState) pushTurn(line string) {
 	s.lines = append(s.lines, wrap(ansi(ansiCyan, "你 > ")+line, s.width))
 	s.turns = append(s.turns, len(s.lines)-1)
 	s.turnCur = -1
+	// 输入历史：连续重复折叠（spec 规则 30）。
+	if n := len(s.history); n == 0 || s.history[n-1] != line {
+		s.history = append(s.history, line)
+	}
+	s.histCur, s.histDraft = -1, nil
 	s.mu.Unlock()
 	s.requestRedraw()
 }
@@ -541,4 +552,34 @@ func replayHistory(s *tuiState, msgs []ai.Message) int {
 		}
 	}
 	return turns
+}
+
+// historyMove 在输入历史中召回（spec 规则 30）：↑ 向旧、↓ 向新；首
+// 次离开实时输入时保存草稿，回到最新一行恢复草稿；边界不动；空历史
+// 无操作。
+func (s *tuiState) historyMove(dir int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.history) == 0 {
+		return
+	}
+	at := s.histCur
+	if at == -1 {
+		if dir > 0 {
+			return // 已在最新：↓ 无操作
+		}
+		s.histDraft = append([]rune(nil), s.input...) // 保存草稿
+		at = len(s.history)
+	}
+	at += dir
+	if at < 0 || at > len(s.history) {
+		return // 边界：不动
+	}
+	if at == len(s.history) {
+		s.input = append([]rune(nil), s.histDraft...) // 回到最新：恢复草稿
+	} else {
+		s.input = []rune(s.history[at])
+	}
+	s.histCur = at
+	s.requestRedraw()
 }

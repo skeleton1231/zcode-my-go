@@ -13,8 +13,11 @@ import (
 )
 
 // View builds the window: a session sidebar, the chat, the composer and a
-// status bar. Runs on the main thread for every frame.
+// status bar. Runs on the main thread for every frame——测试形态下与
+// update 同锁串行（无窗口时 agent goroutine 的状态写入不再裸奔进帧）。
 func (a *App) View(c *ui.Context) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	t := c.Theme()
 	a.md.Reveal = &markdown.Reveal{Unit: markdown.ByWord}
 

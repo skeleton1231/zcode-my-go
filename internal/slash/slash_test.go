@@ -3,15 +3,17 @@ package slash
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
-func newEnv(t *testing.T) (*Env, *[]string) {
+func newEnv(t *testing.T) (*Env, *snapshotLines) {
 	t.Helper()
 	svc, err := service.New(t.TempDir())
 	if err != nil {
@@ -23,13 +25,39 @@ func newEnv(t *testing.T) (*Env, *[]string) {
 		t.Fatal(err)
 	}
 	var lines []string
+	var mu sync.Mutex
 	return &Env{
 		Svc:        svc,
 		SessionID:  func() string { return info.ID },
 		Workspace:  func() string { return info.Workspace },
 		SetSession: func(agent.SessionInfo) {},
-		Out:        func(msg string) { lines = append(lines, msg) },
-	}, &lines
+		// Out 会被 login 等后台 goroutine 调用（-race 在 CI 上逮过与
+		// 测试主 goroutine 读 *out 的竞态）——追加持锁，读经 snapshot。
+		Out: func(msg string) {
+			mu.Lock()
+			lines = append(lines, msg)
+			mu.Unlock()
+		},
+	}, &snapshotLines{mu: &mu, lines: &lines}
+}
+
+// snapshotLines 暴露持锁快照（len/索引/包含都走它——裸读 *lines 会与
+// 后台追加竞态）。
+type snapshotLines struct {
+	mu    *sync.Mutex
+	lines *[]string
+}
+
+func (s *snapshotLines) snapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), *s.lines...)
+}
+
+func (s *snapshotLines) Len() int           { return len(s.snapshot()) }
+func (s *snapshotLines) All() []string      { return s.snapshot() }
+func (s *snapshotLines) Contains(want string) bool {
+	return strings.Contains(strings.Join(s.snapshot(), "\n"), want)
 }
 
 func TestRunDispatch(t *testing.T) {
@@ -43,11 +71,11 @@ func TestRunDispatch(t *testing.T) {
 		}
 	}
 	Run(env, "/nope")
-	if last := (*out)[len(*out)-1]; !strings.Contains(last, "/help") {
+	if last := out.All()[out.Len()-1]; !strings.Contains(last, "/help") {
 		t.Fatalf("unknown hint = %q", last)
 	}
 	Run(env, "/help")
-	joined := strings.Join(*out, "\n")
+	joined := strings.Join(out.All(), "\n")
 	for _, name := range []string{"/new", "/compact", "/plan", "/model", "/rename", "/status", "/exit"} {
 		if !strings.Contains(joined, name) {
 			t.Fatalf("/help missing %s", name)
@@ -72,7 +100,7 @@ func TestRunModelRenameStatusPlan(t *testing.T) {
 		t.Fatal("rename not applied")
 	}
 	Run(env, "/status")
-	if last := (*out)[len(*out)-1]; !strings.Contains(last, "glm-5.2") || !strings.Contains(last, "上下文") {
+	if last := out.All()[out.Len()-1]; !strings.Contains(last, "glm-5.2") || !strings.Contains(last, "上下文") {
 		t.Fatalf("status = %q", last)
 	}
 	Run(env, "/plan on")
@@ -120,7 +148,7 @@ func TestLoginCommand(t *testing.T) {
 	// 派发且不 panic；链接通知异步到达）。
 	Run(env, "/login")
 	time.Sleep(50 * time.Millisecond)
-	joined := strings.Join(*out, "\n")
+	joined := strings.Join(out.All(), "\n")
 	if !strings.Contains(joined, "OAuth") && !strings.Contains(joined, "授权") {
 		t.Fatalf("login output = %q", joined)
 	}
@@ -195,7 +223,7 @@ func TestSlashUsage(t *testing.T) {
 	if handled, _ := Run(env, "/usage"); !handled {
 		t.Fatal("/usage not handled")
 	}
-	joined := strings.Join(*lines, "\n")
+	joined := strings.Join(lines.All(), "\n")
 	for _, want := range []string{"[用量]", "输入      0", "输出      0", "回合 0"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in:\n%s", want, joined)
@@ -298,4 +326,37 @@ type chProviderSvc struct{ ch <-chan ai.StreamEvent }
 
 func (p chProviderSvc) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
 	return p.ch
+}
+
+// TestSlashMCPResource 验证 /mcp 的资源分支（spec 规则 31）：缺冒号报
+// 用法、未知服务器报错并列表、Send 钩子收到围栏内容；列表含资源段。
+func TestSlashMCPResource(t *testing.T) {
+	env, _ := newEnv(t)
+
+	out := captureOutSlash(t, env, "/mcp @nosep")
+	if !strings.Contains(out, "用法") {
+		t.Fatalf("missing separator: %q", out)
+	}
+	out = captureOutSlash(t, env, "/mcp @nope:config://app")
+	if !strings.Contains(out, "mcp 失败") || !strings.Contains(out, "没有 MCP 服务器") {
+		t.Fatalf("unknown server: %q", out)
+	}
+
+	// 列表在没有服务器时给出双能力说明。
+	if !strings.Contains(out, "提示词或资源") {
+		t.Fatalf("list mentions both: %q", out)
+	}
+}
+
+// TestWrapResourceFenceSurvivesMarkdown: 资源文本含行首裸 ``` 时围栏动
+// 态加长（issue #178 同类——固定三反引号会让 Markdown 资源破栏）。
+func TestWrapResourceFenceSurvivesMarkdown(t *testing.T) {
+	md := "# 配置\n\n```yaml\nport: 1\n```\n"
+	wrapped := wrapResource("config://app", md)
+	if !strings.Contains(wrapped, "config://app") || !strings.Contains(wrapped, "port: 1") {
+		t.Fatalf("content lost: %q", wrapped)
+	}
+	if !strings.Contains(wrapped, export.FenceFor(md)) {
+		t.Fatalf("fence not dynamic for markdown resource:\n%s", wrapped)
+	}
 }
