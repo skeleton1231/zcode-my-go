@@ -389,7 +389,6 @@ func (s *AgentService) rewire() {
 				return agent.RunSubtask(ctx, cfg, prompt)
 			})
 			contextRead := contextReader(ws)
-<<<<<<< HEAD
 			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
 			// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
 			agentRunner := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
@@ -410,10 +409,7 @@ func (s *AgentService) rewire() {
 					Tools:    tools,
 				}, prior, prompt)
 			}
-			all := append(tools.AllW(ws, state, question), task,
-=======
 			all = append(tools.AllW(ws, state, question), task,
->>>>>>> origin/main
 				tools.NewMemoryTool(s.memoryFor(workspace)),
 				tools.NewSkillTool(func() []skills.Root {
 					return s.skillRoots(sessionID, workspace)
