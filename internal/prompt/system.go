@@ -204,7 +204,7 @@ func equalFoldPath(a, b string) bool {
 }
 
 // isAncestor reports whether base is dir itself or an ancestor of it
-//（大小写按平台规则折，前缀落在段边界）.
+// （大小写按平台规则折，前缀落在段边界）.
 func isAncestor(base, dir string) bool {
 	base = filepath.Clean(base)
 	dir = filepath.Clean(dir)
@@ -254,18 +254,23 @@ var globalHome = func() string {
 	return filepath.Join(home, ".zgo")
 }
 
-// globalContext reads ~/.zgo/ZGO.md（用户全局上下文，对所有工作区——
-// 含远程——生效）。
+// globalContext reads the user-level context file（用户全局上下文，对
+// 所有工作区——含远程——生效）。按 contextFiles 同序发现（ZGO.md 优
+// 先，AGENTS/CLAUDE 兜底——issue #217：用户通用偏好多以 AGENTS.md 心
+// 智书写，只认 ZGO.md 让最外层无处安放）。
 func globalContext() string {
 	dir := globalHome()
 	if dir == "" {
 		return ""
 	}
-	data, err := readFileLimited(joinPath(dir, "ZGO.md"), contextCapBytes)
-	if err != nil || len(data) == 0 {
-		return ""
+	for _, name := range contextFiles {
+		data, err := readFileLimited(joinPath(dir, name), contextCapBytes)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		return string(data)
 	}
-	return string(data)
+	return ""
 }
 
 // truncateRunes cuts s to at most limit bytes without splitting a rune.

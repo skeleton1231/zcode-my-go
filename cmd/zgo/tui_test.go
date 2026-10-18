@@ -1,10 +1,10 @@
 package main
 
 import (
-	"strconv"
 	"bytes"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -90,14 +90,14 @@ func TestTuiPlanLines(t *testing.T) {
 // 最后一轮、边界不动、向下越过最新恢复尾随。
 func TestTuiJumpTurnNavigation(t *testing.T) {
 	s := &tuiState{width: 40, height: 12, topIdx: -1, turnCur: -1}
-	s.pushTurn("q1")            // 行 0
+	s.pushTurn("q1") // 行 0
 	s.push("r1")
 	s.push("r2")
-	s.pushTurn("q2")            // 行 3
+	s.pushTurn("q2") // 行 3
 	s.push("r3")
 	s.push("r4")
-	s.pushTurn("q3")            // 行 6
-	for i := 0; i < 24; i++ {   // 填到 30 行，避免窗口夹紧吞掉断言差异
+	s.pushTurn("q3")          // 行 6
+	for i := 0; i < 24; i++ { // 填到 30 行，避免窗口夹紧吞掉断言差异
 		s.push(fmt.Sprintf("filler %d", i))
 	}
 	if len(s.turns) != 3 || s.turns[2] != 6 {
@@ -343,7 +343,6 @@ func TestKeyStreamPasteCapped(t *testing.T) {
 		t.Fatalf("cap note missing: %q…", got[:min(80, len(got))])
 	}
 }
-
 
 // TestTuiAbortRunOnEsc 验证 Esc 中止（spec 规则 38）：运行中触发 abort
 // 钩子并提示；空闲无操作；粘贴内的 ESC 不触发（保真入输入区）。

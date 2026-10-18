@@ -98,7 +98,7 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    Object，目标是确证 + 可见而非完美对等）；会话结束 KillAll 收尾。
    远程后台与本地后台语义一致（同一 Jobs 注册表与工具面）。
 20. 层级项目上下文（ZCode context-hierarchy）：系统提示注入用户全局
-   （~/.zgo/ZGO.md）+ 自工作区向上到 git 顶（含）每层第一个命中的上下
+   （~/.zgo/ 下 ZGO.md/AGENTS.md/CLAUDE.md 同序择一——issue #217：用户通用偏好常以 AGENTS.md 心智书写）+ 自工作区向上到 git 顶（含）每层第一个命中的上下
    文件（ZGO.md/AGENTS.md/CLAUDE.md，逐层择一），浅→深拼接（一般→具
    体）带层级标注；总量 8KB 封顶（rune 边界截断）并附说明。git 顶必须
    是工作区真祖先（HOME 即仓库的机器上不回溯，issue #98 教训）；非 git
@@ -258,7 +258,6 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    静态 skipDirs 取并集（无 .gitignore 行为不变）；命中目录整枝剪
    除，命中文件逐个跳过；会话级加载一次（.gitignore 变更下轮会话
    生效）。
-dc907a4 (feat: glob and grep honor .gitignore)
 
 45. 技能（ZCode skills 子系统）：SKILL.md + frontmatter（平铺 YAML
    子集：name/description 必填、when_to_use 可选、引号值去引号；无
@@ -307,7 +306,70 @@ dc907a4 (feat: glob and grep honor .gitignore)
    inlineData part 同住 functionResponse 的 user content；OpenAI 的
    tool 消息只收文本——降级为文本说明（N 张图片未上送），模型至少看
    到摘要。SSH 工作区经网线读字节，同构。
-1d468ec (feat: read tool returns images — multimodal tool results)
+
+48. 工作流持久化与复用（ZCode saved-workflows / workflow-runs 的落
+   地）：internal/workflow——定义存 dataDir/workflows/<名>.json（名限
+   小写字母/数字/连字符，1..64；原子写；校验通过才保存），运行记录存
+   dataDir/workflow-runs/<id>.json（开跑即落盘 running——崩溃后未完
+   记录可续跑；终态回填每步结果/完成标记/错误；保留最近 50 条，开跑
+   与收尾都裁）。workflow 工具三形态：{steps[, saveAs]} 临场执行可命
+   名保存（保存不因运行失败而废——定义仍有效）；{run: 名} 从存储加
+   载定义执行；{resume: 运行 ID} 续跑——已完成步骤（成功且定义未漂
+   移）注入既往结果跳过执行，下游照常看到其文本（顺序模式按位、
+   DAG 预置 done 状态；已完成运行拒绝续跑；命名运行的步骤表从定义
+   取、临场运行从记录重建含 after）。zgo workflow list/show/runs 只读
+   运维面。
+
+
+49. SSH 连接保活与惰性重连（issue #220）：连接建立即起后台 keepalive
+   循环（30s 量级周期发 keepalive@openssh.com，连续 3 次无回应判
+   死）；Exec/ReadFile/ReadDir/Stat/Glob 等操作入口先确连接——死了
+   用原 Config 透明重连（凭据在内存，in-flight 调用按现有错误路径
+   干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
+   话重建是唯一出路）。
+
+50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+   `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
+   合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
+   本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop
+   {id}` 停止（终态保持可读、结论为空）。注册表会话作用域（tools.
+   States.Agents）：ctx 派生自注册表根而非工具调用——不随工具返回取
+   消；DeleteSession/服务 Close 全停（不留僵尸循环）。嵌套循环的
+   provider 与工具面与主循环同源：e2e 注入（UseProviderForTesting）
+   经持锁快照进入子任务；ssh:// 会话的 task/dispatch/workflow/后台
+   agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
+   地工具面，远程嵌套循环读的是本地磁盘）。
+
+51. 自定义子代理定义（issue #225）：子代理 persona 用户可编程。定义
+   层 internal/agents——两层平铺 markdown：工作区 `.zgo/agents/*.md` +
+   用户家 `~/.zgo/agents/*.md`（同名工作区优先，与技能/命令同约定）；
+   frontmatter：`name`（缺省取文件名主干）、`description`（路由依据，
+   必填、≤1K 字符）、`tools`（逗号分隔白名单，取自子代理工具词表
+   read/grep/glob/ls/edit/write/patch/todo；空即只读族，对齐现状
+   SubtaskSystem）；正文即该子代理的系统提示（persona）。`task`/
+   `dispatch` 增可选 `agent` 参数：命中则以定义 persona 替换
+   SubtaskSystem、工具面按白名单从会话工具集选取（edit 族仍过主权限
+   门——白名单只收窄不放宽，未列出的名字忽略）；未知名报错列出可用
+   项自纠。主系统提示注入可用 agents 清单（name + description 一行
+   式，对齐技能注入）。发现读上限 64KB、persona 载入上限 100KB（超限
+   截断并标注），描述校验 1K——与注入家族同一套约束。
+
+52. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+   对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
+   后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
+   绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
+   RunSubtaskSeeded（prior 为空即新任务、非空即续跑，历史拷贝隔离）；
+   注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
+   有一个生效）。
+
+53. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
+   本层抽取——词法级 stream 段收集 + FlateDecode 解压 + Tj/TJ/'/" 文
+   本算子（Td/TD/T* 换行启发），字面串（转义/八进制/嵌套括号）与十六
+   进制串（UTF-16BE BOM 检测）解码。有界：单流 16MB、产出 256KB rune
+   截断标注。**可读率闸门**：产出可打印字符占比 <85% 即报错（CID 编
+   码无 ToUnicode 的中文 PDF 常见）——宁报错并建议 bash 转换，不静默
+   产乱码；无文本层（扫描件/图片型）同样报错。SSH 工作区经网线读字
+   节同构。
 
 ## 状态所有者
 

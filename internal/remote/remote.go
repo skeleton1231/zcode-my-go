@@ -103,6 +103,9 @@ type Client struct {
 	// issue #166）：cmd/PowerShell 不包装（exec 非内建、$$ 不展开）。
 	posixOnce sync.Once
 	posix     bool
+	// keepalive/reconnect state（issue #220）。
+	ka   keepAliveState
+	kaOn sync.Once
 }
 
 // Dial connects and opens the SFTP subsystem.
@@ -148,7 +151,42 @@ func Dial(cfg Config) (*Client, error) {
 		conn.Close()
 		return nil, fmt.Errorf("opening sftp: %w", err)
 	}
-	return &Client{cfg: cfg, conn: conn, sftp: sftpClient, closer: sftpClient}, nil
+	c := &Client{cfg: cfg, conn: conn, sftp: sftpClient, closer: sftpClient}
+	c.ka.alive.Store(true)
+	c.StartKeepAlive() // issue #220
+	return c, nil
+}
+
+// dialTarget/dialUser/dialAuths are the Dial argument pieces (reconnect reuses).
+func dialTarget(cfg Config) string {
+	port := cfg.Port
+	if port == "" {
+		port = "22"
+	}
+	return net.JoinHostPort(cfg.Host, port)
+}
+
+func dialUser(cfg Config) string {
+	if cfg.User != "" {
+		return cfg.User
+	}
+	if u := os.Getenv("USERNAME"); u != "" {
+		return u
+	}
+	return os.Getenv("USER")
+}
+
+func dialAuths(cfg Config) []ssh.AuthMethod {
+	var auths []ssh.AuthMethod
+	if cfg.Password != "" {
+		auths = append(auths, ssh.Password(cfg.Password))
+	}
+	if cfg.Key != "" {
+		if signer, err := ssh.ParsePrivateKey([]byte(cfg.Key)); err == nil {
+			auths = append(auths, ssh.PublicKeys(signer))
+		}
+	}
+	return auths
 }
 
 // Close shuts the session down.
@@ -177,6 +215,9 @@ type ExecResult struct {
 const execOutputCap = 1 << 20 // 1MB
 
 func (c *Client) Exec(command string) (ExecResult, error) {
+	if err := c.ensureConnected(); err != nil {
+		return ExecResult{}, err // issue #220
+	}
 	session, err := c.conn.NewSession()
 	if err != nil {
 		return ExecResult{}, err
@@ -250,6 +291,9 @@ func quote(p string) string {
 
 // ReadFile reads a file inside the workspace root.
 func (c *Client) ReadFile(name string) ([]byte, error) {
+	if err := c.ensureConnected(); err != nil {
+		return nil, err // issue #220
+	}
 	f, err := c.sftp.Open(c.join(name))
 	if err != nil {
 		return nil, err
@@ -285,6 +329,9 @@ type Entry struct {
 
 // ReadDir lists a directory inside the root.
 func (c *Client) ReadDir(name string) ([]Entry, error) {
+	if err := c.ensureConnected(); err != nil {
+		return nil, err // issue #220
+	}
 	infos, err := c.sftp.ReadDir(c.join(name))
 	if err != nil {
 		return nil, err
@@ -298,6 +345,9 @@ func (c *Client) ReadDir(name string) ([]Entry, error) {
 
 // Stat reports whether a path exists and whether it is a directory.
 func (c *Client) Stat(name string) (exists, isDir bool, err error) {
+	if err := c.ensureConnected(); err != nil {
+		return false, false, err // issue #220
+	}
 	info, err := c.sftp.Stat(c.join(name))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -343,6 +393,9 @@ var windowsDriveRe = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 // Glob walks the workspace root collecting paths that match a shell glob
 // (the local Glob tool's semantics, over SFTP).
 func (c *Client) Glob(pattern string) ([]string, error) {
+	if err := c.ensureConnected(); err != nil {
+		return nil, err // issue #220
+	}
 	matches, err := filepathGlobFS(func(dir string) ([]Entry, error) {
 		return c.ReadDir(relOrEmpty(dir))
 	}, pattern)

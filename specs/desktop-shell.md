@@ -28,6 +28,10 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 8. 附件（多模态输入）：📎 打开图片选择（png/jpg/gif/webp，多选），以
    chips 展示、发送前可移除；随下一条消息发送（文本必填）。单张上限
    5MB，超限或类型不符以 notice 提示。终端形态不支持附件。
+   贴图（issue #216）：composer 的 Ctrl/Cmd+V 先探剪贴板位图（internal/
+   clipimg：PNG 注册格式优先直取，CF_DIBV5/CF_DIB 解码后 PNG 化；非
+   Windows 返回无图）；命中即走 📎 同一条附件通道（同一单张/总量上限
+   与 notice），无图时按普通文本粘贴放行——不报错不吞文本。
 7. 浏览器目标（wasm）：`go tool mygo build -platform web` 产出静态站点，
    `go run ./cmd/webfs` 注入内存文件系统垫片（wasm 的 syscall 层需要 Node
    形态的 fs 对象，wasm_exec.js 的回退只有 stdout）。浏览器上的语义：
