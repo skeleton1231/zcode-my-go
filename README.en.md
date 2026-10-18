@@ -64,7 +64,32 @@ settings file).
 
 MIT © 2026 skeleton1231
 
+## v0.7.0 highlights
+
+- Dual-platform CI (GitHub Actions: windows/ubuntu build/vet/test,
+  wasm cross-compile, Linux -race) — its first run caught five real
+  cross-platform defects.
+- REPL raw-mode line editor (insert/backspace by rune, arrows,
+  Home/End, Ctrl+C) plus up/down input history in both TUI and REPL
+  (dedup, draft restore, FIFO cap).
+- Bracketed paste: multiline paste no longer submits per line (REPL
+  keeps newlines, TUI folds to spaces); pasted content capped.
+- TUI Esc abort: interrupt the running turn without leaving the app.
+- Daily token budget guard: a day ledger shared across sessions and
+  processes (cache reads priced at 0.1, midnight rollover) with
+  80%/100% threshold notices rendered on every surface — soft, never
+  blocking. /perms lists the session's always-allow rules.
+- MCP trio complete: tools, prompts (/mcp server.prompt), and
+  resources (/mcp @server:uri).
+- Tool diffs now persist with the transcript (survive reload); HTML
+  export gains colored diffs and collapsible thinking, Markdown gains
+  diff fences.
+- Stability fixes (with community PRs): caps on all unbounded text
+  entries, deterministic parallel-batch completion, checkpoint-pruned
+  rewind abort, 8.3 short-path handling.
+
 ## v0.6.0 highlights
+
 
 - Background shell over SSH: bash {background:true} runs a non-waiting
   exec channel on ssh:// workspaces (KillTree closes the channel).
