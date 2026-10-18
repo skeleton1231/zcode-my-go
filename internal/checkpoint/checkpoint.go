@@ -61,7 +61,13 @@ func isRepoRoot(git, dir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return strings.EqualFold(filepath.Clean(abs), top), nil
+	// Windows 上 git 的 toplevel 可能以正斜杠返回（本机与 runner 的
+	// 版本/形态各异）——归一化到同一分隔符再比大小写。
+	samePath := func(a, b string) bool {
+		return strings.EqualFold(filepath.ToSlash(filepath.Clean(a)),
+			filepath.ToSlash(filepath.Clean(b)))
+	}
+	return samePath(abs, top), nil
 }
 
 // Capture records the workspace's current tree (tracked changes plus
@@ -83,7 +89,11 @@ func Capture(dir, session string, seq int) error {
 	if ok, err := isRepoRoot(git, dir); err != nil || !ok {
 		return fmt.Errorf("%w", ErrNotARepo)
 	}
-	env := append(os.Environ(), "GIT_INDEX_FILE="+tmp.Name())
+	// 管道身份自备（CI runner 无全局 user.name/email 时 commit-tree 会
+	// 拒绝）；plumbing 的身份无语义，固定即可。
+	env := append(os.Environ(), "GIT_INDEX_FILE="+tmp.Name(),
+		"GIT_AUTHOR_NAME=zgo", "GIT_AUTHOR_EMAIL=zgo@checkpoint",
+		"GIT_COMMITTER_NAME=zgo", "GIT_COMMITTER_EMAIL=zgo@checkpoint")
 	run := func(args ...string) (string, error) {
 		cmd := exec.Command(git, baseArgs(dir, args...)...)
 		cmd.Env = env

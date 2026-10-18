@@ -50,6 +50,7 @@
 | ZCode 实践 | Zgo 落地 |
 | --- | --- |
 | AGENTS.md 工程规范 | `AGENTS.md`（同构） |
+| CI（GitHub Actions） | `.github/workflows/ci.yml`：push/PR 双平台（windows/ubuntu）build/vet/test，并发去重 |
 | spec 先行 | `specs/agent-core.md`、`specs/desktop-shell.md` |
 | 架构治理 architecture-policy.yaml | `architecture-policy.yaml`（同构，11 模块） |
 | 领域词汇 CONTEXT.md | `CONTEXT.md`（同构） |
