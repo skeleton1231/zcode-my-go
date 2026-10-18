@@ -7,10 +7,11 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 )
 
-// fenceFor 返回能安全包裹 content 的反引号围栏（issue #71：bash 回显
+// FenceFor 返回能安全包裹 content 的反引号围栏（issue #71：bash 回显
 // 常含行首裸 ```，固定三反引号会让内容泄漏且吞掉后续消息）。长度取
-// 内容中最长反引号串 +1，最少 3。
-func fenceFor(content string) string {
+// 内容中最长反引号串 +1，最少 3。导出共享（issue #178：@ 引用展开与
+// stdin 管道两个位点需要同一方案）。
+func FenceFor(content string) string {
 	n, run := 3, 0
 	for _, r := range content {
 		if r == '`' {
@@ -94,8 +95,8 @@ func Markdown(messages []ai.Message, title, model, workspace string) string {
 					mark = "（失败）"
 				}
 				var out strings.Builder
-				out.WriteString(fenceFor(blk.Text) + "text\n" +
-					strings.TrimRight(blk.Text, "\n") + "\n" + fenceFor(blk.Text) + "\n\n")
+				out.WriteString(FenceFor(blk.Text) + "text\n" +
+					strings.TrimRight(blk.Text, "\n") + "\n" + FenceFor(blk.Text) + "\n\n")
 				pendingTools = append(pendingTools,
 					"**"+name+"**"+mark+"：\n\n"+out.String())
 			}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
@@ -78,7 +79,10 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 			continue
 		}
 		total += len(content)
-		expansions = append(expansions, fmt.Sprintf("@%s：\n```\n%s\n```", rel, content))
+		// 动态围栏（issue #178）：@ 引用的 Markdown 含行首裸 ``` 会提前
+		// 闭合固定围栏——与导出/管道共用 FenceFor。
+		fence := exporthtml.FenceFor(content)
+		expansions = append(expansions, fmt.Sprintf("@%s：\n%s\n%s\n%s", rel, fence, content, fence))
 	}
 	if len(expansions) > 0 {
 		out = out + "\n\n" + strings.Join(expansions, "\n\n")
