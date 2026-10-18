@@ -197,6 +197,11 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    #178：编辑 Markdown 文件时 diff 行自身可含围栏）；HTML 导出同
    时补齐 thinking 块（<details> 折叠，与 Markdown 对称）。
 
+35. 每日 token 预算守卫：settings.budgetDailyTokens（0=不限）；
+   每回合的增量用量（含缓存读 0.1 计价）累计到 dataDir 的当日记账
+   （usage-YYYYMMDD.json，跨会话共享、进程外持久）；用量面（/usage
+   与 zgo usage）展示「今日」行；跨过阈值 80% 与 100% 各发一次通知
+   事件（EvTurnRetry 同级的用户可见提示，不阻断运行——软预算）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

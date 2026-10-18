@@ -283,6 +283,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    对称）；Markdown 导出 ```diff 围栏。
 
 
+**每日 token 预算守卫**（spec 规则 35）：internal/usage 当日记账
+   （dataDir/usage-YYYYMMDD.json，跨会话/进程共享、隔天自然归零）；
+   settings.budgetDailyTokens（0=不限）软预算——回合增量按 Priced 折算
+   （缓存读 0.1）入账，80%/100% 阈值各发一次 EvBudgetNotice（不阻断）；
+   用量面（/usage、zgo usage）附「今日」行。
+
 ## 翻译轮次记录
 
 - v0.3 第一轮：permission、compact、todo/ask、环境与项目上下文、CLI print 模式；修复 tool_result 标准内容结构（真实 GLM 端到端暴露）

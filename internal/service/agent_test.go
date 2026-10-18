@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -403,4 +404,79 @@ func mustNewSession(t *testing.T, svc *AgentService) string {
 		t.Fatal(err)
 	}
 	return info.ID
+}
+
+// TestDailyBudgetLedgerAndNotice 验证每日预算守卫（spec 规则 35）：回合
+// 增量入账（跨会话共享同一记账）、今日行进入用量面、阈值各通知一次。
+func TestDailyBudgetLedgerAndNotice(t *testing.T) {
+	dir := t.TempDir()
+	// 预算随服务启动加载——先写 settings 再 New。
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"),
+		[]byte(`{"budgetDailyTokens":200}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	svc.DisableAutoTitleForTesting()
+
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []agent.Event
+	for _, u := range []ai.Usage{
+		{InputTokens: 100, OutputTokens: 10}, // →110
+		{InputTokens: 60, OutputTokens: 10},  // →+70 = 180（≥80%×200）
+	} {
+		ch := make(chan ai.StreamEvent, 3)
+		ch <- ai.StreamEvent{Kind: ai.EvMessageStart}
+		ch <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "ok"}
+		ch <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn, Usage: u}
+		close(ch)
+		prov := ch
+		svc.UseProviderForTesting(func() ai.Provider { return fixedProvider{ch: prov} })
+		if err := svc.Chat(info.ID, "做", func(ev agent.Event) { events = append(events, ev) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	used, budget := svc.DailyUsage()
+	if used != 180 || budget != 200 { // 100+10 + 60+10 = 180
+		t.Fatalf("daily = %d/%d, want 180/200", used, budget)
+	}
+	notices := 0
+	for _, ev := range events {
+		if ev.Kind == agent.EvBudgetNotice {
+			notices++
+			if !strings.Contains(ev.Text, "80%") {
+				t.Errorf("notice text = %q", ev.Text)
+			}
+		}
+	}
+	if notices != 1 {
+		t.Fatalf("notices = %d, want 1", notices)
+	}
+
+	// 新服务实例重放同一记账（跨进程持久）。
+	svc2, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc2.Close()
+	if used2, _ := svc2.DailyUsage(); used2 != 180 {
+		t.Fatalf("replayed daily = %d", used2)
+	}
+}
+
+// fixedProvider 回一段带 usage 的完整回合。
+type fixedProvider struct {
+	usage ai.Usage
+	ch    <-chan ai.StreamEvent
+}
+
+func (p fixedProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	return p.ch
 }
