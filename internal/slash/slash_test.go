@@ -187,3 +187,20 @@ func captureOut(t *testing.T, env *Env, line string) string {
 	return strings.Join(lines, "\n")
 }
 
+
+// TestSlashUsage 验证 /usage（spec 规则 25）：零用量会话展示零值表。
+func TestSlashUsage(t *testing.T) {
+	env, lines := newEnv(t)
+	if handled, _ := Run(env, "/usage"); !handled {
+		t.Fatal("/usage not handled")
+	}
+	joined := strings.Join(*lines, "\n")
+	for _, want := range []string{"[用量]", "输入      0", "输出      0", "回合 0"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q in:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "命中") {
+		t.Errorf("zero usage must not show a hit rate:\n%s", joined)
+	}
+}

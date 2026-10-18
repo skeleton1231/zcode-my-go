@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -328,4 +329,78 @@ func TestSessionIDNoCollisionOnSameTick(t *testing.T) {
 		}
 		ids[info.ID] = true
 	}
+}
+
+// TestUsageSummaryAndFormat 验证用量面（spec 规则 25）：脚本回合的
+// usage 记账汇入 UsageSummaryOf（含缓存读与回合数），FormatUsage 的表
+// 含命中率；零用量明确展示零值。
+func TestUsageSummaryAndFormat(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	out := make(chan ai.StreamEvent, 3)
+	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "done"}
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn,
+		Usage: ai.Usage{InputTokens: 100, OutputTokens: 40,
+			CacheReadTokens: 60, CacheWriteTokens: 10}}
+	close(out)
+	svc.UseProviderForTesting(func() ai.Provider {
+		return chProvider{ch: out}
+	})
+	t.Cleanup(func() { svc.UseProviderForTesting(nil) })
+
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Chat(info.ID, "做点事", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+
+	sum, err := svc.UsageSummaryOf(info.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Usage.InputTokens != 100 || sum.Usage.CacheReadTokens != 60 {
+		t.Fatalf("usage = %+v", sum.Usage)
+	}
+	if sum.Turns != 1 {
+		t.Fatalf("turns = %d", sum.Turns)
+	}
+	formatted := FormatUsage(sum)
+	for _, want := range []string{"输入      100", "输出      40", "缓存读    60", "缓存写    10", "回合 1", "37%"} {
+		if !strings.Contains(formatted, want) {
+			t.Errorf("missing %q in:\n%s", want, formatted)
+		}
+	}
+
+	// 零用量：无命中率行、字段全零。
+	zero, err := svc.UsageSummaryOf(mustNewSession(t, svc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zf := FormatUsage(zero)
+	if strings.Contains(zf, "命中") || !strings.Contains(zf, "输入      0") {
+		t.Fatalf("zero format wrong:\n%s", zf)
+	}
+}
+
+// chProvider 把预置事件通道当流（一次性）。
+type chProvider struct{ ch <-chan ai.StreamEvent }
+
+func (p chProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	return p.ch
+}
+
+func mustNewSession(t *testing.T, svc *AgentService) string {
+	t.Helper()
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.ID
 }

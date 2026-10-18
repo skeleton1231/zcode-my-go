@@ -183,6 +183,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    幕异步/收幕同步皆观察者（失败记日志绝不影响会话），preCompact 非
    零退出阻止压缩并回带 stderr 原因；hookWG 收束开场钩子，Close 对全
    部存活会话触发收场（reason=close/delete）。
+**用量可见性**（ZCode usage 的非 UI 面，spec 规则 25）：service.
+   UsageSummaryOf（累计输入/输出/缓存读写 + 用户回合数，取自会话持久化
+   记账）+ 共享 FormatUsage（含前缀缓存命中率）+ /usage 终端命令与
+   `zgo usage [前缀]`（无参=最近会话）；零用量明确展示零值。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
