@@ -134,9 +134,12 @@ type Harness struct {
 	Probe *remote.Client
 }
 
-// wire swaps in the scripted provider and the auto-allow asker.
+// wire swaps in the scripted provider and the auto-allow asker. 自动命名会
+// 向脚本 provider 多发一个小额补全请求——吃掉脚本回合、破坏计数断言（其
+// 行为由 service 专测覆盖），一并关掉；本地与远程 harness 同享。
 func wire(t *testing.T, svc *service.AgentService, turns []Turn) *Script {
 	t.Helper()
+	svc.DisableAutoTitleForTesting()
 	script := &Script{turns: turns}
 	svc.UseProviderForTesting(func() ai.Provider { return script })
 	t.Cleanup(func() { svc.UseProviderForTesting(nil) })
@@ -158,9 +161,6 @@ func New(t *testing.T, turns ...Turn) *Harness {
 	t.Cleanup(svc.Close)
 	script := wire(t, svc, turns)
 
-	// 自动命名会向脚本 provider 多发一个小额补全请求——吃掉脚本回合、
-	// 破坏计数断言（其行为由 service 专测覆盖）。e2e 关掉。
-	svc.DisableAutoTitleForTesting()
 	ws := t.TempDir()
 	info, err := svc.NewSession(ws)
 	if err != nil {
