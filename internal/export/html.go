@@ -16,6 +16,7 @@ import (
 type Entry struct {
 	Role       string // user | assistant | tool
 	Text       template.HTML
+	Images     []template.URL // 用户消息的图片附件（内嵌 data URI）
 	ToolName   string
 	ToolArgs   string
 	ToolOutput template.HTML
@@ -78,7 +79,7 @@ details.tool pre { margin:0; padding:10px 12px; border-top:1px solid var(--borde
   <div class="meta">模型 {{.Model}} · 工作区 {{.Workspace}} · 导出于 {{.When}}</div>
 </header>
 {{range .Entries}}
-  {{if eq .Role "user"}}<div class="entry user"><div class="bubble">{{.Text}}</div></div>
+  {{if eq .Role "user"}}<div class="entry user"><div class="bubble">{{.Text}}</div>{{range .Images}}<img class="attach" src="{{.}}" alt="图片附件">{{end}}</div>
   {{else if eq .Role "assistant"}}<div class="entry assistant">{{.Text}}</div>
   {{else}}<details class="tool entry"><summary>{{.ToolName}} · {{.ToolArgs}}{{if .ToolError}} <span class="err">✕</span>{{end}}</summary><pre>{{.ToolOutput}}</pre></details>{{end}}
 {{end}}
@@ -106,8 +107,17 @@ func HTML(messages []ai.Message, title, model, workspace string) string {
 		switch m.Role {
 		case ai.RoleUser:
 			flush()
-			page.Entries = append(page.Entries, Entry{Role: "user",
-				Text: template.HTML(html.EscapeString(m.Text()))})
+			e := Entry{Role: "user",
+				Text: template.HTML(html.EscapeString(m.Text()))}
+			for _, b := range m.Blocks {
+				if src, ok := imageDataURI(b); ok {
+					// template.URL：src 由我们构造（media 必须 image/*、
+					// data 是 base64），绕过模板的 URL 过滤避免
+					// ZgotmplZ 替换。
+					e.Images = append(e.Images, template.URL(src))
+				}
+			}
+			page.Entries = append(page.Entries, e)
 		case ai.RoleAssistant:
 			flush()
 			for _, b := range m.Blocks {
@@ -167,4 +177,20 @@ func renderMarkdown(text string) template.HTML {
 		b.WriteString("<pre><code>" + html.EscapeString(code.String()) + "</code></pre>")
 	}
 	return template.HTML(b.String())
+}
+
+// imageDataURI 把图片块变成内嵌 data URI（自包含分享物，spec 规则
+// 22）；非 image/* 媒体或空数据返回 false 跳过——导出不因坏块失败。
+func imageDataURI(b ai.Block) (string, bool) {
+	if b.Kind != ai.BlockImage || b.Data == "" {
+		return "", false
+	}
+	media := b.Media
+	if media == "" {
+		media = "image/png"
+	}
+	if !strings.HasPrefix(media, "image/") {
+		return "", false
+	}
+	return "data:" + media + ";base64," + b.Data, true
 }

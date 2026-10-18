@@ -86,3 +86,23 @@ func TestMarkdownNestedFences(t *testing.T) {
 		t.Fatalf("dynamic fence missing:\n%s", out)
 	}
 }
+
+// TestMarkdownExportEmbedsImages 验证用户图片块导出为 data URI 图片链
+// 接（自包含分享物），空数据块跳过。
+func TestMarkdownExportEmbedsImages(t *testing.T) {
+	msgs := []ai.Message{{
+		Role: ai.RoleUser,
+		Blocks: []ai.Block{
+			{Kind: ai.BlockText, Text: "截图如下"},
+			{Kind: ai.BlockImage, Media: "image/png", Data: "aWNvbmc="},
+			{Kind: ai.BlockImage, Media: "image/png", Data: ""}, // 空数据跳过
+		},
+	}}
+	got := Markdown(msgs, "t", "m", "/w")
+	if !strings.Contains(got, "![图片附件](data:image/png;base64,aWNvbmc=)") {
+		t.Fatalf("image link missing:\n%s", got)
+	}
+	if strings.Count(got, "![图片附件]") != 1 {
+		t.Fatalf("empty block emitted: %q", got)
+	}
+}
