@@ -1,0 +1,17 @@
+{
+  "name": "glob-find",
+  "description": "glob 模式匹配与 path jail 基线",
+  "files": {
+    "src/a.go": "package src",
+    "src/b.go": "package src",
+    "docs/note.md": "# 笔记"
+  },
+  "turns": [
+    {"tool": "glob", "args": {"pattern": "src/*.go"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "transcript_contains": ["a.go", "b.go"],
+    "no_tool_errors": true
+  }
+}

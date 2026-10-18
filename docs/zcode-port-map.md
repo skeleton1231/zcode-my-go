@@ -422,3 +422,20 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **桌面后台代理状态条**（spec 规则 61）：聊天流上方的实时状态条（四态
    标记/耗时/摘要/折叠，空不占位）；回合结束与会话打开启动 1s 轮询
    （单飞守卫、变化才回主线程、清空即退）。
+
+**子代理升级提问**（ZCode escalate 的落地，spec 规则 62）：后台子代
+   理工具面加 ask——问题经会话提问通道升级（带 [后台代理 <id>] 前
+   缀），答案回转录继续跑；AgentRunFunc 增 id；前台短任务不带。
+
+**cron 时间窗**（pi off-peak 的 Zgo 形态，spec 规则 63）：Job.Window
+   （HH:MM-HH:MM 可跨午夜）——窗口外到期不 fire 不动 LastRun，窗口
+   一开补跑（推迟而非错过）；cron add --window 即校验，list 附 ⏰。
+
+**eval 深化：安全回归网 + CI 门禁**：场景 Trusted:false 模拟未授信工
+   作区——trust-gate/trust-granted 双向断言信任门（回归即红）；
+   edit-roundtrip、glob-find 场景；CI 增 `zgo eval evals` 门禁步骤。
+
+**grep 远程并发**（性能路线第一条，spec 规则 64）：ssh:// 的 grep 逐文
+   件拉取改 8 路并发（RTT 并行化：16×50ms 顺序 800ms→~200ms）；归并
+   语义与顺序版一致。本地保持顺序+早停——实测 Windows+Defender 下
+   文件打开被杀软串行化，并发零收益；稠密命中的早停才是本地大 win。

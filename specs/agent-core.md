@@ -378,7 +378,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
    / no_tool_errors / event_count）。运行面与 e2e 同构：临时 dataDir +
    临时工作区（种文件即授信——场景是用户自己写的）+ 脚本 provider +
    自动放行 asker；关自动命名。目录默认 ./evals 不存在则 ~/.zgo/
-   evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。
+   evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。场景 Trusted 显式 false
+   模拟未授信工作区（工作区层不加载）——**安全回归网**：trust-gate
+   场景断言未授信的技能层不可读（信任门回归即红）、trust-granted 断
+   言授信后可读（正向）。CI 以 `go run ./cmd/zgo eval evals` 为门禁
+   步骤——任一场景失败即红。
 
 55. 模型兜底链（spec 规则 54 场景评测之后）：settings.fallbackModels
    （逗号列表，空即关闭）——rewire 的 Provider 把主模型与兜底序包成
@@ -428,6 +432,29 @@ dc907a4 (feat: glob and grep honor .gitignore)
    后台完成不触发重画——回合结束与会话打开拉一次快照并启动轮询
    （1s、单飞守卫、清空即退、1 小时上限防孤儿）；快照有变化才回主
    线程 update。
+
+62. 子代理升级提问（ZCode escalate 的落地）：后台子代理的工具面加
+   ask——遇到只有用户能答的问题时经会话提问通道升级，问题文本带
+   `[后台代理 <id>]` 前缀（用户可对照 /agents 辨认来源）；答案作为
+   工具结果回到代理转录，代理据此继续。AgentRunFunc 增 id 参数（升
+   级前缀的来源）；ask 保持 SerialOnly 与只读风险。前台 task/
+   dispatch/workflow 的研究步骤不带（短任务自纠，ZCode 同款取舍）。
+
+63. cron 时间窗（pi off-peak 的 Zgo 形态）：`Job.Window`（"HH:MM-
+   HH:MM" 本地时区，可跨午夜——22:00-06:00 取 [22:00,24:00)∪[0,
+   06:00)；空即不限）——到期时刻在窗口外则**不 fire 也不动 LastRun**，
+   任务保持到期，窗口一开的下一个 tick 补跑（语义是「推迟到窗口」而
+   非「错过」）。cron add --window add 即校验；cron list 模型列附 ⏰
+   窗口。
+
+64. grep 远程并发（性能路线第一条）：ssh:// 工作区的 grep 逐文件拉取
+   改 8 路并发（网络往返主导——RTT 并行化收益显著，16 文件 × 50ms
+   RTT 顺序 800ms → 并发 ~200ms，实测并发峰值 ∈[2,8]）；结果按枚举
+   序回填，归并上限语义与顺序版一致；候选上限 20000、单文件收集上
+   限同总上限。**本地 grep 保持顺序 + 命中早停**——实测（Windows +
+   Defender）本地文件打开被杀软串行化，并发零收益且稠密命中的早停
+   是更大 win（读 67 个文件 vs 全量 2000）；逐文件 goroutine 的调度
+   开销在小文件场景反超收益 20 倍（分块/分波两版实测后放弃）。
 
 ## 状态所有者
 

@@ -42,6 +42,11 @@ type Scenario struct {
 	Files       map[string]string `json:"files,omitempty"` // 种进工作区（空串即空文件）
 	Turns       []TurnSpec        `json:"turns"`
 	Expect      Expectations      `json:"expect"`
+	// Trusted 控制工作区授信（spec 规则 53 的安全回归网）：默认 true
+	// （种文件即授信——场景是用户自己写的）；显式 false 模拟未授信工
+	// 作区——工作区层（.zgo/skills、.zgo/commands、.zgorules.json）不
+	// 加载，安全边界场景据此断言。
+	Trusted *bool `json:"trusted,omitempty"`
 }
 
 // Result 是一个场景的运行结果。
@@ -123,9 +128,11 @@ func Run(s Scenario) Result {
 	svc.SetAsker(func(agent.AskRequest) agent.AskResponse { return agent.AskResponse{} })
 	provider := &scriptProvider{turns: s.Turns}
 	svc.UseProviderForTesting(func() ai.Provider { return provider })
-	if err := svc.TrustWorkspace(ws, "eval"); err != nil {
-		res.Failures = append(res.Failures, "trusting eval workspace: "+err.Error())
-		return res
+	if s.Trusted == nil || *s.Trusted {
+		if err := svc.TrustWorkspace(ws, "eval"); err != nil {
+			res.Failures = append(res.Failures, "trusting eval workspace: "+err.Error())
+			return res
+		}
 	}
 	info, err := svc.NewSession(ws)
 	if err != nil {
