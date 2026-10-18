@@ -45,6 +45,10 @@ type Block struct {
 	// BlockToolResult: the call this answers, its output and error flag.
 	ToolCallID string `json:"toolCallId,omitempty"`
 	IsError    bool   `json:"isError,omitempty"`
+	// Diff 携带改动类工具（edit/write/patch）的统一 diff——随转录持
+	// 久化（spec 规则 34；此前只在事件流上存在，重载即丢）。不上三
+	// 协议 wire（provider 无此概念）。
+	Diff string `json:"diff,omitempty"`
 
 	// BlockImage: the media type ("image/png"…) and the image bytes,
 	// base64-encoded (JSONL persistence and every wire dialect take the

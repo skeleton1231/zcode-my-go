@@ -17,9 +17,11 @@ type Entry struct {
 	Role       string // user | assistant | tool
 	Text       template.HTML
 	Images     []template.URL // 用户消息的图片附件（内嵌 data URI）
+	Thinking   template.HTML  // assistant 的思考块（折叠，spec 规则 34）
 	ToolName   string
 	ToolArgs   string
 	ToolOutput template.HTML
+	ToolDiff   template.HTML // 改动类工具的统一 diff（彩色行）
 	ToolError  bool
 }
 
@@ -80,8 +82,8 @@ details.tool pre { margin:0; padding:10px 12px; border-top:1px solid var(--borde
 </header>
 {{range .Entries}}
   {{if eq .Role "user"}}<div class="entry user"><div class="bubble">{{.Text}}</div>{{range .Images}}<img class="attach" src="{{.}}" alt="图片附件">{{end}}</div>
-  {{else if eq .Role "assistant"}}<div class="entry assistant">{{.Text}}</div>
-  {{else}}<details class="tool entry"><summary>{{.ToolName}} · {{.ToolArgs}}{{if .ToolError}} <span class="err">✕</span>{{end}}</summary><pre>{{.ToolOutput}}</pre></details>{{end}}
+  {{else if eq .Role "assistant"}}{{if .Thinking}}{{.Thinking}}{{end}}<div class="entry assistant">{{.Text}}</div>
+  {{else}}<details class="tool entry"><summary>{{.ToolName}} · {{.ToolArgs}}{{if .ToolError}} <span class="err">✕</span>{{end}}</summary><pre>{{.ToolOutput}}</pre>{{if .ToolDiff}}<pre class="diff">{{.ToolDiff}}</pre>{{end}}</details>{{end}}
 {{end}}
 </div>
 </body>
@@ -120,13 +122,24 @@ func HTML(messages []ai.Message, title, model, workspace string) string {
 			page.Entries = append(page.Entries, e)
 		case ai.RoleAssistant:
 			flush()
+			thinking := ""
+			for _, b := range m.Blocks {
+				if b.Kind == ai.BlockThinking && b.Text != "" {
+					thinking += b.Text + "\n"
+				}
+			}
 			for _, b := range m.Blocks {
 				if b.Kind == ai.BlockToolCall {
 					toolCalls[b.ID] = b
 				}
 			}
-			page.Entries = append(page.Entries, Entry{Role: "assistant",
-				Text: renderMarkdown(m.Text())})
+			e := Entry{Role: "assistant", Text: renderMarkdown(m.Text())}
+			if thinking != "" {
+				// 与 Markdown 的 <details> 对称（spec 规则 34）。
+				e.Thinking = template.HTML("<details class=\"thinking\"><summary>思考过程</summary><pre>" +
+					html.EscapeString(strings.TrimRight(thinking, "\n")) + "</pre></details>")
+			}
+			page.Entries = append(page.Entries, e)
 		case ai.RoleToolResult:
 			for _, b := range m.Blocks {
 				if b.Kind != ai.BlockToolResult {
@@ -138,6 +151,7 @@ func HTML(messages []ai.Message, title, model, workspace string) string {
 					ToolName:   call.Name,
 					ToolArgs:   call.Arguments,
 					ToolOutput: template.HTML(html.EscapeString(b.Text)),
+					ToolDiff:   template.HTML(renderDiffHTML(b.Diff)),
 					ToolError:  b.IsError,
 				})
 			}
@@ -193,4 +207,25 @@ func imageDataURI(b ai.Block) (string, bool) {
 		return "", false
 	}
 	return "data:" + media + ";base64," + b.Data, true
+}
+
+// renderDiffHTML renders a unified diff with per-line coloring（+绿/-
+// 红，spec 规则 34）——输出已转义，经 ToolDiff 的 template.HTML 直达。
+func renderDiffHTML(diff string) string {
+	if diff == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(diff, "\n"), "\n") {
+		esc := html.EscapeString(line)
+		switch {
+		case strings.HasPrefix(line, "+"):
+			b.WriteString(`<span class="add">` + esc + "</span>\n")
+		case strings.HasPrefix(line, "-"):
+			b.WriteString(`<span class="del">` + esc + "</span>\n")
+		default:
+			b.WriteString(esc + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }

@@ -97,6 +97,14 @@ func Markdown(messages []ai.Message, title, model, workspace string) string {
 				var out strings.Builder
 				out.WriteString(FenceFor(blk.Text) + "text\n" +
 					strings.TrimRight(blk.Text, "\n") + "\n" + FenceFor(blk.Text) + "\n\n")
+				// 改动类工具的 diff 以 diff 围栏呈现（spec 规则 34）——
+				// 围栏按内容动态加长（issue #178：编辑 Markdown 文件时
+				// diff 行本身可含 ```，固定围栏必破）。
+				if blk.Diff != "" {
+					fence := FenceFor(blk.Diff)
+					out.WriteString(fence + "diff\n" +
+						strings.TrimRight(blk.Diff, "\n") + "\n" + fence + "\n\n")
+				}
 				pendingTools = append(pendingTools,
 					"**"+name+"**"+mark+"：\n\n"+out.String())
 			}
