@@ -34,7 +34,7 @@ type Env struct {
 	// Send submits a message as if the user typed it（/mcp 展开后直接
 	// 发送；不填即该表面不支持直接发送）.
 	Send func(text string)
-	// Find searches the current session transcript（spec 规则 56：TUI
+	// Find searches the current session transcript（spec 规则 57：TUI
 	// 返回跳转状态并进入标记模式，REPL 返回命中清单；不填即不支持）.
 	Find func(q string) string
 
