@@ -81,6 +81,12 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    口贴底），Ctrl+↑/↓ 在用户回合行间跳转（跳离末尾停尾随、越过最新恢复
    尾随），PageUp/PageDown 半屏滚动，窗口越界夹紧；/new 切会话清空计划
    与回合锚点。
+19. 后台 shell 本地与远程同构：bash {background:true} 启动不等待完成的
+   命令（cd 工作区根、stdout/stderr 合并）并立即返回 job id；输出流入
+   256KB 保留缓冲；bash_output 按调用增量排空（首行 job/命令/运行或退
+   出状态，之后新输出按截断上限）；bash_kill 终止整棵进程树——远端即
+   关闭 SSH 会话通道（服务器随通道关闭终止远端进程）；会话结束 KillAll
+   收尾。远程后台与本地后台语义一致（同一 Jobs 注册表与工具面）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

@@ -39,7 +39,9 @@ func (b *Bash) Description() string {
 	return "Run a shell command in the workspace directory. On Windows the " +
 		"command runs in PowerShell; elsewhere in bash. stdout and stderr are " +
 		"combined, output is truncated to 30KB. timeout_ms caps the run " +
-		"(default 120000, max 600000)."
+		"(default 120000, max 600000). background:true launches without " +
+		"waiting (dev servers, watchers) — drain output with bash_output, " +
+		"stop with bash_kill; local and SSH workspaces behave the same."
 }
 
 // Parameters implements agent.Tool.
@@ -47,6 +49,7 @@ func (b *Bash) Parameters() map[string]any {
 	return objectSchema(map[string]any{
 		"command":    prop("string", "The command line to run"),
 		"timeout_ms": prop("number", "Timeout in milliseconds (default 120000, max 600000)"),
+		"background": prop("boolean", "Launch without waiting for completion; returns a job id for bash_output/bash_kill"),
 	}, "command")
 }
 
@@ -162,37 +165,53 @@ func (b *Bash) CapabilityForArgs(args string) permission.Capability {
 
 // startBackground launches a long command without blocking the turn
 // (ZCode's bash background): output drains via bash_output, the tree
-// stops via bash_kill or when the session ends.
+// stops via bash_kill or when the session ends. 本地与 SSH 远程同构——
+// 远端经 RemoteFS.StartBackground 起一条不等待的 exec 通道。
 func (b *Bash) startBackground(line string) agent.ToolResult {
 	if b.jobs == nil {
 		return errResult("no job registry in this session")
 	}
-	cmd, err := b.command(context.Background(), line)
+	proc, err := b.bgProcess(line)
 	if err != nil {
 		return errResult("%v", err)
+	}
+	job, err := b.jobs.Start(proc, line)
+	if err != nil {
+		return errResult("starting job: %v", err)
+	}
+	go io.Copy(jobWriter{job}, proc.Stdout())
+	return okResult("后台任务已启动 [%s]：%s\n用 bash_output 读取输出，bash_kill 停止。", job.ID, line)
+}
+
+// bgProcess 构建后台进程：远程走 SSH 通道，本地走平台 shell。
+func (b *Bash) bgProcess(line string) (BgProcess, error) {
+	if b.ws.IsRemote() {
+		return b.ws.Remote.StartBackground(line)
+	}
+	cmd, err := b.command(context.Background(), line)
+	if err != nil {
+		return nil, err
 	}
 	setupTreeKill(cmd)
 	cmd.Dir = b.ws.Root
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return errResult("%v", err)
+		return nil, err
 	}
 	cmd.Stderr = cmd.Stdout // 合并到同一管道，输出顺序即产出顺序
-
-	job, err := b.jobs.Start(execProcess{cmd}, line)
-	if err != nil {
-		return errResult("starting job: %v", err)
-	}
-	go io.Copy(jobWriter{job}, stdout)
-	return okResult("后台任务已启动 [%s]：%s\n用 bash_output 读取输出，bash_kill 停止。", job.ID, line)
+	return localBgProcess{cmd: cmd, out: stdout}, nil
 }
 
-// execProcess adapts *exec.Cmd to the job interface.
-type execProcess struct{ cmd *exec.Cmd }
+// localBgProcess adapts *exec.Cmd + its stdout pipe to BgProcess.
+type localBgProcess struct {
+	cmd *exec.Cmd
+	out io.ReadCloser
+}
 
-func (e execProcess) Start() error    { return e.cmd.Start() }
-func (e execProcess) KillTree() error { return killTree(e.cmd) }
-func (e execProcess) Wait() error     { return e.cmd.Wait() }
+func (l localBgProcess) Start() error             { return l.cmd.Start() }
+func (l localBgProcess) KillTree() error          { return killTree(l.cmd) }
+func (l localBgProcess) Wait() error              { return l.cmd.Wait() }
+func (l localBgProcess) Stdout() io.ReadCloser    { return l.out }
 
 // jobWriter feeds a job's output buffer from an io.Copy.
 type jobWriter struct{ job *Job }

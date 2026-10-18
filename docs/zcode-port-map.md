@@ -143,6 +143,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    搜索子系统三面齐备（桌面弹窗、服务 API、终端命令）。
 **任务导航**（ZCode task-navigation）：Ctrl+↑/↓ 用户回合间跳转（居中、
    停跟随、边界不动、随搜索过滤行走）。
+**后台 shell（ZCode bash-background，本地与远程同构）**：bash
+   {background:true} 启动不等待完成的命令（cd 工作区根、stdout/stderr
+   合并、256KB 保留缓冲），bash_output 按调用增量排空（含运行/退出状
+   态）、bash_kill 终止整棵进程树，会话结束 KillAll；SSH 工作区经
+   remote.Client.StartBackground 走不等待的 exec 通道（KillTree 即关
+   会话通道，服务器随通道关闭终止远端进程），remotetest 服务器对齐
+   真 SSH 的流式输出与断开即杀语义。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
