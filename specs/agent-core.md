@@ -246,6 +246,12 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    变量不持久（只粘滞目录）；并行批次内共享起点、收尾 last-write
    更新。SSH 远程暂不粘滞（后续跟进）。
 
+
+43. 检查点随会话清光（issue #224）：DeleteSession 删除转录后调用
+   checkpoint.RemoveAll——该会话全部 refs/zgo-checkpoints/<id>/* 逐
+   条 update-ref -d（活 ref 钉住 git 对象，不清是硬泄漏）；非仓库/
+   ssh:// 静默无操作，失败记日志不阻断删除。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

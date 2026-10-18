@@ -678,6 +678,13 @@ func (s *AgentService) DeleteSession(id string) error {
 	if err := s.mgr.Delete(id); err != nil {
 		return err
 	}
+	// 检查点 refs 随会话清光（issue #224：活 ref 钉住 git 对象——不清
+	// 是硬泄漏；ws 已在删 state 前取出，ssh:// 与非仓库静默无操作）。
+	if ws != "" && !strings.HasPrefix(ws, "ssh://") {
+		if err := checkpoint.RemoveAll(ws, id); err != nil {
+			log.Printf("removing checkpoint refs for %s: %v", id, err)
+		}
+	}
 	s.fireSessionEnd(id, ws, "delete")
 	return nil
 }
