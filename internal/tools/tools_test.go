@@ -8,12 +8,28 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testWorkspace(t *testing.T) Workspace {
 	t.Helper()
-	w := Workspace{Root: t.TempDir()}
-	return w
+	// 不用 t.TempDir：一次性 RemoveAll 对被测进程（bash/后台 job）的
+	// 退出尾巴零容忍（CI runner 实测撞过"文件被占用"）。自管目录 +
+	// 重试删除兜底（同 remotetest 的教训）。
+	dir, err := os.MkdirTemp("", "zgo-tools-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			if err := os.RemoveAll(dir); err == nil || time.Now().After(deadline) {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	})
+	return Workspace{Root: dir}
 }
 
 func run(t *testing.T, tool interface {
