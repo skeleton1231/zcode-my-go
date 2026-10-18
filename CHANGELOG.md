@@ -2,6 +2,56 @@
 
 约定式提交驱动的里程碑摘要；每一行都对应一个经完整验证与 PR 评审的变更。
 
+## v0.8.0 — 能力广度与安全边界
+
+- **后台子代理四件套**（#237/#239/#249/#252）：agent（启动即返 ID、父
+  会话不阻塞）、agent_output（收割：运行报进度、完成返结论）、
+  agent_stop、agent_send（终态代理带全部历史续跑，同 ID 复用）；
+  /agents 与 TUI 固定块、桌面状态条三面实时可见（1s 轮询、变化才刷）。
+  顺带修复：嵌套循环 provider 绕过 e2e 注入、ssh:// 会话嵌套工具面读
+  本地磁盘两个真实缺陷。
+- **工作区信任门**（#243/#244）：未授信的本地工作区不加载其
+  .zgorules.json（allow 规则即提权面——克隆来的恶意仓库不能给自己放
+  权）与 .zgo 命令/技能层；ssh:// 显式拨号视为授信；/trust 即时重载、
+  zgo trust CLI（grant/list/revoke，撤销即时清空）；桌面首开信任确认
+  对话框。
+- **技能子系统**（#231）：SKILL.md + frontmatter 两层根（工作区覆盖
+  全局，SSH 同构）；系统提示渐进披露注入（20KB 预算降级仅名列）；
+  skill 工具按名加载（not-found 附可用清单自纠）。
+- **webfetch 工具**（#232）：URL 归一 + 逐跳 SSRF egress 守卫（私网/
+  环回/CGNAT/NAT64 全拒）+ 同主机重定向自动跟随（跨主机停链报告）+
+  HTML→文本抽取（10MB/100K 双封顶）+ 15min 缓存；预批准文档站只读放
+  行、其余主机询问。
+- **工作流持久化**（#236）：定义与运行记录落盘（开跑即记、终态回填、
+  保留 50）；workflow 工具 {steps[,saveAs]}/{run}/{resume}——续跑注
+  入既往结果跳过已完成步骤（定义漂移防护）；zgo workflow CLI。
+- **模型兜底链**（#246）：fallbackModels——主模型可重试失败（429/过
+  载）按序降级重发；致命错误透传不兜底；config get/set。
+- **read 读 PDF/图片**（#234/#242）：PDF 文本层抽取（可读率闸门——CID
+  乱码宁报错不产垃圾）；图片以 BlockImage 随工具结果进模型上下文
+  （三协议 wire 各自适配/降级）。
+- **场景评测**（#245）：zgo eval——JSON 场景（种文件/脚本回合/四类断
+  言）驱动真实回放，失败退出码 1 可进 CI；/find 会话内搜索（TUI 标记
+  跳转 + REPL 清单，spec 规则 57）。
+- **MCP/运维面**：/mcp add/remove（免手编 settings.json，热重载）、
+  cron 任务级模型（Job.Model 补执行面 + 会话模型覆盖）、zgo bugreport
+  （脱敏自包含问题报告）。
+- **子代理升级提问**（#254）：后台研究代理遇到只有用户能答的问题时经
+  会话提问通道升级（[后台代理 <id>] 前缀），答案回转录继续跑——ZCode
+  escalate 的落地。
+- **cron 时间窗**（#255）：Job.Window（HH:MM-HH:MM 可跨午夜）——窗口
+  外到期不 fire 不动 LastRun、窗口一开补跑（推迟而非错过）；与任务级
+  模型构成自动化经济学（便宜模型 + 闲时窗口）。
+- **eval 安全回归网 + CI 门禁**（#256）：场景 Trusted:false 模拟未授
+  信工作区——trust-gate/trust-granted 双向断言信任门（门回归即 CI
+  红）；CI 增 zgo eval 门禁步骤。
+- **grep 远程并发**（#257，性能路线第一条）：ssh:// 的 grep 8 路并发
+  拉取（RTT 主导：16×50ms 顺序 800ms→~200ms）；本地保持顺序+早停
+  （实测 Windows+Defender 串行化文件打开，并发零收益）。
+- **稳定性**：调度器 Stop 排空（tick-only 用法的 TempDir 竞态）、
+  keepalive 探测看门狗（半开连接判死确定性化）、代理状态条专用锁
+  （死锁与竞争双修）。
+
 ## v0.7.0 — 输入体验与预算护栏
 
 - **CI 双平台**：GitHub Actions（windows/ubuntu）build/vet/test + wasm

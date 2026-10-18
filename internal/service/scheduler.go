@@ -20,6 +20,11 @@ func (r scheduleRunner) Run(ctx context.Context, job schedule.Job) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("session: %w", err)
 	}
+	// 任务级模型（spec 规则 61）：cron add --model 的执行面——便宜模
+	// 型跑例行任务，全局设置不动。
+	if job.Model != "" {
+		r.s.SetSessionModel(info.ID, job.Model)
+	}
 	var buf, last strings.Builder
 	emit := func(ev agent.Event) {
 		switch ev.Kind {
@@ -38,6 +43,11 @@ func (r scheduleRunner) Run(ctx context.Context, job schedule.Job) (string, erro
 		return last.String(), err
 	}
 	return last.String(), nil
+}
+
+// SetSessionModel 覆盖会话模型（定时任务执行面用；空恢复全局）。
+func (s *AgentService) SetSessionModel(sessionID, model string) bool {
+	return s.mgr.SetSessionModel(sessionID, model)
 }
 
 // JobStore returns the automation job file's store（与 CLI 共用 jobs.json）.

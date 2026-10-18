@@ -544,3 +544,52 @@ func TestAttachmentTotalBudget(t *testing.T) {
 		t.Fatal("budget math broken")
 	}
 }
+
+// TestTrustModalRoundTrip 首开未授信工作区的信任确认（spec 规则 54 桌
+// 半边）：弹窗展示路径与风险说明；「信任并加载」经服务授信落表。
+func TestTrustModalRoundTrip(t *testing.T) {
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(svc)
+	tt := ui.NewTester(a.View, 1000, 720)
+	tt.Frame()
+
+	ws := t.TempDir()
+	a.locked(func() {
+		a.trustWS = ws
+		a.trustOpen = true
+	})
+	tt.Frame()
+	if !tt.HasText("信任此工作区？") || !tt.HasText("恶意仓库可借规则文件给自己放权") {
+		t.Fatalf("trust modal missing: %q", tt.Texts())
+	}
+	if err := tt.Click("信任并加载"); err != nil {
+		t.Fatalf("clicking trust: %v", err)
+	}
+	// 授信 goroutine 异步落表——秒级预算等生效。
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.IsWorkspaceTrusted(ws) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("trust never persisted")
+
+	// 暂不分支：关闭且不授信。
+	ws2 := t.TempDir()
+	a.locked(func() {
+		a.trustWS = ws2
+		a.trustOpen = true
+	})
+	tt.Frame()
+	if err := tt.Click("暂不"); err != nil {
+		t.Fatalf("clicking defer: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if svc.IsWorkspaceTrusted(ws2) {
+		t.Fatal("defer branch granted trust")
+	}
+}

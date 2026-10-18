@@ -1,0 +1,15 @@
+{
+  "name": "trust-granted",
+  "description": "信任门正向（spec 规则 53/54）：授信工作区的技能层加载——同一技能在授信下可读",
+  "files": {
+    ".zgo/skills/secret/SKILL.md": "---\nname: secret\ndescription: 授信后可读的技能\n---\n授信后可读的内容"
+  },
+  "turns": [
+    {"tool": "skill", "args": {"skill": "secret"}},
+    {"text": "已读取"}
+  ],
+  "expect": {
+    "no_tool_errors": true,
+    "transcript_contains": ["授信后可读的内容"]
+  }
+}

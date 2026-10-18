@@ -194,7 +194,6 @@ func (e *Edit) PathKey(args string) (string, bool) {
 	return a.Path, true
 }
 
-
 // editHint 扫描/摘录的封顶（错误消息不膨胀——超长行、超大窗口一律截
 // 断，输出上限教义）。
 const (

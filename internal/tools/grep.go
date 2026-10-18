@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
@@ -215,44 +216,92 @@ func (g *Grep) grepRemote(re *regexp.Regexp, include *regexp.Regexp) agent.ToolR
 	if err != nil {
 		return errResult("enumerating remote files: %v", err)
 	}
-	var b strings.Builder
-	matches, files := 0, 0
+	var files []string
 	for _, name := range names {
-		if matches >= grepCapResults || b.Len() >= grepCapBytes {
+		if len(files) >= grepMaxCandidateFiles {
 			break
 		}
 		if _, isDir, serr := g.ws.Remote.Stat(name); serr == nil && isDir {
 			continue
 		}
-		base := path.Base(name)
-		if include != nil && !include.MatchString(base) {
+		if include != nil && !include.MatchString(path.Base(name)) {
 			continue
 		}
-		data, err := g.ws.Remote.ReadFile(name)
-		if err != nil || bytes.IndexByte(data, 0) >= 0 {
-			continue // 读失败与二进制跳过，与本地语义一致
-		}
-		found := false
-		line := 0
-		for _, text := range strings.Split(string(data), "\n") {
-			line++
-			if re.MatchString(text) {
-				fmt.Fprintf(&b, "%s:%d:%s\n", name, line, text)
-				matches++
-				found = true
-				if matches >= grepCapResults || b.Len() >= grepCapBytes {
-					break
+		files = append(files, name)
+	}
+
+	// 并发拉取匹配（性能路线）：网络往返主导——固定 8 路 worker，本地
+	// 正则、远端 ReadFile；结果按枚举序回填，归并语义与本地一致。
+	results := make([]struct {
+		name  string
+		lines []grepHit
+	}, len(files))
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for i, name := range files {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			data, err := g.ws.Remote.ReadFile(name)
+			if err != nil || bytes.IndexByte(data, 0) >= 0 {
+				return // 读失败与二进制跳过，与本地语义一致
+			}
+			var lines []grepHit
+			lineNo := 0
+			for _, text := range strings.Split(string(data), "\n") {
+				lineNo++
+				if re.MatchString(text) {
+					lines = append(lines, grepHit{line: lineNo, text: text})
+					if len(lines) >= grepPerFileMatchCap {
+						break
+					}
 				}
 			}
+			results[i].name, results[i].lines = name, lines
+		}(i, name)
+	}
+	wg.Wait()
+
+	var b strings.Builder
+	matches, filesHit := 0, 0
+	truncated := false
+	for _, r := range results {
+		if len(r.lines) > 0 {
+			filesHit++
 		}
-		if found {
-			files++
+		for _, hit := range r.lines {
+			if matches >= grepCapResults || b.Len() >= grepCapBytes {
+				truncated = true
+				break
+			}
+			fmt.Fprintf(&b, "%s:%d:%s\n", r.name, hit.line, hit.text)
+			matches++
+		}
+		if truncated {
+			break
 		}
 	}
 	out := b.String()
 	if out == "" {
 		return okResult("no matches")
 	}
+	if truncated || b.Len() >= grepCapBytes {
+		out = truncateBytes([]byte(out), grepCapBytes, 0)
+		out += "… results truncated …\n"
+	}
 	return agent.ToolResult{Content: fmt.Sprintf("匹配 %d 处（%d 个文件）\n%s",
-		matches, files, truncateBytes([]byte(out), grepCapBytes, 0))}
+		matches, filesHit, out)}
+} // grep 远程并发的口径：固定 8 路（SSH 网络往返主导，RTT 并行化收益
+// 显著）；候选上限防病态大库；单文件收集上限（总上限归并时判）。
+const (
+	grepMaxCandidateFiles = 20000
+	grepPerFileMatchCap   = grepCapResults
+)
+
+// grepHit 是一行命中（归并时按文件序追加）。
+type grepHit struct {
+	line int
+	text string
 }

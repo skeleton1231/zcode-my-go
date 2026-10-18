@@ -14,6 +14,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 func newEnv(t *testing.T) (*Env, *snapshotLines) {
@@ -446,6 +447,9 @@ func TestCustomCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	if err := svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 54）：未授信不带工作区层
+		t.Fatal(err)
+	}
 
 	cmds := svc.CustomCommands(ws)
 	if len(cmds) != 1 || cmds[0].Name != "deploy" {
@@ -454,6 +458,9 @@ func TestCustomCommands(t *testing.T) {
 
 	env, _ := newEnv(t)
 	env.Workspace = func() string { return ws }
+	if err := env.Svc.TrustWorkspace(ws, "test"); err != nil { // env 的服务实例单独授信（信任门）
+		t.Fatal(err)
+	}
 	var sent string
 	env.Send = func(text string) { sent = text }
 
@@ -487,6 +494,9 @@ func TestSlashSkills(t *testing.T) {
 	}
 
 	ws := env.Workspace()
+	if err := env.Svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 54）：未授信不带工作区层
+		t.Fatal(err)
+	}
 	dir := filepath.Join(ws, ".zgo", "skills", "deploy")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -510,5 +520,82 @@ func TestSlashSkills(t *testing.T) {
 	}
 	if !strings.Contains(out, "⚠") || !strings.Contains(out, "must include a name") {
 		t.Fatalf("diagnostic missing: %q", out)
+	}
+}
+
+// TestSlashFindSurfaceHooks /find 的表面钩子分发：无钩子报不支持、
+// 带钩子调用（TUI 跳转语义已在上面覆盖）。
+func TestSlashFindSurfaceHooks(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/find 词")
+	if !strings.Contains(out, "不支持") {
+		t.Fatalf("no hook = %q", out)
+	}
+	env2, _ := newEnv(t)
+	env2.Find = func(q string) string { return "找到 " + q }
+	out = captureOutSlash(t, env2, "/find 目标")
+	if !strings.Contains(out, "找到 目标") {
+		t.Fatalf("hook out = %q", out)
+	}
+	if out := captureOutSlash(t, env2, "/find"); !strings.Contains(out, "用法") {
+		t.Fatalf("empty = %q", out)
+	}
+}
+
+// TestSlashMCPAddRemove MCP 配置命令（spec 规则 58）：add 写盘可回、
+// 名/命令校验、remove 不存在报错、remove 后列表消失。
+func TestSlashMCPAddRemove(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/mcp add fs -- npx -y @mcp/server-fs /ws")
+	if !strings.Contains(out, "已配置 fs") || !strings.Contains(out, "npx -y @mcp/server-fs /ws") {
+		t.Fatalf("add = %q", out)
+	}
+	if cfg, ok := env.Svc.MCPServers()["fs"]; !ok || cfg.Command != "npx" ||
+		len(cfg.Args) != 3 || cfg.Args[2] != "/ws" {
+		t.Fatalf("config = %+v", cfg)
+	}
+	// 校验面。
+	if out := captureOutSlash(t, env, "/mcp add 坏 名 -- cmd"); !strings.Contains(out, "用法") {
+		t.Fatalf("two-name = %q", out)
+	}
+	if out := captureOutSlash(t, env, "/mcp add a/b -- cmd"); !strings.Contains(out, "失败") {
+		t.Fatalf("slash name = %q", out)
+	}
+	if out := captureOutSlash(t, env, "/mcp add fs2 --"); !strings.Contains(out, "用法") {
+		t.Fatalf("no cmd = %q", out)
+	}
+	if out := captureOutSlash(t, env, "/mcp remove nope"); !strings.Contains(out, "不存在") {
+		t.Fatalf("remove missing = %q", out)
+	}
+	out = captureOutSlash(t, env, "/mcp remove fs")
+	if !strings.Contains(out, "已移除 fs") {
+		t.Fatalf("remove = %q", out)
+	}
+
+}
+
+// TestSlashAgents /agents 清单命令（spec 规则 59）：空态说明用法；有代
+// 理时经 FormatAgents 渲染（状态标记/折叠）。
+func TestSlashAgents(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/agents")
+	if !strings.Contains(out, "没有后台子代理") {
+		t.Fatalf("empty = %q", out)
+	}
+	got := FormatAgents([]tools.AgentJobView{
+		{ID: "ag-1", State: tools.AgentRunning, Prompt: "调查", Duration: time.Second},
+		{ID: "ag-2", State: tools.AgentDone, Prompt: "完成的事"},
+	}, 10)
+	if !strings.Contains(got, "2 个（运行 1）") || !strings.Contains(got, "▶ ag-1") ||
+		!strings.Contains(got, "✓ ag-2") || !strings.Contains(got, "完成的事") {
+		t.Fatalf("format = %q", got)
+	}
+	// 折叠：maxRows 之外计余量。
+	many := make([]tools.AgentJobView, 12)
+	for i := range many {
+		many[i] = tools.AgentJobView{ID: "ag-x", State: tools.AgentDone}
+	}
+	if got := FormatAgents(many, 10); !strings.Contains(got, "…+2") {
+		t.Fatalf("fold = %q", got)
 	}
 }

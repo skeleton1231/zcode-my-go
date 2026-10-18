@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -55,6 +56,9 @@ type App struct {
 
 	// automation panel state（specs/automation.md 的管理面）.
 	jobsOpen                                       bool
+	agents                                         []tools.AgentJobView // 后台子代理状态条（spec 规则 62）
+	agentsMu                                       sync.Mutex           // agents 快照专用锁（a.mu 非重入，见 agents.go）
+	agentsWatching                                 atomic.Bool          // 轮询 goroutine 单飞守卫
 	jobs                                           []schedule.Job
 	jobsErr                                        string
 	jobRunning                                     string
@@ -94,9 +98,11 @@ type App struct {
 	modelSuggestions []string
 
 	// permission ask modal state (driven from the agent's goroutine)
-	askOpen bool
-	askReq  agent.AskRequest
-	askCh   chan agent.AskResponse
+	askOpen   bool
+	trustOpen bool
+	trustWS   string
+	askReq    agent.AskRequest
+	askCh     chan agent.AskResponse
 
 	// question modal state (the ask tool)
 	qOpen   bool
@@ -162,7 +168,7 @@ func (a *App) refreshSessions() {
 // update applies fn on the main thread when a window is attached, and
 // directly in tests under mu — no window means no main thread, and the
 // agent goroutine's writes must not race the Tester's View frames
-//（-race 在 CI 上逮过；View 同锁配对）.
+// （-race 在 CI 上逮过；View 同锁配对）.
 func (a *App) update(fn func()) {
 	if a.win != nil {
 		a.win.Update(fn)
@@ -200,6 +206,11 @@ func (a *App) NewSession() {
 		a.update(func() {
 			a.refreshSessions()
 			a.open(info.ID)
+			// 首开未授信：弹信任确认（spec 规则 54 桌面半边）。
+			if !a.svc.IsWorkspaceTrusted(ws) {
+				a.trustWS = ws
+				a.trustOpen = true
+			}
 		})
 	}()
 }
@@ -235,6 +246,8 @@ func (a *App) open(id string) {
 	}
 	a.RefreshBudget()
 	a.RefreshPlan()
+	a.refreshAgents()
+	a.watchAgents()
 }
 
 // OpenSearch toggles the in-session search bar.
@@ -474,6 +487,8 @@ func (a *App) Send() {
 			a.refreshSessions()
 			a.RefreshPlan()
 			a.RefreshBudget() // 运行结束即刷新：否则仪表停在运行前的旧值
+			a.refreshAgents() // 后台代理状态条（spec 规则 62）：回合可能刚 spawn
+			a.watchAgents()
 		})
 	}()
 }

@@ -23,6 +23,7 @@ type Job struct {
 	Prompt      string    `json:"prompt"`
 	Workspace   string    `json:"workspace"`
 	Model       string    `json:"model,omitempty"`
+	Window      string    `json:"window,omitempty"` // HH:MM-HH:MM（本地时区，可跨午夜）；空即不限
 	Enabled     bool      `json:"enabled"`
 	LastRun     time.Time `json:"lastRun,omitempty"`
 	LastStatus  string    `json:"lastStatus,omitempty"`
@@ -173,9 +174,9 @@ func (st *Store) SetEnabled(id string, on bool) (bool, error) {
 // Scheduler fires due jobs on a minute tick. Results are recorded back to
 // the store; one job never overlaps itself (the run is skipped and noted).
 type Scheduler struct {
-	store  *Store
-	runner Runner
-	now    func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
+	store   *Store
+	runner  Runner
+	now     func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
 	clockMu sync.Mutex
 
 	mu      sync.Mutex
@@ -272,6 +273,11 @@ func (s *Scheduler) tick(ctx context.Context) {
 		}
 		next := sched.Next(anchor)
 		if next.IsZero() || next.After(now) {
+			continue
+		}
+		// 时间窗（spec 规则 64，pi off-peak 的形态）：窗口外不 fire 也
+		// 不动 LastRun——任务保持到期，窗口一开的下一个 tick 即补跑。
+		if !job.InWindow(now) {
 			continue
 		}
 		s.fire(ctx, job)

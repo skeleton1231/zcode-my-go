@@ -1,6 +1,7 @@
 package uiapp
 
 import (
+	"log"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -113,6 +114,38 @@ func (a *App) renameModal(c *ui.Context, t *ui.Theme) {
 				}
 				if ui.PrimaryButton(c, "保存").Disabled(strings.TrimSpace(a.renameDraft) == "").Clicked() {
 					a.SubmitRename()
+				}
+			})
+		})
+	})
+}
+
+// trustModal 首开未授信工作区的信任确认（spec 规则 54 的桌面半边）：
+// 授信即加载其 .zgorules.json 与 .zgo 命令/技能层；暂不则仅全局层，
+// 之后可经 /trust 授信。
+func (a *App) trustModal(c *ui.Context, t *ui.Theme) {
+	if !a.trustOpen {
+		return
+	}
+	ui.Modal(c, &a.trustOpen, func() {
+		ui.Column(c).Width(440).Gap(12).Children(func() {
+			ui.Text(c, "信任此工作区？").Bold().FontSize(15)
+			ui.Text(c, a.trustWS).Font("monospace").FontSize(12).
+				TextColor(t.TextMuted).Selectable()
+			ui.Text(c, "将加载该工作区的 .zgorules.json 权限规则与 .zgo 命令/技能层。\n仅对你审阅过的仓库授信——恶意仓库可借规则文件给自己放权。").
+				FontSize(12).TextColor(t.TextMuted)
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				if ui.Button(c, "暂不").Clicked() {
+					a.trustOpen = false
+				}
+				if ui.Button(c, "信任并加载").Bold().Clicked() {
+					a.trustOpen = false
+					ws := a.trustWS
+					go func() {
+						if err := a.svc.TrustWorkspace(ws, "desktop"); err != nil {
+							log.Printf("trusting %s: %v", ws, err)
+						}
+					}()
 				}
 			})
 		})

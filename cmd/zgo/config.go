@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
@@ -62,6 +63,7 @@ func configList(svc *service.AgentService) int {
 	fmt.Fprintf(os.Stdout, "thinking          %s\n", v.Thinking)
 	fmt.Fprintf(os.Stdout, "apiKey            %s\n", v.KeyHint)
 	fmt.Fprintf(os.Stdout, "budgetDailyTokens %d\n", svc.DailyUsageBudget())
+	fmt.Fprintf(os.Stdout, "fallbackModels %s\n", strings.Join(svc.FallbackModels(), ", "))
 	return 0
 }
 
@@ -80,8 +82,10 @@ func configGet(svc *service.AgentService, key string) int {
 		fmt.Fprintln(os.Stdout, v.KeyHint)
 	case "budgetDailyTokens":
 		fmt.Fprintln(os.Stdout, svc.DailyUsageBudget())
+	case "fallbackModels":
+		fmt.Fprintln(os.Stdout, strings.Join(svc.FallbackModels(), ","))
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens）\n", key)
+		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels）\n", key)
 		return 1
 	}
 	return 0
@@ -125,8 +129,24 @@ func configSet(svc *service.AgentService, key, value string) int {
 			return 1
 		}
 		fmt.Fprintln(os.Stdout, "已更新 budgetDailyTokens =", n)
+	case "fallbackModels":
+		var models []string
+		for _, m := range strings.Split(value, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				models = append(models, m)
+			}
+		}
+		if err := svc.SetFallbackModels(models); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+		if len(models) == 0 {
+			fmt.Fprintln(os.Stdout, "已清空 fallbackModels（兜底关闭）")
+		} else {
+			fmt.Fprintln(os.Stdout, "已更新 fallbackModels =", strings.Join(models, ", "))
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens）\n", key)
+		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels）\n", key)
 		return 1
 	}
 	return 0

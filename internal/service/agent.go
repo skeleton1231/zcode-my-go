@@ -35,6 +35,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
+	"github.com/skeleton1231/zcode-my-go/internal/trust"
 	"github.com/skeleton1231/zcode-my-go/internal/usage"
 	"github.com/skeleton1231/zcode-my-go/internal/workflow"
 )
@@ -61,6 +62,9 @@ type settings struct {
 	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)；与剖面正交
 	// BudgetDailyTokens 是每日软预算（0=不限，spec 规则 35）。
 	BudgetDailyTokens int `json:"budgetDailyTokens"`
+	// FallbackModels 是模型兜底链（spec 规则 56）：主模型可重试失败
+	// （429/过载）时按序降级重发。
+	FallbackModels []string `json:"fallbackModels"`
 }
 
 // profile 是一个命名 API 剖面。
@@ -94,6 +98,8 @@ type AgentService struct {
 	question         func(ctx context.Context, q agent.Question) (string, error)
 	states           map[string]*tools.States // session-scoped tool state
 	mcp              []*mcp.Server            // launched MCP servers
+	mcpSyncMu        sync.Mutex               // syncMCP 串行化（异步启动后可能与显式重载并发）
+	mcpClosed        bool                     // Close 后不再入表——在途握手完成即关闭（防进程泄漏）
 	memories         map[string]*tools.Memory // workspace-scoped long-term memory
 	memRoot          string
 	wsCache          map[string]tools.Workspace // sessionID → (possibly remote) workspace
@@ -107,6 +113,7 @@ type AgentService struct {
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
+	trustStore       *trust.Store               // 工作区授信表（spec 规则 54）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -120,6 +127,7 @@ func New(dataDir string) (*AgentService, error) {
 		wsClose:     map[string]func(){},
 		autoTitleOn: true,
 		wfStore:     workflow.NewStore(dataDir),
+		trustStore:  trust.NewStore(dataDir),
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -130,15 +138,79 @@ func New(dataDir string) (*AgentService, error) {
 		return nil, err
 	}
 	s.mgr = mgr
-	s.startMCP()
+	// 启动异步（性能路线第二条）：mcp.Start 的握手最长 20s——同步曾让
+	// 一个挂死的服务器把每个 zgo 命令的启动卡满超时；后台起、握手完
+	// 成即入表（工具面随 mcpServers 快照自然出现）。显式重载仍同步
+	// （设置动作要看到结果）。
+	go s.startMCP()
 	s.rewire()
 	return s, nil
+}
+
+// mcpNameMax 限制配置的服务器数（防误配炸启动面）。
+const mcpNameMax = 32
+
+// SetMCPServer 配置/更新一个 MCP 服务器并热重载（spec 规则 58）：名
+// 非空且无空白/斜杠（文件与键的安全形态）；命令非空。写盘经
+// saveSettingsLocked，启动经 syncMCP（失败降级不阻断——诊断面可见）。
+func (s *AgentService) SetMCPServer(name string, cfg mcp.Config) error {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.ContainsAny(name, " /\\") {
+		return fmt.Errorf("MCP 服务器名须非空且不含空格/斜杠：%q", name)
+	}
+	if strings.TrimSpace(cfg.Command) == "" {
+		return fmt.Errorf("MCP 服务器 %s 缺少 command", name)
+	}
+	s.mu.Lock()
+	if s.settings.MCPServers == nil {
+		s.settings.MCPServers = map[string]mcp.Config{}
+	}
+	if _, exists := s.settings.MCPServers[name]; !exists && len(s.settings.MCPServers) >= mcpNameMax {
+		s.mu.Unlock()
+		return fmt.Errorf("MCP 服务器已达上限 %d", mcpNameMax)
+	}
+	s.settings.MCPServers[name] = cfg
+	_, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.syncMCP() // 热重载：新服务器握手失败会降级（诊断面可见）
+	}
+	return err
+}
+
+// MCPServers 返回当前配置的服务器表（copy）——/mcp 列表与测试断言面。
+func (s *AgentService) MCPServers() map[string]mcp.Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]mcp.Config, len(s.settings.MCPServers))
+	for k, v := range s.settings.MCPServers {
+		out[k] = v
+	}
+	return out
+}
+
+// RemoveMCPServer 移除一个 MCP 服务器并热重载（不存在的名字报错）。
+func (s *AgentService) RemoveMCPServer(name string) error {
+	s.mu.Lock()
+	if _, ok := s.settings.MCPServers[name]; !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("MCP 服务器 %s 不存在（/mcp 查看）", name)
+	}
+	delete(s.settings.MCPServers, name)
+	_, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.syncMCP()
+	}
+	return err
 }
 
 // syncMCP reconciles running servers with the configured set (hot
 // reload): stopped-and-restarted for changed signatures, closed for
 // removed ones, started for additions; failures degrade, never block.
 func (s *AgentService) syncMCP() {
+	s.mcpSyncMu.Lock() // 串行化：并发的 sync 为同名服务器起两个进程
+	defer s.mcpSyncMu.Unlock()
 	s.mu.Lock()
 	current := map[string]*mcp.Server{}
 	for _, srv := range s.mcp {
@@ -174,7 +246,9 @@ func (s *AgentService) syncMCP() {
 	}
 	s.mu.Unlock()
 
-	// 启动在锁外（握手最长 20s），成功后再入表。
+	// 启动在锁外（握手最长 20s），成功后再入表。Close 后的在途握手直
+	// 接关闭服务器——异步启动（构造期）可能在服务关闭后才完成握手，
+	// 入表即进程泄漏。
 	for _, p := range toStart {
 		server, err := mcp.Start(context.Background(), p.name, p.cfg)
 		if err != nil {
@@ -183,6 +257,11 @@ func (s *AgentService) syncMCP() {
 		}
 		server.Signature = p.sig
 		s.mu.Lock()
+		if s.mcpClosed {
+			s.mu.Unlock()
+			server.Close()
+			continue
+		}
 		s.mcp = append(s.mcp, server)
 		s.mu.Unlock()
 	}
@@ -225,6 +304,7 @@ func (s *AgentService) Close() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.mcpClosed = true
 	for _, server := range s.mcp {
 		server.Close()
 	}
@@ -245,9 +325,9 @@ func (s *AgentService) rewire() {
 	s.mgr.Wire(agent.Wiring{
 		Provider: func() ai.Provider {
 			if s.providerOverride != nil {
-				return s.providerOverride()
+				return s.providerOverride() // e2e 注入不套兜底——脚本按模型无关回放
 			}
-			return s.providerFor(cfg)
+			return s.providerWithFailover(cfg, s.providerFor(cfg))
 		},
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
@@ -326,6 +406,26 @@ func (s *AgentService) rewire() {
 				return agent.RunSubtask(ctx, cfg, prompt)
 			})
 			contextRead := contextReader(ws)
+			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
+			// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
+			agentRunner := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+				// 升级提问（spec 规则 63，ZCode escalate）：后台研究代理
+				// 遇到只有用户能答的问题时经会话提问通道升级——问题带
+				// 代理标识前缀，答案回转录继续跑。
+				agentAsk := tools.NewAsk(func(ctx context.Context, q agent.Question) (string, error) {
+					return question(ctx, agent.Question{
+						Text:    "[后台代理 " + id + "] " + q.Text,
+						Options: q.Options,
+					})
+				})
+				tools := append(append([]agent.Tool{}, roTools...), agentAsk)
+				return agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
+					Provider: provider(),
+					Model:    model,
+					System:   agent.SubtaskSystem(),
+					Tools:    tools,
+				}, prior, prompt)
+			}
 			all = append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)),
 				tools.NewSkillTool(func() []skills.Root {
@@ -333,17 +433,11 @@ func (s *AgentService) rewire() {
 				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
 				tools.NewWebFetchTool(tools.WebFetcher),
-				// 后台子代理三件套（spec 规则 50）。
-				tools.NewAgentTool(state.Agents, func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
-					return agent.RunSubtask(ctx, agent.SubtaskConfig{
-						Provider: provider(),
-						Model:    model,
-						System:   agent.SubtaskSystem(),
-						Tools:    roTools,
-					}, prompt)
-				}),
+				// 后台子代理三件套 + 续话（spec 规则 50/51）。
+				tools.NewAgentTool(state.Agents, agentRunner),
 				tools.NewAgentOutputTool(state.Agents),
-				tools.NewAgentStopTool(state.Agents))
+				tools.NewAgentStopTool(state.Agents),
+				tools.NewAgentSendTool(state.Agents, agentRunner))
 			wfProvider := provider
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
@@ -390,9 +484,18 @@ func (s *AgentService) rewire() {
 				skills.Section(skills.Discover(s.skillRoots(sessionID, workspace)), skills.DefaultMetaBudget) +
 				agents.Section(agents.Discover(s.agentRoots(sessionID, workspace)), agents.DefaultMetaBudget)
 		},
-		Ask:          s.ask,
-		ProjectRules: loadProjectRules,
-		Question:     s.question,
+		Ask: s.ask,
+		ProjectRules: func(workspace string) permission.Ruleset {
+			// 工作区信任门（spec 规则 54）：未授信的本地工作区不加载
+			// 其 .zgorules.json——克隆来的恶意仓库不能靠自带 allow
+			// 规则给自己放权（提权面）。ssh:// 目标是用户显式拨号的
+			// 远端，视为授信。
+			if !s.workspaceTrusted(workspace) {
+				return permission.Ruleset{}
+			}
+			return loadProjectRules(workspace)
+		},
+		Question: s.question,
 	})
 }
 
@@ -449,6 +552,16 @@ func (s *AgentService) providerSnapshot() func() ai.Provider {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.providerOverride
+}
+
+// providerWithFailover 按设置把 provider 包成模型兜底链（spec 规则
+// 55）；无 fallback 即原 provider。
+func (s *AgentService) providerWithFailover(cfg settings, p ai.Provider) ai.Provider {
+	if len(cfg.FallbackModels) == 0 {
+		return p
+	}
+	models := append([]string{cfg.Model}, cfg.FallbackModels...)
+	return ai.NewFailover(p, models)
 }
 
 func (s *AgentService) providerFor(cfg settings) ai.Provider {
@@ -1216,6 +1329,65 @@ func (s *AgentService) PlanMode(id string, on bool) error {
 	return nil
 }
 
+// workspaceTrusted 报告工作区是否受信（spec 规则 54）：ssh:// 目标是
+// 用户显式拨号的远端——视为授信；本地路径查授信表。
+func (s *AgentService) workspaceTrusted(workspace string) bool {
+	if strings.HasPrefix(workspace, "ssh://") {
+		return true
+	}
+	return s.trustStore.IsTrusted(workspace)
+}
+
+// IsWorkspaceTrusted 是表面查询（终端/桌面的未授信提示用）。
+func (s *AgentService) IsWorkspaceTrusted(workspace string) bool {
+	return s.workspaceTrusted(workspace)
+}
+
+// TrustWorkspace 授信并即时生效：本会话的项目规则重载（若已在跑），
+// 技能/命令的工作区层随下次发现自然生效。
+func (s *AgentService) TrustWorkspace(workspace, via string) error {
+	if err := s.trustStore.Grant(workspace, via); err != nil {
+		return err
+	}
+	rules := loadProjectRules(workspace)
+	for _, info := range s.mgr.List() {
+		if trust.Normalize(info.Workspace) == trust.Normalize(workspace) {
+			if ssn, ok := s.mgr.Get(info.ID); ok {
+				ssn.ApplyProjectRules(rules)
+			}
+		}
+	}
+	return nil
+}
+
+// TrustSession 授信当前会话的工作区（/trust 用）。
+func (s *AgentService) TrustSession(sessionID, via string) error {
+	ssn, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("会话不存在")
+	}
+	return s.TrustWorkspace(ssn.Info().Workspace, via)
+}
+
+// RevokeWorkspace 撤销授信（在跑会话的项目规则即时清空——授信回退
+// 生效，spec 规则 54）。
+func (s *AgentService) RevokeWorkspace(workspace string) error {
+	if err := s.trustStore.Revoke(workspace); err != nil {
+		return err
+	}
+	for _, info := range s.mgr.List() {
+		if trust.Normalize(info.Workspace) == trust.Normalize(workspace) {
+			if ssn, ok := s.mgr.Get(info.ID); ok {
+				ssn.ApplyProjectRules(permission.Ruleset{})
+			}
+		}
+	}
+	return nil
+}
+
+// TrustList 列出授信表。
+func (s *AgentService) TrustList() []trust.Entry { return s.trustStore.List() }
+
 // contextReader returns the remote context-file reader (root-relative),
 // or nil for local workspaces——远程会话的项目上下文经网线读取（此前读
 // 本地路径必然落空、静默丢失）。
@@ -1235,6 +1407,17 @@ const skillsBaseDir = ".zgo/skills"
 func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 	ws := s.workspaceFor(sessionID, workspace)
 	var roots []skills.Root
+	// 信任门（spec 规则 54）：未授信的本地工作区不带其技能层（提示
+	// 注入面）；全局层不受影响。
+	if !ws.IsRemote() && !s.workspaceTrusted(workspace) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return []skills.Root{{
+				Base:  filepath.Join(home, ".zgo", "skills"),
+				Scope: skills.ScopeUser, FS: skills.LocalFS{},
+			}}
+		}
+		return nil
+	}
 	if ws.IsRemote() {
 		roots = append(roots, skills.Root{
 			Base: skillsBaseDir, Scope: skills.ScopeProject,
@@ -1258,6 +1441,18 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 // Skills 列出工作区的可用技能（/skills 终端命令用；与 agent 的发现
 // 同一根源——工作区层经 openWorkspace 解析目标，远程走网线）。
 func (s *AgentService) Skills(workspace string) skills.Outcome {
+	if !s.workspaceTrusted(workspace) {
+		// 信任门与 skillRoots 同款（spec 规则 54）：列表面不显示未
+		// 授信工作区的技能层。
+		var roots []skills.Root
+		if home, err := os.UserHomeDir(); err == nil {
+			roots = append(roots, skills.Root{
+				Base:  filepath.Join(home, ".zgo", "skills"),
+				Scope: skills.ScopeUser, FS: skills.LocalFS{},
+			})
+		}
+		return skills.Discover(roots)
+	}
 	project := skills.Root{
 		Base:  filepath.Join(workspace, filepath.FromSlash(skillsBaseDir)),
 		Scope: skills.ScopeProject, FS: skills.LocalFS{},
@@ -1527,9 +1722,18 @@ func (s *AgentService) workspaceFor(sessionID, workspace string) tools.Workspace
 	return ws
 }
 
-// mcpServers snapshots the launched servers. Callers hold s.mu.
+// mcpServers snapshots the launched servers（拷贝出表——异步启动后
+// syncMCP 随时会写表，裸读曾是竞态，CI -race 在 TestMCPPrompts 逮
+// 过）。自身持锁；已持锁的调用方用 mcpServersLocked。
 func (s *AgentService) mcpServers() []*mcp.Server {
-	return s.mcp
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mcpServersLocked()
+}
+
+// mcpServersLocked 是 mcpServers 的持锁形态（调用方持有 s.mu）。
+func (s *AgentService) mcpServersLocked() []*mcp.Server {
+	return append([]*mcp.Server(nil), s.mcp...)
 }
 
 // EditAndResend replaces the session's last user message and reruns.
@@ -1710,6 +1914,18 @@ func (s *AgentService) ExportSessionHTML(id, dest string) error {
 	info := sess.Info()
 	doc := exporthtml.HTML(sess.Messages(), info.Title, s.resolve().Model, info.Workspace)
 	return os.WriteFile(dest, []byte(doc), 0o644)
+}
+
+// AgentJobStates 返回会话的后台子代理快照（e2e 等待终态、后续 UI 面
+// 同源）。
+func (s *AgentService) AgentJobStates(sessionID string) []tools.AgentJobView {
+	s.mu.Lock()
+	state, ok := s.states[sessionID]
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return state.Agents.Snapshots()
 }
 
 // TodoPlan returns the session's live task plan (the todo tool's state).
@@ -1920,6 +2136,37 @@ func (s *AgentService) SessionPermissionRules(sessionID string) []permission.Rul
 	return s.mgr.SessionPermissions(sessionID).SessionRules()
 }
 
+// SetFallbackModels 更新模型兜底链（spec 规则 56；空即关闭）。模型名
+// 去重且首项不得与自身重复；写盘热生效（rewire 同既有路径）。
+func (s *AgentService) SetFallbackModels(models []string) error {
+	seen := map[string]bool{}
+	var clean []string
+	for _, m := range models {
+		m = strings.TrimSpace(m)
+		if m == "" || seen[m] {
+			continue
+		}
+		seen[m] = true
+		clean = append(clean, m)
+	}
+	s.mu.Lock()
+	s.settings.FallbackModels = clean
+	view, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.rewire()
+		_ = view
+	}
+	return err
+}
+
+// FallbackModels 返回当前兜底链（copy）。
+func (s *AgentService) FallbackModels() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.settings.FallbackModels...)
+}
+
 // SetBudgetDailyTokens updates the daily budget（0=不限，spec 规则 37
 // 的 config set 数据面——热生效同 SaveSettings 路径）.
 func (s *AgentService) SetBudgetDailyTokens(v int) error {
@@ -1968,14 +2215,24 @@ const commandCapRunes = 60 << 10
 // spec 规则 39）。SSH 工作区经 path jail 读取，同享。
 func (s *AgentService) CustomCommands(workspace string) []CustomCommand {
 	out := map[string]string{}
-	// 全局先入，工作区覆盖。
+	// 全局先入，工作区覆盖（未授信的本地工作区不带工作区层——提示
+	// 注入面，spec 规则 54）。
 	if home, err := os.UserHomeDir(); err == nil {
 		loadCommandsDir(out, filepath.Join(home, ".zgo", "commands"), nil)
 	}
+	if !s.workspaceTrusted(workspace) {
+		return sortedCommands(out)
+	}
+
 	ws, _, err := s.openWorkspace(workspace)
 	if err == nil {
 		loadCommandsDir(out, customCommandsDir, &ws)
 	}
+	return sortedCommands(out)
+}
+
+// sortedCommands 按名排序出命令表。
+func sortedCommands(out map[string]string) []CustomCommand {
 	var names []string
 	for n := range out {
 		names = append(names, n)

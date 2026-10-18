@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
 // captureConfig 把 config 子命令的 stdout 捕获成串（os.Pipe 换向）。
@@ -66,5 +68,31 @@ func TestConfigListGetSet(t *testing.T) {
 	}
 	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "nope", "x"}) }); code == 0 {
 		t.Fatal("unknown key accepted")
+	}
+}
+
+// TestConfigFallbackModels 兜底链配置面（spec 规则 56）：set 去空去
+// 重、清空回空。
+func TestConfigFallbackModels(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("ZGO_TEST_DATADIR", dataDir)
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "fallbackModels", "a,,b,a"}) }); code != 0 {
+		t.Fatalf("set code = %d", code)
+	}
+	svc, err := service.New(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if got := svc.FallbackModels(); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("models = %v", got)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "fallbackModels", ""}) }); code != 0 {
+		t.Fatalf("clear code = %d", code)
+	}
+	svc2, _ := service.New(dataDir)
+	defer svc2.Close()
+	if got := svc2.FallbackModels(); len(got) != 0 {
+		t.Fatalf("after clear = %v", got)
 	}
 }

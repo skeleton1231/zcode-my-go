@@ -12,7 +12,9 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/export"
+	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 // Env carries what a command may act on and how it reports back.
@@ -34,6 +36,10 @@ type Env struct {
 	// Send submits a message as if the user typed it（/mcp 展开后直接
 	// 发送；不填即该表面不支持直接发送）.
 	Send func(text string)
+	// Find searches the current session transcript（spec 规则 57：TUI
+	// 返回跳转状态并进入标记模式，REPL 返回命中清单；不填即不支持）.
+	Find func(q string) string
+
 	// Rerun replaces the last user message and reruns the turn
 	//（/retry 与 /resend；EditAndResend 的表面包装）.
 	Rerun func(text string) error
@@ -179,10 +185,17 @@ var commands = []command{
 		name: "/mcp", usage: "/mcp [server.prompt [k=v…]]",
 		help: "MCP 提示词：列出或展开为消息直接发送",
 		run: func(env *Env, args string) string {
-			if strings.TrimSpace(args) == "" {
+			args = strings.TrimSpace(args)
+			switch {
+			case args == "":
 				return mcpList(env)
+			case strings.HasPrefix(args, "add "):
+				return mcpAdd(env, strings.TrimSpace(strings.TrimPrefix(args, "add ")))
+			case args == "remove" || strings.HasPrefix(args, "remove "):
+				return mcpRemove(env, strings.TrimSpace(strings.TrimPrefix(args, "remove")))
+			default:
+				return mcpRun(env, args)
 			}
-			return mcpRun(env, strings.TrimSpace(args))
 		},
 	},
 	{
@@ -206,6 +219,20 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/trust", usage: "/trust",
+		help: "授信当前工作区（加载其 .zgorules.json 与命令/技能层）",
+		run: func(env *Env, _ string) string {
+			ws := env.Workspace()
+			if env.Svc.IsWorkspaceTrusted(ws) {
+				return "[信任] 工作区已授信：" + ws
+			}
+			if err := env.Svc.TrustSession(env.SessionID(), "slash"); err != nil {
+				return "[信任失败] " + err.Error()
+			}
+			return "[信任] 已授信并加载工作区规则与命令/技能层：" + ws
+		},
+	},
+	{
 		name: "/skills", usage: "/skills",
 		help: "列出可用技能（工作区 .zgo/skills 与全局 ~/.zgo/skills）",
 		run: func(env *Env, _ string) string {
@@ -226,6 +253,27 @@ var commands = []command{
 				b.WriteString("  ⚠ " + d.Path + ": " + d.Message + "\n")
 			}
 			return strings.TrimRight(b.String(), "\n")
+		},
+	},
+	{
+		name: "/agents", usage: "/agents",
+		help: "列出本会话的后台子代理（状态/耗时/任务）",
+		run: func(env *Env, _ string) string {
+			return FormatAgents(env.Svc.AgentJobStates(env.SessionID()), 10)
+		},
+	},
+	{
+		name: "/find", usage: "/find <词>",
+		help: "在当前会话转录中搜索（TUI 跳转标记 / REPL 列命中）",
+		run: func(env *Env, args string) string {
+			q := strings.TrimSpace(args)
+			if q == "" {
+				return "[搜索] 用法：/find <词>"
+			}
+			if env.Find == nil {
+				return "[搜索] 此表面不支持会话内搜索（TUI 支持）"
+			}
+			return env.Find(q)
 		},
 	},
 	{
@@ -632,11 +680,109 @@ func mcpReadResource(env *Env, target string) string {
 }
 
 // wrapResource 把资源文本并入可发送消息：「资源 <uri>：」+ 动态围栏
-//（issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
+// （issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
 // @ 引用同一 FenceFor 方案）。
 func wrapResource(uri, text string) string {
 	fence := export.FenceFor(text)
 	return "资源 " + uri + "：\n" + fence + "\n" + text + "\n" + fence
+}
+
+// mcpAdd 配置一个 MCP 服务器（spec 规则 58）：/mcp add <名> -- <命令> [参数…]。
+// `--` 后按空白切分（无引号语义——复杂命令进 settings.json）。
+func mcpAdd(env *Env, args string) string {
+	rest := args
+	if i := strings.Index(rest, "--"); i >= 0 {
+		rest = rest[i+2:]
+	} else {
+		return "[MCP] 用法：/mcp add <名> -- <命令> [参数…]"
+	}
+	fields := strings.Fields(args[:strings.Index(args, "--")])
+	if len(fields) != 1 {
+		return "[MCP] 用法：/mcp add <名> -- <命令> [参数…]（名一个、不含空格）"
+	}
+	parts := strings.Fields(rest)
+	if len(parts) == 0 {
+		return "[MCP] 用法：/mcp add <名> -- <命令> [参数…]（命令必填）"
+	}
+	cfg := mcp.Config{Command: parts[0]}
+	if len(parts) > 1 {
+		cfg.Args = parts[1:]
+	}
+	if err := env.Svc.SetMCPServer(fields[0], cfg); err != nil {
+		return "[MCP 失败] " + err.Error()
+	}
+	summary := cfg.Command
+	if len(cfg.Args) > 0 {
+		summary += " " + strings.Join(cfg.Args, " ")
+	}
+	return "[MCP] 已配置 " + fields[0] + "：" + summary + "（热重载；/mcp 查看，握手失败见诊断）"
+}
+
+// mcpRemove 移除一个 MCP 服务器（spec 规则 58）。
+func mcpRemove(env *Env, name string) string {
+	if name == "" {
+		return "[MCP] 用法：/mcp remove <名>"
+	}
+	if err := env.Svc.RemoveMCPServer(name); err != nil {
+		return "[MCP 失败] " + err.Error()
+	}
+	return "[MCP] 已移除 " + name
+}
+
+// FormatAgents 渲染后台子代理清单（slash 与 TUI 面板同源，spec 规则
+// 58）：每行 状态标记 + ID + 运行耗时或终态；maxRows 折叠余量。
+func FormatAgents(views []tools.AgentJobView, maxRows int) string {
+	if len(views) == 0 {
+		return "[代理] 没有后台子代理（agent 工具启动）"
+	}
+	running := 0
+	for _, v := range views {
+		if v.State == tools.AgentRunning {
+			running++
+		}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "[代理] %d 个（运行 %d）：\n", len(views), running)
+	for i, v := range views {
+		if i == maxRows {
+			fmt.Fprintf(&b, "  …+%d\n", len(views)-maxRows)
+			break
+		}
+		mark := "?"
+		switch v.State {
+		case tools.AgentRunning:
+			mark = "▶"
+		case tools.AgentDone:
+			mark = "✓"
+		case tools.AgentFailed:
+			mark = "✕"
+		case tools.AgentStopped:
+			mark = "■"
+		}
+		line := "  " + mark + " " + v.ID
+		if v.State == tools.AgentRunning {
+			line += " " + v.Duration.Round(time.Second).String()
+		}
+		if task := firstLineOfAgent(v.Prompt); task != "" {
+			line += " " + task
+		}
+		if v.State == tools.AgentFailed && v.Err != "" {
+			line += "（" + v.Err + "）"
+		}
+		b.WriteString(line + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// firstLineOfAgent 取任务首行并截短（清单行宽）。
+func firstLineOfAgent(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if r := []rune(s); len(r) > 40 {
+		return string(r[:40]) + "…"
+	}
+	return s
 }
 
 // hostOf 取端点的主机名（剖面回执展示；无 scheme 直接截断路径段）。

@@ -1,0 +1,16 @@
+{
+  "name": "trust-gate",
+  "description": "安全回归网（spec 规则 53/54）：未授信工作区的技能层不加载——skill 工具必须报 not-found；若信任门回归（未授信也加载），此场景失败",
+  "trusted": false,
+  "files": {
+    ".zgo/skills/secret/SKILL.md": "---\nname: secret\ndescription: 不该被加载的技能\n---\n不该出现的内容"
+  },
+  "turns": [
+    {"tool": "skill", "args": {"skill": "secret"}},
+    {"text": "已知悉"}
+  ],
+  "expect": {
+    "no_tool_errors": false,
+    "transcript_contains": ["secret"]
+  }
+}

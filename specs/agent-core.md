@@ -330,6 +330,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
+
 50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
    `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
    合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
@@ -356,6 +357,126 @@ dc907a4 (feat: glob and grep honor .gitignore)
    式，对齐技能注入）。发现读上限 64KB、persona 载入上限 100KB（超限
    截断并标注），描述校验 1K——与注入家族同一套约束。
 
+52. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+   对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
+   后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
+   绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
+   RunSubtaskSeeded（prior 为空即新任务、非空即续跑，历史拷贝隔离）；
+   注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
+   有一个生效）。
+
+53. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
+   本层抽取——词法级 stream 段收集 + FlateDecode 解压 + Tj/TJ/'/" 文
+   本算子（Td/TD/T* 换行启发），字面串（转义/八进制/嵌套括号）与十六
+   进制串（UTF-16BE BOM 检测）解码。有界：单流 16MB、产出 256KB rune
+   截断标注。**可读率闸门**：产出可打印字符占比 <85% 即报错（CID 编
+   码无 ToUnicode 的中文 PDF 常见）——宁报错并建议 bash 转换，不静默
+   产乱码；无文本层（扫描件/图片型）同样报错。SSH 工作区经网线读字
+   节同构。
+
+54. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
+   本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来
+   的恶意仓库不能靠自带规则文件给自己放权）、不加载其 `.zgo` 命令与
+   技能层（提示注入面）；全局层不受影响。授信表 dataDir/trusted.json
+   （路径键规范化：Clean + Windows 盘符路径整体小写；原子写；损坏即
+   空表重起）。ssh:// 目标是用户显式拨号的远端——视为授信。授信途
+   径：`/trust`（当前会话工作区，即时重载项目规则——在跑会话经
+   ApplyProjectRules 生效）、`zgo trust <路径>`（print/CI 预授信）、
+   `zgo trust --list / --revoke <路径>`（撤销即时清空在跑会话的项
+   目规则）。未授信时终端三表面在会话建立时打 stderr 提示；桌面首开
+   未授信工作区弹信任确认（路径 + 风险说明，「信任并加载」经服务授
+   信落表、「暂不」仅关窗不授信）。
+
+55. 场景评测（`zgo eval`，pi evals 的数据化形态）：用户可写 JSON 场
+   景——种工作区文件（files）、脚本回合（tool+args 或 text，工具真实
+   执行）、四类断言（transcript_contains 含工具结果块 / file_contains
+   / no_tool_errors / event_count）。运行面与 e2e 同构：临时 dataDir +
+   临时工作区（种文件即授信——场景是用户自己写的）+ 脚本 provider +
+   自动放行 asker；关自动命名。目录默认 ./evals 不存在则 ~/.zgo/
+   evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。场景 Trusted 显式 false
+   模拟未授信工作区（工作区层不加载）——**安全回归网**：trust-gate
+   场景断言未授信的技能层不可读（信任门回归即红）、trust-granted 断
+   言授信后可读（正向）。CI 以 `go run ./cmd/zgo eval evals` 为门禁
+   步骤——任一场景失败即红。
+
+56. 模型兜底链（spec 规则 55 场景评测之后）：settings.fallbackModels
+   （逗号列表，空即关闭）——rewire 的 Provider 把主模型与兜底序包成
+   ai.NewFailover：流以**可重试**错误（429/过载/超时）收尾即换下一模
+   型重发同一请求（模型是请求级字段，客户端复用）；非可重试错误（鉴
+   权/参数）换模型无用，原样透传；全部耗尽透传末次错误并保持可重试
+   （交上层整链再试）。e2e 注入不经兜底（脚本按模型无关回放）。配置
+   面：zgo config get/set fallbackModels（写盘热生效；去空去重）。
+
+57. 会话内搜索（/find，桌面搜索的终端对齐）：slash 表面钩子 Find——
+   TUI 进入标记模式（大小写不敏感匹配转录行，命中行 ▶ 标记、当前命
+   中 ▶；视口跳到最近命中；输入区为空时 n/N 下一处/上一处（环绕），
+   有草稿不误触；孤立 Esc 先退搜索而非中止回合）；REPL 无视口——列
+   命中清单（回合号 + 60 rune 片段，首 20 条 + 余量计数）。无钩子的
+   表面明确报不支持。
+
+58. MCP 配置命令（此前唯一途径是手编 settings.json，桌面亦无编辑面）：
+   `/mcp add <名> -- <命令> [参数…]`（`--` 后按空白切分，无引号语义
+   ——复杂命令进 settings.json；名非空无空白/斜杠，命令必填；上限
+   32 个）、`/mcp remove <名>`（不存在报错）。服务面 SetMCPServer/
+   RemoveMCPServer/MCPServers：写盘 + syncMCP 热重载（握手失败降级
+   不阻断——诊断面可见）。
+
+59. 后台代理可视化（spec 规则 50/51 的可见面）：`/agents` 列出本会话
+   后台子代理（总数/运行数、状态标记 ▶运行带秒级耗时 ✓完成 ✕失败带
+   错误 ■停止、任务首行 40 rune 截短、超 10 条折叠余量）；TUI 固定块
+   （计划块同款，`代理 · N 运行/M` 头 + 4 条 + 折叠，空清单不占行）
+   每次重画经 AgentJobStates 取快照——事件驱动的重画自然带最新状
+   态。桌面面板为后续跟进（AgentJobStates 访问器已备）。
+
+60. 问题报告（`zgo bugreport [路径]`，pi bug-report 的落地）：生成自包
+   含 Markdown——版本/平台/数据目录、provider 配置（**脱敏**：key 只
+   报已配置/未配置，值与 Hint 都不落盘）、模型与兜底链、每日预算、思
+   考档位、授信计数、MCP 诊断（真探测）、会话概况（**计数 + 最近 5
+   条元数据**——转录正文绝不进报告）、git/ssh 工具链探测。默认写工
+   作区 `zgo-bugreport-<时间戳>.md`。
+
+61. cron 任务级模型：`Job.Model`（cron add --model，此前只存不用——
+   scheduleRunner 一直跑全局模型）。执行面 Manager.SetSessionModel：替
+   换会话的模型解析闭包（s.model 是每次请求的实时读取点——后续回合
+   与压缩即刻生效；空串恢复全局解析）；scheduleRunner 对 job.Model
+   非空的任务建会话后覆盖。cron list 增模型列（空显示「（默认）」）。
+
+62. 桌面后台代理状态条（spec 规则 50/51/58 的桌面可见面）：会话有后
+   台子代理时聊天流上方显示状态条（`后台代理 · N 运行/M` + 每条
+   ▶/✓/✕/■ + 耗时 + 任务摘要 28 rune 截短，超 4 条折叠；空不占位）。
+   后台完成不触发重画——回合结束与会话打开拉一次快照并启动轮询
+   （1s、单飞守卫、清空即退、1 小时上限防孤儿）；快照有变化才回主
+   线程 update。
+
+63. 子代理升级提问（ZCode escalate 的落地）：后台子代理的工具面加
+   ask——遇到只有用户能答的问题时经会话提问通道升级，问题文本带
+   `[后台代理 <id>]` 前缀（用户可对照 /agents 辨认来源）；答案作为
+   工具结果回到代理转录，代理据此继续。AgentRunFunc 增 id 参数（升
+   级前缀的来源）；ask 保持 SerialOnly 与只读风险。前台 task/
+   dispatch/workflow 的研究步骤不带（短任务自纠，ZCode 同款取舍）。
+
+64. cron 时间窗（pi off-peak 的 Zgo 形态）：`Job.Window`（"HH:MM-
+   HH:MM" 本地时区，可跨午夜——22:00-06:00 取 [22:00,24:00)∪[0,
+   06:00)；空即不限）——到期时刻在窗口外则**不 fire 也不动 LastRun**，
+   任务保持到期，窗口一开的下一个 tick 补跑（语义是「推迟到窗口」而
+   非「错过」）。cron add --window add 即校验；cron list 模型列附 ⏰
+   窗口。
+
+65. grep 远程并发（性能路线第一条）：ssh:// 工作区的 grep 逐文件拉取
+   改 8 路并发（网络往返主导——RTT 并行化收益显著，16 文件 × 50ms
+   RTT 顺序 800ms → 并发 ~200ms，实测并发峰值 ∈[2,8]）；结果按枚举
+   序回填，归并上限语义与顺序版一致；候选上限 20000、单文件收集上
+   限同总上限。**本地 grep 保持顺序 + 命中早停**——实测（Windows +
+   Defender）本地文件打开被杀软串行化，并发零收益且稠密命中的早停
+   是更大 win（读 67 个文件 vs 全量 2000）；逐文件 goroutine 的调度
+   开销在小文件场景反超收益 20 倍（分块/分波两版实测后放弃）。
+
+66. MCP 启动异步（性能路线第二条）：构造期 startMCP 在后台跑——
+   mcp.Start 的握手最长 20s，同步曾让一台挂死的服务器把每个 zgo 命
+   令的启动卡满超时；握手完成即入表，工具面随 mcpServers 快照自然出
+   现。显式重载（设置变更/诊断）仍同步。syncMCP 串行化（并发为同
+   名起两个进程）；**Close 守卫**：在途握手于服务关闭后才完成的直接
+   关闭服务器不入表（异步启动的进程泄漏面）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

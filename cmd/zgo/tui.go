@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/term"
 
@@ -67,10 +68,21 @@ type tuiState struct {
 	turns   []int
 	turnCur int
 
-	plan    []tools.TodoTask        // 任务面板：todo 工具落盘后刷新
-	onPlan  func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
-	onUsage func() string           // 生产读会话累计用量（spec 规则 40），测试注入桩
-	abort   func()                  // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
+	plan   []tools.TodoTask        // 任务面板：todo 工具落盘后刷新
+	onPlan func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
+
+	// 后台代理面板（spec 规则 59）：每次重画前经 onAgents 取快照——
+	// 事件触发的重画都带最新状态；空清单不占行。
+	onAgents func() []tools.AgentJobView
+	agents   []tools.AgentJobView // 最近一次快照（draw 刷新）
+	onUsage  func() string        // 生产读会话累计用量（spec 规则 40），测试注入桩
+	abort    func()               // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
+
+	// 会话内搜索（spec 规则 57）：findQ 非空即激活；findHits 是命中行
+	// 下标，findCur 是当前命中（渲染 ▶/▶▶ 标记，n/N 跳转，Esc 退出）。
+	findQ    string
+	findHits []int
+	findCur  int
 
 	// 输入历史（spec 规则 30）：已提交的用户消息；histCur==-1 表示在
 	// 实时输入（离开时的草稿保存在 histDraft）。
@@ -119,9 +131,11 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 			fmt.Fprintln(os.Stderr, "错误：", err)
 			return 1
 		}
+		trustHint(os.Stderr, svc, workspace)
 	}
 	// 闭包按引用捕获 info：/new 经 SetSession 换 ID 后面板读到新会话。
 	s.onPlan = func() []tools.TodoTask { return svc.TodoPlan(info.ID) }
+	s.onAgents = func() []tools.AgentJobView { return svc.AgentJobStates(info.ID) }
 	s.onUsage = func() string {
 		u, err := svc.UsageSummaryOf(info.ID)
 		if err != nil || (u.Usage.InputTokens == 0 && u.Usage.OutputTokens == 0) {
@@ -200,6 +214,8 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 			rerun: func(text string) error {
 				return s.rerunChat(svc, info, text)
 			},
+			// /find（spec 规则 57）：进入标记模式并跳到最近命中。
+			find: func(q string) string { return s.findStart(q) },
 		}, line)
 		if quit {
 			s.finish(os.Stdout)
@@ -363,6 +379,54 @@ func (s *tuiState) pushTurn(line string) {
 	s.requestRedraw()
 }
 
+// findStart 开始会话内搜索（/find 钩子的 TUI 实现，spec 规则 57）：
+// 大小写不敏感匹配转录行，跳到最近一处命中；状态行给出跳转键提示。
+func (s *tuiState) findStart(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return s.findClear()
+	}
+	s.mu.Lock()
+	lower := strings.ToLower(q)
+	hits := make([]int, 0, 8)
+	for i, ln := range s.lines {
+		if strings.Contains(strings.ToLower(ln), lower) {
+			hits = append(hits, i)
+		}
+	}
+	s.findQ, s.findHits, s.findCur = q, hits, len(hits)-1
+	if len(hits) > 0 {
+		s.topIdx = hits[s.findCur]
+	}
+	s.requestRedraw()
+	s.mu.Unlock()
+	if len(hits) == 0 {
+		return "未找到 " + q
+	}
+	return fmt.Sprintf("找到 %d 处 · n 下一处 · N 上一处 · Esc 退出搜索", len(hits))
+}
+
+// findMove 在命中间跳转（环绕），并把视口顶行对准当前命中。
+func (s *tuiState) findMove(dir int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.findHits) == 0 {
+		return
+	}
+	s.findCur = (s.findCur + dir + len(s.findHits)) % len(s.findHits)
+	s.topIdx = s.findHits[s.findCur]
+	s.requestRedraw()
+}
+
+// findClear 退出搜索（标记清空、恢复尾随视口）。
+func (s *tuiState) findClear() string {
+	s.mu.Lock()
+	s.findQ, s.findHits, s.findCur = "", nil, -1
+	s.requestRedraw()
+	s.mu.Unlock()
+	return "已退出搜索"
+}
+
 // resetSessionView 清空回合锚点与计划（/new 换会话后旧数据不再有意义）；
 // 转录行保留（跨会话历史本就同屏滚动）。
 func (s *tuiState) resetSessionView() {
@@ -498,15 +562,20 @@ func (s *tuiState) draw(out io.Writer) {
 	}
 	var b strings.Builder
 	b.WriteString("\x1b[?1049h\x1b[2J\x1b[H") // 备用屏 + 清屏 + 回起点
+	if s.onAgents != nil {                    // 后台代理快照：重画即取（事件驱动的重画都带最新，规则 59）
+		s.agents = s.onAgents()
+	}
 	plan := planLines(s.plan, planMaxRows)
-	for _, line := range plan {
+	agents := agentPanelLines(s.agents)
+	for _, line := range append(plan, agents...) {
 		b.WriteString(line + "\x1b[K\n")
 	}
-	body := h - 2 - len(plan) // 状态行 + 输入行 + 计划块
+	body := h - 2 - len(plan) - len(agents) // 状态行 + 输入行 + 计划/代理块
 	if body < 1 {
 		body = 1
 	}
 	var visible []string
+	base := 0          // 可见窗口首行的绝对下标（搜索标记用，spec 规则 57）
 	if s.topIdx >= 0 { // 回合导航/滚动：绝对下标窗口，夹紧防越界
 		top := s.topIdx
 		if maxTop := len(s.lines) - body; top > maxTop {
@@ -519,13 +588,29 @@ func (s *tuiState) draw(out io.Writer) {
 		if end > len(s.lines) {
 			end = len(s.lines)
 		}
+		base = top
 		visible = s.lines[top:end]
 	} else if len(s.lines) > body { // 尾随：贴底窗口
-		visible = s.lines[len(s.lines)-body:]
+		base = len(s.lines) - body
+		visible = s.lines[base:]
 	} else {
 		visible = s.lines
 	}
-	for _, line := range visible {
+	hitSet := map[int]bool{}
+	if s.findQ != "" {
+		for _, h := range s.findHits {
+			hitSet[h] = true
+		}
+	}
+	for i, line := range visible {
+		if s.findQ != "" {
+			switch {
+			case s.findCur >= 0 && base+i == s.findHits[s.findCur]:
+				line = ansi(ansiYellow, ">") + line
+			case hitSet[base+i]:
+				line = ansi(ansiYellow, ". ") + line
+			}
+		}
 		b.WriteString(line + "\x1b[K\n")
 	}
 	for i := len(visible); i < body; i++ {
@@ -679,4 +764,59 @@ func tuiTokens(n int) string {
 		return fmt.Sprintf("%.1fk", float64(n)/1000)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// agentPanelLines 渲染后台代理固定块（spec 规则 59，slash.FormatAgents
+// 同数据源）：运行中 ▶ 带耗时；空清单不占行；超 4 条折叠 …+N。
+func agentPanelLines(views []tools.AgentJobView) []string {
+	if len(views) == 0 {
+		return nil
+	}
+	running := 0
+	for _, v := range views {
+		if v.State == tools.AgentRunning {
+			running++
+		}
+	}
+	lines := []string{ansi(ansiBlue, fmt.Sprintf("代理 · %d 运行/%d", running, len(views)))}
+	for i, v := range views {
+		if i == agentPanelMaxRows {
+			lines = append(lines, ansi(ansiGray, fmt.Sprintf("  …+%d", len(views)-agentPanelMaxRows)))
+			break
+		}
+		mark := "?"
+		switch v.State {
+		case tools.AgentRunning:
+			mark = "▶"
+		case tools.AgentDone:
+			mark = "✓"
+		case tools.AgentFailed:
+			mark = "✕"
+		case tools.AgentStopped:
+			mark = "■"
+		}
+		line := "  " + mark + " " + v.ID
+		if v.State == tools.AgentRunning {
+			line += " " + v.Duration.Round(time.Second).String()
+		}
+		if task := agentTaskBrief(v.Prompt); task != "" {
+			line += " " + task
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// agentPanelMaxRows 是代理面板最多渲染的条数。
+const agentPanelMaxRows = 4
+
+// agentTaskBrief 任务首行截短。
+func agentTaskBrief(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if r := []rune(s); len(r) > 32 {
+		return string(r[:32]) + "…"
+	}
+	return s
 }

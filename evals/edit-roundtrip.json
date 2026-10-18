@@ -1,0 +1,15 @@
+{
+  "name": "edit-roundtrip",
+  "description": "写-改-读回环：edit 精确替换后文件终态正确",
+  "turns": [
+    {"tool": "write", "args": {"path": "config.txt", "content": "env=dev\nport=8080"}},
+    {"tool": "edit", "args": {"path": "config.txt", "old_string": "env=dev", "new_string": "env=prod"}},
+    {"tool": "read", "args": {"path": "config.txt"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "file_contains": {"config.txt": "env=prod"},
+    "no_tool_errors": true,
+    "event_count": {"tool_execution_end": 3}
+  }
+}

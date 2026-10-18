@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"io"
 	"os"
 	"path/filepath"
@@ -113,6 +114,15 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "workflow" {
 		os.Exit(runWorkflow(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "bugreport" {
+		os.Exit(runBugreport(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "eval" {
+		os.Exit(runEval(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "trust" {
+		os.Exit(runTrust(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "usage" {
 		os.Exit(runUsage(os.Args[2:]))
 	}
@@ -178,6 +188,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
+		trustHint(os.Stderr, svc, workspace)
 	}
 
 	// 管道输入（spec 规则 27）：stdin 非终端（管道/重定向）时并入提示
@@ -374,6 +385,7 @@ func repl(workspace string, cont bool, resume string) int {
 		if err != nil {
 			fatal(err)
 		}
+		trustHint(os.Stderr, svc, workspace)
 	}
 	if resumed {
 		// 恢复会话沿用其自身工作区（即使与当前目录不同）。
@@ -439,6 +451,9 @@ func repl(workspace string, cont bool, resume string) int {
 			rerun: func(text string) error { // /retry、/resend：撤最后一轮重发
 				fmt.Fprintln(os.Stderr, "[重跑] 撤最后一轮并重发：", text)
 				return svc.EditAndResend(info.ID, text, func(ev agent.Event) { render(ev) })
+			},
+			find: func(q string) string { // /find：REPL 无视口——列命中清单（spec 规则 57）
+				return replFind(svc, info.ID, q)
 			},
 		}, line)
 		if quit {
@@ -520,4 +535,49 @@ func buildStdinPrompt(prompt string, r io.Reader) string {
 	fence := export.FenceFor(content)
 	return prompt + "\n\n标准输入：\n" + fence + "\n" +
 		strings.TrimRight(content, "\n") + "\n" + fence + note
+}
+
+// replFind 在会话转录中搜索并列出命中（首 20 条 + 片段）。
+func replFind(svc *service.AgentService, sessionID, q string) string {
+	msgs, err := svc.Messages(sessionID)
+	if err != nil {
+		return "[搜索失败] " + err.Error()
+	}
+	lower := strings.ToLower(q)
+	type hit struct {
+		turn int
+		text string
+	}
+	var hits []hit
+	turn := 0
+	for _, m := range msgs {
+		if m.Role == ai.RoleUser {
+			turn++
+		}
+		for _, b := range m.Blocks {
+			if b.Kind == ai.BlockText && strings.Contains(strings.ToLower(b.Text), lower) {
+				hits = append(hits, hit{turn, b.Text})
+			}
+		}
+		if strings.Contains(strings.ToLower(m.Text()), lower) && m.Text() != "" {
+			hits = append(hits, hit{turn, m.Text()})
+		}
+	}
+	if len(hits) == 0 {
+		return "未找到 " + q
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "找到 %d 处（回合 · 片段）：", len(hits))
+	for i, h := range hits {
+		if i >= 20 {
+			fmt.Fprintf(&sb, "\n… 还有 %d 处", len(hits)-20)
+			break
+		}
+		snippet := strings.ReplaceAll(h.text, "\n", " ")
+		if r := []rune(snippet); len(r) > 60 {
+			snippet = string(r[:60]) + "…"
+		}
+		fmt.Fprintf(&sb, "\n  回合 %d：%s", h.turn, snippet)
+	}
+	return sb.String()
 }

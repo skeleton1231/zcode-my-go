@@ -19,6 +19,9 @@ import (
 // 工作区 .zgo/commands/run.md 的 $ARGUMENTS 被替换后进入转录。
 func TestE2ECustomCommandSendsExpanded(t *testing.T) {
 	h := New(t, Turn{Text: "收到"})
+	if err := h.Svc.TrustWorkspace(h.Workspace, "test"); err != nil { // 信任门（spec 规则 54）：未授信不带工作区层
+		t.Fatal(err)
+	}
 	cmdDir := filepath.Join(h.Workspace, ".zgo", "commands")
 	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
 		t.Fatal(err)

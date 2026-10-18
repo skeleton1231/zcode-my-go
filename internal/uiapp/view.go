@@ -25,6 +25,7 @@ func (a *App) View(c *ui.Context) {
 		a.sidebarView(c, t)
 		ui.Column(c).Grow(1).Children(func() {
 			a.chatView(c, t)
+			a.agentsView(c, t)
 			a.planView(c, t)
 			a.terminalPanelView(c, t)
 			a.composerView(c, t)
@@ -35,6 +36,7 @@ func (a *App) View(c *ui.Context) {
 
 	a.renameModal(c, t)
 	a.askModal(c, t)
+	a.trustModal(c, t)
 	a.questionModal(c, t)
 	a.settingsModal(c, t)
 	a.jobsModal(c, t)
