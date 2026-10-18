@@ -225,7 +225,8 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    *.md` 与全局 `~/.zgo/commands/*.md`（同名工作区覆盖全局）；命令名即文
    件名去扩展，`/名 [参数]` 执行——内容作为提示词发送，`$ARGUMENTS` 占
    位替换为参数原文；builtin 优先，自定义不遮蔽；/help 列出自定义段；
-   不可发送的表面展示展开文本。SSH 工作区同享（经 path jail 读取）。（命令文件文本 60K rune 封顶——issue #195 家族口径。）
+   不可发送的表面展示展开文本。SSH 工作区同享（经 path jail 读取）。
+（命令文件文本 60K rune 封顶——issue #195 家族口径。）
 
 
 40. TUI 信息可见性（与桌面对齐）：思考流灰显——EvThinkingDelta 累积渲染
@@ -251,10 +252,30 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    checkpoint.RemoveAll——该会话全部 refs/zgo-checkpoints/<id>/* 逐
    条 update-ref -d（活 ref 钉住 git 对象，不清是硬泄漏）；非仓库/
    ssh:// 静默无操作，失败记日志不阻断删除。
+44. glob/grep 感知 .gitignore（issue #208）：遍历前解析工作区根
+   .gitignore（经 workspace 抽象，远程同享），实现 git 风格子集——
+   注释/空行、! 反选、尾随 / 目录限定、含 / 锚定、* 与 ? 通配；与
+   静态 skipDirs 取并集（无 .gitignore 行为不变）；命中目录整枝剪
+   除，命中文件逐个跳过；会话级加载一次（.gitignore 变更下轮会话
+   生效）。
+dc907a4 (feat: glob and grep honor .gitignore)
 
-   （规则 44 由技能子系统预留——pending PR。）
+45. 技能（ZCode skills 子系统）：SKILL.md + frontmatter（平铺 YAML
+   子集：name/description 必填、when_to_use 可选、引号值去引号；无
+   frontmatter 按目录名收录；描述超 1024 字符拒绝）；两层根——工作
+   区 `.zgo/skills`（ssh:// 经网线，根相对形态）与全局
+   `~/.zgo/skills`（本地），同名工作区覆盖全局（与自定义命令同约
+   定）；根自身 SKILL.md 即单技能根，另扫一层子目录。系统提示尾部注
+   入可用清单（`- 名: 描述 — 何时用 (file: 路径)`，描述展示截断 250
+   字符；20KB 预算超限降级为仅名列——渐进披露）。`skill` 工具按名加
+   载正文：去 frontmatter、100KB 截断并标注、附技能基目录（技能内相
+   对文件的解析基），not-found 附可用名清单自纠；只读能力自动放行。
+   坏技能（缺 name/description、名字含分隔符或空白、描述超限）记诊
+   断跳过，不拖垮整层；读失败（非不存在）同样记诊断不静默。/skills
+   终端命令列出技能与诊断。
 
-45. webfetch 工具（ZCode WebFetch 的移植）：`{url, prompt?}`——抓取
+
+46. webfetch 工具（ZCode WebFetch 的移植）：`{url, prompt?}`——抓取
    http(s) URL 并抽取可读文本。URL 归一：≤2000 字符、无凭据、http 升
    级 https、公网主机名（localhost/.local/裸单段主机拒绝）。egress
    守卫（SSRF）逐跳生效：字面量 IP 非公网段（RFC1918/环回/链路本地/

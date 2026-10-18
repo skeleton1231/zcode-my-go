@@ -14,10 +14,13 @@ import (
 )
 
 // Glob expands a path pattern, including ** for any depth.
-type Glob struct{ ws Workspace }
+type Glob struct {
+	ws Workspace
+	ig *ignoreList // .gitignore 规则（issue #208），会话级加载
+}
 
 // NewGlob builds the glob tool.
-func NewGlob(ws Workspace) *Glob { return &Glob{ws: ws} }
+func NewGlob(ws Workspace) *Glob { return &Glob{ws: ws, ig: loadIgnores(ws)} }
 
 // Name implements agent.Tool.
 func (g *Glob) Name() string { return "glob" }
@@ -100,10 +103,13 @@ func (g *Glob) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 			return ctx.Err()
 		}
 		if d.IsDir() {
-			if skipDirs[d.Name()] && path != root {
+			if path != root && (skipDirs[d.Name()] || g.ig.match(relToRoot(root, path), true)) {
 				return filepath.SkipDir
 			}
 			return nil
+		}
+		if g.ig.match(relToRoot(root, path), false) {
+			return nil // .gitignore 命中（issue #208）
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {

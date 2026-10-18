@@ -79,6 +79,7 @@ internal/uiapp        native UI：chatState 折叠 + App 视图 + 弹窗
 specs/                行为规格（先于代码）
 internal/checkpoint  工作区检查点与回滚（git 临时索引快照 + read-tree 恢复）
 internal/schedule    定时自动化（cron 解析/任务存储/分钟调度器，zgo cron）
+internal/skills      技能发现与加载（SKILL.md frontmatter、两层根、按名加载）
 internal/mcp          MCP 客户端（stdio JSON-RPC）
 internal/webfetch    webfetch 工具（URL 归一、SSRF egress 守卫、重定向策略、文本抽取、缓存）
 docs/                 架构文档 + ZCode 移植地图（zcode-port-map.md）

@@ -1,6 +1,6 @@
 package e2e
 
-// webfetch（spec 规则 45）的全栈 e2e：工具声明进表、SSRF 防线经真实
+// webfetch（spec 规则 46）的全栈 e2e：工具声明进表、SSRF 防线经真实
 // 权限与工具执行链路生效（脚本 provider 不出网——用被拒绝的私网目标
 // 驱动真实工具走完整路径）。
 

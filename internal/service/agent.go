@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -31,6 +32,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
+	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 	"github.com/skeleton1231/zcode-my-go/internal/usage"
 )
@@ -253,6 +255,9 @@ func (s *AgentService) rewire() {
 			contextRead := contextReader(ws)
 			all := append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)),
+				tools.NewSkillTool(func() []skills.Root {
+					return s.skillRoots(sessionID, workspace)
+				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
 				tools.NewWebFetchTool(tools.WebFetcher))
 			wfProvider := func() ai.Provider { return s.providerFor(cfg) }
@@ -286,7 +291,11 @@ func (s *AgentService) rewire() {
 			return all
 		},
 		System: func(workspace, sessionID string) string {
-			return prompt.SystemFS(workspace, contextReader(s.workspaceFor(sessionID, workspace))) + s.memoryFor(workspace).Section()
+			sys := prompt.SystemFS(workspace, contextReader(s.workspaceFor(sessionID, workspace))) +
+				s.memoryFor(workspace).Section()
+			// 技能清单注入系统提示尾部（易变段语义：技能增删即时生效，
+			// 不在缓存稳定前缀里）。
+			return sys + skills.Section(skills.Discover(s.skillRoots(sessionID, workspace)), skills.DefaultMetaBudget)
 		},
 		Ask:          s.ask,
 		ProjectRules: loadProjectRules,
@@ -1002,6 +1011,83 @@ func contextReader(ws tools.Workspace) func(string) ([]byte, error) {
 		return nil
 	}
 	return ws.Remote.ReadFile
+}
+
+// skillsBaseDir 是工作区内的技能根（相对形态，远端同享）。
+const skillsBaseDir = ".zgo/skills"
+
+// skillRoots 返回技能发现根（工作区在前——同名工作区覆盖全局，与自定
+// 义命令同约定）：工作区 .zgo/skills（远程经网线）+ 全局 ~/.zgo/skills
+// （本地）。每次调用重新取 workspaceFor（拨号缓存），技能增删即时生效。
+func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
+	ws := s.workspaceFor(sessionID, workspace)
+	var roots []skills.Root
+	if ws.IsRemote() {
+		roots = append(roots, skills.Root{
+			Base: skillsBaseDir, Scope: skills.ScopeProject,
+			FS: remoteSkillsFS{ws.Remote},
+		})
+	} else {
+		roots = append(roots, skills.Root{
+			Base: filepath.Join(ws.Root, filepath.FromSlash(skillsBaseDir)),
+			Scope: skills.ScopeProject, FS: skills.LocalFS{},
+		})
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, skills.Root{
+			Base:  filepath.Join(home, ".zgo", "skills"),
+			Scope: skills.ScopeUser, FS: skills.LocalFS{},
+		})
+	}
+	return roots
+}
+
+// Skills 列出工作区的可用技能（/skills 终端命令用；与 agent 的发现
+// 同一根源——工作区层经 openWorkspace 解析目标，远程走网线）。
+func (s *AgentService) Skills(workspace string) skills.Outcome {
+	project := skills.Root{
+		Base:  filepath.Join(workspace, filepath.FromSlash(skillsBaseDir)),
+		Scope: skills.ScopeProject, FS: skills.LocalFS{},
+	}
+	if ws, _, err := s.openWorkspace(workspace); err == nil {
+		if ws.IsRemote() {
+			project = skills.Root{Base: skillsBaseDir, Scope: skills.ScopeProject,
+				FS: remoteSkillsFS{ws.Remote}}
+		} else {
+			project.Base = filepath.Join(ws.Root, filepath.FromSlash(skillsBaseDir))
+		}
+	}
+	roots := []skills.Root{project}
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, skills.Root{
+			Base: filepath.Join(home, ".zgo", "skills"),
+			Scope: skills.ScopeUser, FS: skills.LocalFS{},
+		})
+	}
+	return skills.Discover(roots)
+}
+
+// remoteSkillsFS 把 tools.RemoteFS 适配成 skills.FS（路径根相对、斜杠
+// 形态——与远端文件工具同源）。
+type remoteSkillsFS struct{ r tools.RemoteFS }
+
+// Join implements skills.FS.
+func (f remoteSkillsFS) Join(parts ...string) string { return path.Join(parts...) }
+
+// ReadFile implements skills.FS.
+func (f remoteSkillsFS) ReadFile(name string) ([]byte, error) { return f.r.ReadFile(name) }
+
+// ReadDir implements skills.FS.
+func (f remoteSkillsFS) ReadDir(dir string) ([]skills.DirEntry, error) {
+	es, err := f.r.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]skills.DirEntry, len(es))
+	for i, e := range es {
+		out[i] = skills.DirEntry{Name: e.Name, IsDir: e.IsDir}
+	}
+	return out, nil
 }
 
 // memoryFor returns (creating) the workspace's memory store.

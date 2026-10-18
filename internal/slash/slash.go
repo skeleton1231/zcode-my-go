@@ -206,6 +206,29 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/skills", usage: "/skills",
+		help: "列出可用技能（工作区 .zgo/skills 与全局 ~/.zgo/skills）",
+		run: func(env *Env, _ string) string {
+			out := env.Svc.Skills(env.Workspace())
+			if len(out.Skills) == 0 && len(out.Diagnostics) == 0 {
+				return "[技能] 未发现技能——放 <工作区>/.zgo/skills/<名>/SKILL.md（frontmatter：name/description）或 ~/.zgo/skills/<名>/SKILL.md；同名工作区覆盖全局"
+			}
+			var b strings.Builder
+			b.WriteString("[技能] 可用技能（skill 工具按名加载）：\n")
+			for _, s := range out.Skills {
+				line := "  " + s.Name
+				if s.Description != "" {
+					line += "：" + s.Description
+				}
+				b.WriteString(line + "\n")
+			}
+			for _, d := range out.Diagnostics {
+				b.WriteString("  ⚠ " + d.Path + ": " + d.Message + "\n")
+			}
+			return strings.TrimRight(b.String(), "\n")
+		},
+	},
+	{
 		name: "/usage", usage: "/usage",
 		help: "本会话的 token 用量（输入/输出/缓存）",
 		run: func(env *Env, _ string) string {

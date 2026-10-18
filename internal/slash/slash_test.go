@@ -57,8 +57,8 @@ func (s *snapshotLines) snapshot() []string {
 	return append([]string(nil), *s.lines...)
 }
 
-func (s *snapshotLines) Len() int           { return len(s.snapshot()) }
-func (s *snapshotLines) All() []string      { return s.snapshot() }
+func (s *snapshotLines) Len() int      { return len(s.snapshot()) }
+func (s *snapshotLines) All() []string { return s.snapshot() }
 func (s *snapshotLines) Contains(want string) bool {
 	return strings.Contains(strings.Join(s.snapshot(), "\n"), want)
 }
@@ -218,7 +218,6 @@ func captureOut(t *testing.T, env *Env, line string) string {
 	Run(env, line) // run 的返回串经 env.Out 送达
 	return strings.Join(lines, "\n")
 }
-
 
 // TestSlashUsage 验证 /usage（spec 规则 25）：零用量会话展示零值表。
 func TestSlashUsage(t *testing.T) {
@@ -474,5 +473,42 @@ func TestCustomCommands(t *testing.T) {
 	out = captureOutSlash(t, env, "/help")
 	if !strings.Contains(out, "自定义命令") || !strings.Contains(out, "deploy") {
 		t.Fatalf("help missing custom: %q", out)
+	}
+}
+
+// TestSlashSkills 验证 /skills（spec 规则 41）：无技能说明放置位置；工
+// 作区技能列出名字与描述；坏技能的诊断以 ⚠ 行出现（跳过不拖垮列表）。
+func TestSlashSkills(t *testing.T) {
+	env, _ := newEnv(t)
+
+	out := captureOutSlash(t, env, "/skills")
+	if !strings.Contains(out, "未发现技能") || !strings.Contains(out, ".zgo/skills") {
+		t.Fatalf("empty listing: %q", out)
+	}
+
+	ws := env.Workspace()
+	dir := filepath.Join(ws, ".zgo", "skills", "deploy")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: deploy\ndescription: Ship the service\n---\n正文"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	broken := filepath.Join(ws, ".zgo", "skills", "broken")
+	if err := os.MkdirAll(broken, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, "SKILL.md"),
+		[]byte("---\ndescription: no name\n---\nx"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out = captureOutSlash(t, env, "/skills")
+	if !strings.Contains(out, "deploy：Ship the service") {
+		t.Fatalf("listing missing skill: %q", out)
+	}
+	if !strings.Contains(out, "⚠") || !strings.Contains(out, "must include a name") {
+		t.Fatalf("diagnostic missing: %q", out)
 	}
 }
