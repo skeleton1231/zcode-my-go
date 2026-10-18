@@ -330,7 +330,55 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
-   （规则 50-54 由 pending PR 预留。）
+   50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+   `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
+   合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
+   本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop
+   {id}` 停止（终态保持可读、结论为空）。注册表会话作用域（tools.
+   States.Agents）：ctx 派生自注册表根而非工具调用——不随工具返回取
+   消；DeleteSession/服务 Close 全停（不留僵尸循环）。嵌套循环的
+   provider 与工具面与主循环同源：e2e 注入（UseProviderForTesting）
+   经持锁快照进入子任务；ssh:// 会话的 task/dispatch/workflow/后台
+   agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
+   地工具面，远程嵌套循环读的是本地磁盘）。
+
+51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+   对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
+   后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
+   绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
+   RunSubtaskSeeded（prior 为空即新任务、非空即续跑，历史拷贝隔离）；
+   注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
+   有一个生效）。
+
+52. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
+   本层抽取——词法级 stream 段收集 + FlateDecode 解压 + Tj/TJ/'/" 文
+   本算子（Td/TD/T* 换行启发），字面串（转义/八进制/嵌套括号）与十六
+   进制串（UTF-16BE BOM 检测）解码。有界：单流 16MB、产出 256KB rune
+   截断标注。**可读率闸门**：产出可打印字符占比 <85% 即报错（CID 编
+   码无 ToUnicode 的中文 PDF 常见）——宁报错并建议 bash 转换，不静默
+   产乱码；无文本层（扫描件/图片型）同样报错。SSH 工作区经网线读字
+   节同构。
+
+53. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
+   本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来
+   的恶意仓库不能靠自带规则文件给自己放权）、不加载其 `.zgo` 命令与
+   技能层（提示注入面）；全局层不受影响。授信表 dataDir/trusted.json
+   （路径键规范化：Clean + Windows 盘符路径整体小写；原子写；损坏即
+   空表重起）。ssh:// 目标是用户显式拨号的远端——视为授信。授信途
+   径：`/trust`（当前会话工作区，即时重载项目规则——在跑会话经
+   ApplyProjectRules 生效）、`zgo trust <路径>`（print/CI 预授信）、
+   `zgo trust --list / --revoke <路径>`（撤销即时清空在跑会话的项
+   目规则）。未授信时终端三表面在会话建立时打 stderr 提示；桌面首开
+   未授信工作区弹信任确认（路径 + 风险说明，「信任并加载」经服务授
+   信落表、「暂不」仅关窗不授信）。
+
+54. 场景评测（`zgo eval`，pi evals 的数据化形态）：用户可写 JSON 场
+   景——种工作区文件（files）、脚本回合（tool+args 或 text，工具真实
+   执行）、四类断言（transcript_contains 含工具结果块 / file_contains
+   / no_tool_errors / event_count）。运行面与 e2e 同构：临时 dataDir +
+   临时工作区（种文件即授信——场景是用户自己写的）+ 脚本 provider +
+   自动放行 asker；关自动命名。目录默认 ./evals 不存在则 ~/.zgo/
+   evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。
 
 55. 模型兜底链（spec 规则 54 场景评测之后）：settings.fallbackModels
    （逗号列表，空即关闭）——rewire 的 Provider 把主模型与兜底序包成

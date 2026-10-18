@@ -24,6 +24,9 @@ func TestE2ESkillsInjectedAndLoadable(t *testing.T) {
 		Turn{ToolCalls: []ToolCall{{Name: "skill", Args: `{"skill":"deploy"}`}}},
 		Turn{Text: "done"},
 	)
+	if err := h.Svc.TrustWorkspace(h.Workspace, "test"); err != nil { // 信任门（spec 规则 53）：未授信不带工作区层
+		t.Fatal(err)
+	}
 	dir := filepath.Join(h.Workspace, ".zgo", "skills", "deploy")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

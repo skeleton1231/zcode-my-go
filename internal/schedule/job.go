@@ -173,9 +173,9 @@ func (st *Store) SetEnabled(id string, on bool) (bool, error) {
 // Scheduler fires due jobs on a minute tick. Results are recorded back to
 // the store; one job never overlaps itself (the run is skipped and noted).
 type Scheduler struct {
-	store  *Store
-	runner Runner
-	now    func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
+	store   *Store
+	runner  Runner
+	now     func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
 	clockMu sync.Mutex
 
 	mu      sync.Mutex

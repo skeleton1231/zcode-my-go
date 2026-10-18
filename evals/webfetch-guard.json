@@ -1,0 +1,11 @@
+{
+  "name": "webfetch-guard",
+  "description": "SSRF 守卫：私网目标被拒且错误可见（自纠面）",
+  "turns": [
+    {"tool": "webfetch", "args": {"url": "https://192.168.1.1/admin"}},
+    {"text": "已知悉"}
+  ],
+  "expect": {
+    "no_tool_errors": false
+  }
+}

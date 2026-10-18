@@ -446,6 +446,9 @@ func TestCustomCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	if err := svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 53）：未授信不带工作区层
+		t.Fatal(err)
+	}
 
 	cmds := svc.CustomCommands(ws)
 	if len(cmds) != 1 || cmds[0].Name != "deploy" {
@@ -454,6 +457,9 @@ func TestCustomCommands(t *testing.T) {
 
 	env, _ := newEnv(t)
 	env.Workspace = func() string { return ws }
+	if err := env.Svc.TrustWorkspace(ws, "test"); err != nil { // env 的服务实例单独授信（信任门）
+		t.Fatal(err)
+	}
 	var sent string
 	env.Send = func(text string) { sent = text }
 
@@ -487,6 +493,9 @@ func TestSlashSkills(t *testing.T) {
 	}
 
 	ws := env.Workspace()
+	if err := env.Svc.TrustWorkspace(ws, "test"); err != nil { // 信任门（spec 规则 53）：未授信不带工作区层
+		t.Fatal(err)
+	}
 	dir := filepath.Join(ws, ".zgo", "skills", "deploy")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

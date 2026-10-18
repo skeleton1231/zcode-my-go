@@ -9,7 +9,6 @@ package remotetest
 
 import (
 	"bytes"
-	"strings"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
@@ -21,6 +20,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"

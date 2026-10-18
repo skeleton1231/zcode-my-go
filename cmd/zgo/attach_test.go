@@ -58,7 +58,7 @@ func TestAttachmentsQueueLifecycle(t *testing.T) {
 }
 
 // TestAttachmentsTotalBudgetRejectedEarly: 挂第 2 张时即按编码总量拒绝
-//（与桌面 📎 同限同口径），提示分条——而非发送时才被 session 兜底静默
+// （与桌面 📎 同限同口径），提示分条——而非发送时才被 session 兜底静默
 // 少发（issue #132）。
 func TestAttachmentsTotalBudgetRejectedEarly(t *testing.T) {
 	dir := t.TempDir()
