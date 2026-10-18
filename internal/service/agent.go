@@ -1436,14 +1436,14 @@ func (s *AgentService) recordDailyUsage(before, after ai.Usage, emit func(agent.
 	switch s.day.CheckBudget(budget) {
 	case "near":
 		emit(agent.Event{Kind: agent.EvBudgetNotice,
-			Text: fmt.Sprintf("今日已用 %d token（预算的 80%%+）", s.day.Tokens)})
+			Text: fmt.Sprintf("今日已用 %d token（预算的 80%%+）", s.day.Total())})
 	case "over":
 		emit(agent.Event{Kind: agent.EvBudgetNotice,
-			Text: fmt.Sprintf("今日已用 %d token，超出预算 %d", s.day.Tokens, budget)})
+			Text: fmt.Sprintf("今日已用 %d token，超出预算 %d", s.day.Total(), budget)})
 	}
 }
 
 // DailyUsage 报告今日已计价 token 与预算（0=不限）。
 func (s *AgentService) DailyUsage() (used, budget int) {
-	return s.day.Tokens, s.resolve().BudgetDailyTokens
+	return s.day.Total(), s.resolve().BudgetDailyTokens
 }

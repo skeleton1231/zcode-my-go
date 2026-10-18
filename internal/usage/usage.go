@@ -85,6 +85,14 @@ func Priced(in, out, cacheRead, cacheWrite int) int {
 	return in + out + cacheRead/10 + cacheWrite
 }
 
+// Total 报告今日累计（持锁——Add 会从多会话的回合收尾 goroutine 并发
+// 到达，裸读 Tokens 与之竞态）。
+func (d *Day) Total() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.Tokens
+}
+
 // CheckBudget 返回（80%/100% 阈值跨越提示，各只发一次）。
 // budget<=0 不限；返回空串表示无提示。
 func (d *Day) CheckBudget(budget int) string {
