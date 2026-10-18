@@ -25,6 +25,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
+	"github.com/skeleton1231/zcode-my-go/internal/agents"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
 	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
@@ -93,7 +94,7 @@ type AgentService struct {
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
-	trustStore       *trust.Store               // 工作区授信表（spec 规则 53）
+	trustStore       *trust.Store               // 工作区授信表（spec 规则 54）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -126,7 +127,7 @@ func New(dataDir string) (*AgentService, error) {
 // mcpNameMax 限制配置的服务器数（防误配炸启动面）。
 const mcpNameMax = 32
 
-// SetMCPServer 配置/更新一个 MCP 服务器并热重载（spec 规则 57）：名
+// SetMCPServer 配置/更新一个 MCP 服务器并热重载（spec 规则 58）：名
 // 非空且无空白/斜杠（文件与键的安全形态）；命令非空。写盘经
 // saveSettingsLocked，启动经 syncMCP（失败降级不阻断——诊断面可见）。
 func (s *AgentService) SetMCPServer(name string, cfg mcp.Config) error {
@@ -325,13 +326,51 @@ func (s *AgentService) rewire() {
 			// ReadOnlyW 用 Remote 工作区（此前字符串重建的是本地面）。
 			ws := s.workspaceFor(sessionID, workspace)
 			roTools := tools.ReadOnlyW(ws)
-			task := tools.NewTask(func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
-				return agent.RunSubtask(ctx, agent.SubtaskConfig{
-					Provider: provider(),
-					Model:    model,
-					System:   agent.SubtaskSystem(),
-					Tools:    roTools,
-				}, prompt)
+			// allTools 在 task/dispatch 执行时才调用（闭包变量 all 此时已
+			// 装配完毕）——白名单过滤需要完整会话工具面。
+			var all []agent.Tool
+			allTools := func() []agent.Tool { return all }
+			// subtaskCfg 解析一次子任务装配：agentName 空走默认研究子代
+			// 理（行为与既往一致）；命中 .zgo/agents 定义则用其 persona，
+			// 工具面按白名单从会话工具集选取——白名单只收窄不放宽，词表
+			// 外的名字忽略；edit 族继承主权限门（spec 规则 51）。
+			subtaskCfg := func(agentName string) (agent.SubtaskConfig, error) {
+				if agentName == "" {
+					return agent.SubtaskConfig{
+						Provider: provider(), Model: model,
+						System: agent.SubtaskSystem(), Tools: roTools,
+					}, nil
+				}
+				def, ok := agents.Find(agents.Discover(s.agentRoots(sessionID, workspace)), agentName)
+				if !ok {
+					names := agents.Names(agents.Discover(s.agentRoots(sessionID, workspace)))
+					if len(names) == 0 {
+						names = []string{"(none defined — add .zgo/agents/*.md)"}
+					}
+					return agent.SubtaskConfig{}, fmt.Errorf(
+						"unknown agent %q; available: %s", agentName, strings.Join(names, ", "))
+				}
+				cfg := agent.SubtaskConfig{
+					Provider: provider(), Model: model,
+					System: def.System, Tools: roTools,
+				}
+				if len(def.Tools) > 0 {
+					// 白名单只收窄不放宽：候选池 = 只读族 ∪ 会话工具集，
+					// 但词表封闭（spec 规则 51）——task/dispatch/agent 等
+					// 委派工具与 bash 不在词表内，防嵌套递归与直通执行；
+					// 词表外的名字静默忽略，拼写错误的兜底是报错清单。
+					pool := append(append([]agent.Tool{}, roTools...), allTools()...)
+					cfg.Tools = filterToolsByName(pool, def.Tools)
+					cfg.Permissions = permissionFor(s, sessionID)
+				}
+				return cfg, nil
+			}
+			task := tools.NewTask(func(ctx context.Context, prompt, agentName string) (agent.SubtaskResult, error) {
+				cfg, err := subtaskCfg(agentName)
+				if err != nil {
+					return agent.SubtaskResult{}, err
+				}
+				return agent.RunSubtask(ctx, cfg, prompt)
 			})
 			contextRead := contextReader(ws)
 			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
@@ -344,7 +383,7 @@ func (s *AgentService) rewire() {
 					Tools:    roTools,
 				}, prior, prompt)
 			}
-			all := append(tools.AllW(ws, state, question), task,
+			all = append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)),
 				tools.NewSkillTool(func() []skills.Root {
 					return s.skillRoots(sessionID, workspace)
@@ -360,15 +399,18 @@ func (s *AgentService) rewire() {
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
 			wfAsk := s.ask
-			dispProvider := provider
-			dispModel := cfg.Model
-			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string) []agent.SubtaskResult {
-				return agent.RunSubtasks(ctx, agent.SubtaskConfig{
-					Provider: dispProvider(),
-					Model:    dispModel,
-					System:   agent.SubtaskSystem(),
-					Tools:    roTools,
-				}, prompts)
+			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string, agentName string) []agent.SubtaskResult {
+				cfg, err := subtaskCfg(agentName)
+				if err != nil {
+					// 整批失败同型：每个条目一份错误文本（RunSubtasks 的
+					// 单条失败语义——不拖垮别的 dispatch 调用）。
+					out := make([]agent.SubtaskResult, len(prompts))
+					for i := range out {
+						out[i] = agent.SubtaskResult{Text: "error: " + err.Error()}
+					}
+					return out
+				}
+				return agent.RunSubtasks(ctx, cfg, prompts)
 			}))
 			all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
 				return s.execWorkflow(ctx, sessionID, workspace, req,
@@ -393,13 +435,15 @@ func (s *AgentService) rewire() {
 		System: func(workspace, sessionID string) string {
 			sys := prompt.SystemFS(workspace, contextReader(s.workspaceFor(sessionID, workspace))) +
 				s.memoryFor(workspace).Section()
-			// 技能清单注入系统提示尾部（易变段语义：技能增删即时生效，
-			// 不在缓存稳定前缀里）。
-			return sys + skills.Section(skills.Discover(s.skillRoots(sessionID, workspace)), skills.DefaultMetaBudget)
+			// 技能与子代理清单注入系统提示尾部（易变段语义：增删即时生
+			// 效，不在缓存稳定前缀里）。
+			return sys +
+				skills.Section(skills.Discover(s.skillRoots(sessionID, workspace)), skills.DefaultMetaBudget) +
+				agents.Section(agents.Discover(s.agentRoots(sessionID, workspace)), agents.DefaultMetaBudget)
 		},
 		Ask: s.ask,
 		ProjectRules: func(workspace string) permission.Ruleset {
-			// 工作区信任门（spec 规则 53）：未授信的本地工作区不加载
+			// 工作区信任门（spec 规则 54）：未授信的本地工作区不加载
 			// 其 .zgorules.json——克隆来的恶意仓库不能靠自带 allow
 			// 规则给自己放权（提权面）。ssh:// 目标是用户显式拨号的
 			// 远端，视为授信。
@@ -1133,7 +1177,7 @@ func (s *AgentService) PlanMode(id string, on bool) error {
 	return nil
 }
 
-// workspaceTrusted 报告工作区是否受信（spec 规则 53）：ssh:// 目标是
+// workspaceTrusted 报告工作区是否受信（spec 规则 54）：ssh:// 目标是
 // 用户显式拨号的远端——视为授信；本地路径查授信表。
 func (s *AgentService) workspaceTrusted(workspace string) bool {
 	if strings.HasPrefix(workspace, "ssh://") {
@@ -1174,7 +1218,7 @@ func (s *AgentService) TrustSession(sessionID, via string) error {
 }
 
 // RevokeWorkspace 撤销授信（在跑会话的项目规则即时清空——授信回退
-// 生效，spec 规则 53）。
+// 生效，spec 规则 54）。
 func (s *AgentService) RevokeWorkspace(workspace string) error {
 	if err := s.trustStore.Revoke(workspace); err != nil {
 		return err
@@ -1211,7 +1255,7 @@ const skillsBaseDir = ".zgo/skills"
 func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 	ws := s.workspaceFor(sessionID, workspace)
 	var roots []skills.Root
-	// 信任门（spec 规则 53）：未授信的本地工作区不带其技能层（提示
+	// 信任门（spec 规则 54）：未授信的本地工作区不带其技能层（提示
 	// 注入面）；全局层不受影响。
 	if !ws.IsRemote() && !s.workspaceTrusted(workspace) {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -1246,7 +1290,7 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 // 同一根源——工作区层经 openWorkspace 解析目标，远程走网线）。
 func (s *AgentService) Skills(workspace string) skills.Outcome {
 	if !s.workspaceTrusted(workspace) {
-		// 信任门与 skillRoots 同款（spec 规则 53）：列表面不显示未
+		// 信任门与 skillRoots 同款（spec 规则 54）：列表面不显示未
 		// 授信工作区的技能层。
 		var roots []skills.Root
 		if home, err := os.UserHomeDir(); err == nil {
@@ -1300,6 +1344,80 @@ func (f remoteSkillsFS) ReadDir(dir string) ([]skills.DirEntry, error) {
 		out[i] = skills.DirEntry{Name: e.Name, IsDir: e.IsDir}
 	}
 	return out, nil
+}
+
+// agentsBaseDir 是工作区内的子代理定义根（相对形态，远端同享）。
+const agentsBaseDir = ".zgo/agents"
+
+// agentRoots 返回子代理定义发现根（工作区在前——同名工作区覆盖全局，
+// 与技能同约定）：工作区 .zgo/agents（远程经网线）+ 全局 ~/.zgo/agents
+// （本地）。每次调用重新取 workspaceFor（拨号缓存），定义增删即时生效。
+func (s *AgentService) agentRoots(sessionID, workspace string) []agents.Root {
+	ws := s.workspaceFor(sessionID, workspace)
+	var roots []agents.Root
+	if ws.IsRemote() {
+		roots = append(roots, agents.Root{
+			Base: agentsBaseDir, Scope: agents.ScopeProject,
+			FS: remoteAgentsFS{ws.Remote},
+		})
+	} else {
+		roots = append(roots, agents.Root{
+			Base:  filepath.Join(ws.Root, filepath.FromSlash(agentsBaseDir)),
+			Scope: agents.ScopeProject, FS: agents.LocalFS{},
+		})
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, agents.Root{
+			Base:  filepath.Join(home, ".zgo", "agents"),
+			Scope: agents.ScopeUser, FS: agents.LocalFS{},
+		})
+	}
+	return roots
+}
+
+// remoteAgentsFS 把 RemoteFS 适配为 agents.FS（与 remoteSkillsFS 同型）。
+type remoteAgentsFS struct{ r tools.RemoteFS }
+
+// Join implements agents.FS.
+func (f remoteAgentsFS) Join(parts ...string) string { return path.Join(parts...) }
+
+// ReadFile implements agents.FS.
+func (f remoteAgentsFS) ReadFile(name string) ([]byte, error) { return f.r.ReadFile(name) }
+
+// ReadDir implements agents.FS.
+func (f remoteAgentsFS) ReadDir(dir string) ([]agents.DirEntry, error) {
+	es, err := f.r.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]agents.DirEntry, len(es))
+	for i, e := range es {
+		out[i] = agents.DirEntry{Name: e.Name, IsDir: e.IsDir}
+	}
+	return out, nil
+}
+
+// subagentToolVocab 是子代理定义白名单的封闭词表（spec 规则 51）：委派
+// 工具（task/dispatch/agent 族/workflow）与 bash 不在内——防嵌套递归与
+// 直通执行；词表外的白名单名字忽略。
+var subagentToolVocab = map[string]bool{
+	"read": true, "grep": true, "glob": true, "ls": true,
+	"edit": true, "write": true, "patch": true, "todo": true,
+}
+
+// filterToolsByName 按白名单过滤候选池（只收窄：白名单 ∩ 词表）。
+func filterToolsByName(pool []agent.Tool, names []string) []agent.Tool {
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	var out []agent.Tool
+	for _, t := range pool {
+		if subagentToolVocab[t.Name()] && want[t.Name()] {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // execWorkflow 是 workflow 工具的执行面（spec 规则 48）：解析三种调用
@@ -1937,7 +2055,7 @@ const commandCapRunes = 60 << 10
 func (s *AgentService) CustomCommands(workspace string) []CustomCommand {
 	out := map[string]string{}
 	// 全局先入，工作区覆盖（未授信的本地工作区不带工作区层——提示
-	// 注入面，spec 规则 53）。
+	// 注入面，spec 规则 54）。
 	if home, err := os.UserHomeDir(); err == nil {
 		loadCommandsDir(out, filepath.Join(home, ".zgo", "commands"), nil)
 	}
