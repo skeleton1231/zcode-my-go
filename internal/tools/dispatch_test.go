@@ -11,7 +11,7 @@ import (
 
 func TestDispatchCollectsInOrder(t *testing.T) {
 	var seen []string
-	tool := NewDispatch(func(_ context.Context, prompts []string) []agent.SubtaskResult {
+	tool := NewDispatch(func(_ context.Context, prompts []string, _ string) []agent.SubtaskResult {
 		out := make([]agent.SubtaskResult, len(prompts))
 		for i, p := range prompts {
 			seen = append(seen, p)
@@ -55,7 +55,7 @@ func TestDispatchValidation(t *testing.T) {
 // 4 份无限长回答直接拼接，一次性进主对话上下文）。
 func TestDispatchOutputCapped(t *testing.T) {
 	big := strings.Repeat("报", 200*1024) // ~400KB/份
-	tool := NewDispatch(func(_ context.Context, prompts []string) []agent.SubtaskResult {
+	tool := NewDispatch(func(_ context.Context, prompts []string, _ string) []agent.SubtaskResult {
 		out := make([]agent.SubtaskResult, len(prompts))
 		for i := range prompts {
 			out[i] = agent.SubtaskResult{Text: big, Turns: 2}
@@ -69,5 +69,27 @@ func TestDispatchOutputCapped(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "bytes truncated") {
 		t.Fatal("truncation marker missing")
+	}
+}
+
+// TestDispatchAgentParam 验证 agent 参数整批透传（spec 规则 51）。
+func TestDispatchAgentParam(t *testing.T) {
+	var gotName string
+	tool := NewDispatch(func(_ context.Context, prompts []string, agentName string) []agent.SubtaskResult {
+		gotName = agentName
+		out := make([]agent.SubtaskResult, len(prompts))
+		for i := range prompts {
+			out[i] = agent.SubtaskResult{Text: "ok"}
+		}
+		return out
+	})
+	res := tool.Execute(context.Background(), json.RawMessage(
+		`{"prompts":["a","b"],"agent":"reviewer"}`))
+	if res.IsError || gotName != "reviewer" {
+		t.Fatalf("agent passthrough: name=%q res=%+v", gotName, res)
+	}
+	if res := tool.Execute(context.Background(), json.RawMessage(
+		`{"prompts":["a","b"],"agent":"../etc"}`)); !res.IsError {
+		t.Fatal("path-like agent name accepted")
 	}
 }

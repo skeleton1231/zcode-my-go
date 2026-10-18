@@ -599,7 +599,7 @@ func mcpReadResource(env *Env, target string) string {
 }
 
 // wrapResource 把资源文本并入可发送消息：「资源 <uri>：」+ 动态围栏
-//（issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
+// （issue #178：Markdown 资源含行首裸 ``` 会破固定围栏——与导出/stdin/
 // @ 引用同一 FenceFor 方案）。
 func wrapResource(uri, text string) string {
 	fence := export.FenceFor(text)

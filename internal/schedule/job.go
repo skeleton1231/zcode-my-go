@@ -173,9 +173,9 @@ func (st *Store) SetEnabled(id string, on bool) (bool, error) {
 // Scheduler fires due jobs on a minute tick. Results are recorded back to
 // the store; one job never overlaps itself (the run is skipped and noted).
 type Scheduler struct {
-	store  *Store
-	runner Runner
-	now    func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
+	store   *Store
+	runner  Runner
+	now     func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
 	clockMu sync.Mutex
 
 	mu      sync.Mutex
@@ -245,10 +245,13 @@ func (s *Scheduler) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 		<-s.stopped
-		// 排空在飞的 fire（issue #134）：record 落盘完成后才返回，调用
-		// 方（应用退出、测试清理）随即关 store/删 TempDir 不再竞争。
-		s.inflight.Wait()
 	}
+	// 排空在飞的 fire（issue #134）：record 落盘完成后才返回，调用方
+	// （应用退出、测试清理）随即关 store/删 TempDir 不再竞争。未 Start
+	// 只 tick 的用法同样排空——CI 上 TestSchedulerHotReloads 的 TempDir
+	// 清理与晚到的 record 写入竞态（unlinkat directory not empty）即
+	// 此路径。
+	s.inflight.Wait()
 }
 
 // tick re-reads the store（热重载）and fires everything due.

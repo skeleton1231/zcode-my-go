@@ -330,6 +330,40 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
+50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+   `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
+   合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
+   本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop
+   {id}` 停止（终态保持可读、结论为空）。注册表会话作用域（tools.
+   States.Agents）：ctx 派生自注册表根而非工具调用——不随工具返回取
+   消；DeleteSession/服务 Close 全停（不留僵尸循环）。嵌套循环的
+   provider 与工具面与主循环同源：e2e 注入（UseProviderForTesting）
+   经持锁快照进入子任务；ssh:// 会话的 task/dispatch/workflow/后台
+   agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
+   地工具面，远程嵌套循环读的是本地磁盘）。
+
+51. 自定义子代理定义（issue #225）：子代理 persona 用户可编程。定义
+   层 internal/agents——两层平铺 markdown：工作区 `.zgo/agents/*.md` +
+   用户家 `~/.zgo/agents/*.md`（同名工作区优先，与技能/命令同约定）；
+   frontmatter：`name`（缺省取文件名主干）、`description`（路由依据，
+   必填、≤1K 字符）、`tools`（逗号分隔白名单，取自子代理工具词表
+   read/grep/glob/ls/edit/write/patch/todo；空即只读族，对齐现状
+   SubtaskSystem）；正文即该子代理的系统提示（persona）。`task`/
+   `dispatch` 增可选 `agent` 参数：命中则以定义 persona 替换
+   SubtaskSystem、工具面按白名单从会话工具集选取（edit 族仍过主权限
+   门——白名单只收窄不放宽，未列出的名字忽略）；未知名报错列出可用
+   项自纠。主系统提示注入可用 agents 清单（name + description 一行
+   式，对齐技能注入）。发现读上限 64KB、persona 载入上限 100KB（超限
+   截断并标注），描述校验 1K——与注入家族同一套约束。
+
+51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+   对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
+   后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
+   绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
+   RunSubtaskSeeded（prior 为空即新任务、非空即续跑，历史拷贝隔离）；
+   注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
+   有一个生效）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
