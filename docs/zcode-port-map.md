@@ -156,6 +156,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    message_end/result，字段名稳定；args 原始 JSON 内嵌、畸形降级字符
    串），流式细节（message_start 等）不外发；错误与用量提示仍走
    stderr。脚本/管道（cron、编辑器集成）可稳定消费。
+**导出携带图片附件**（spec desktop-shell 规则 22）：用户消息的图片
+   块（📎 与 @ 引用成块）HTML 导出内嵌 data URI img、Markdown 导出
+   data URI 图片链接——自包含分享物不依赖外部文件；非 image/* 媒体或
+   空数据跳过（导出不因坏块失败）。此前图片块在两种导出里被静默丢弃。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

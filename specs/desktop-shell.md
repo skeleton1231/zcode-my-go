@@ -84,6 +84,10 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 21. 任务导航（ZCode task-navigation）：Ctrl+↑/↓ 在用户回合间跳转——跳离
    末尾停 FollowEnd，目标回合居中；边界不动；搜索过滤下沿匹配行跳转；
    切换会话重置定位。
+22. 导出携带图片附件：用户消息中的图片块（📎 附件与 @ 引用成块的图）
+   在 HTML 导出内嵌为 data URI 的 img、Markdown 导出为 data URI 图片
+   链接——自包含分享物不依赖外部文件；非 image/* 媒体或空数据跳过
+   （导出不因坏块失败）。
 ## 状态所有者
 
 | 状态     | 所有者           | 说明                              |
