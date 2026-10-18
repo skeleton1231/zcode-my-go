@@ -150,6 +150,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    resolveResume——print 携带全部历史发起新回合、REPL 提示恢复行、TUI
    回放既有转录（replayHistory：用户回合登记 Ctrl+↑/↓ 导航锚点、恢复
    行提示会话与标题），恢复会话沿用其自身工作区。
+**层级项目上下文**（ZCode context-hierarchy）：~/.zgo/ZGO.md 用户全局
+   + 自工作区向上到 git 顶（真祖先才回溯——HOME 即仓库的机器上退单层）
+   每层第一个命中的上下文文件（ZGO/AGENTS/CLAUDE），浅→深拼接、8KB
+   rune 安全封顶；远程工作区经 RemoteFS 根相对读根层（修复远程会话静
+   疑丢失项目上下文）；上下文入稳定缓存前缀。Wiring.System 携带
+   sessionID 以解析会话工作区。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

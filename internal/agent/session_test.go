@@ -15,7 +15,7 @@ func wire(m *Manager) {
 	m.Wire(Wiring{
 		Provider: func() ai.Provider { return failProvider{msg: "no provider in tests"} },
 		Model:    func() string { return "fake-model" },
-		System:   func(string) string { return "system prompt" },
+		System:   func(string, string) string { return "system prompt" },
 	})
 }
 
@@ -82,7 +82,7 @@ func TestChatGuardsDoubleRun(t *testing.T) {
 	m.Wire(Wiring{
 		Provider: func() ai.Provider { return blockProvider{until: blocking} },
 		Model:    func() string { return "m" },
-		System:   func(string) string { return "s" },
+		System:   func(string, string) string { return "s" },
 	})
 
 	done := make(chan error, 1)
@@ -112,7 +112,7 @@ func TestAbortEndsRun(t *testing.T) {
 	m.Wire(Wiring{
 		Provider: func() ai.Provider { return blockProvider{until: blocking} },
 		Model:    func() string { return "m" },
-		System:   func(string) string { return "s" },
+		System:   func(string, string) string { return "s" },
 	})
 
 	var events []Event
