@@ -28,16 +28,16 @@ func TestIgnoreListMatch(t *testing.T) {
 		isDir  bool
 		ignore bool
 	}{
-		{"vendor", true, true},          // 目录限定命中
-		{"vendor", false, false},        // 文件名 vendor 不受目录限定
-		{"a/vendor", true, true},        // 非锚定目录名任意层命中
-		{"x/y.log", false, true},        // 通配命中
-		{"keep.log", false, false},      // 反选后命中者胜
-		{"sub/keep.log", false, false},  // 反选任意层
-		{"rootonly.txt", false, true},   // 锚定命中
+		{"vendor", true, true},           // 目录限定命中
+		{"vendor", false, false},         // 文件名 vendor 不受目录限定
+		{"a/vendor", true, true},         // 非锚定目录名任意层命中
+		{"x/y.log", false, true},         // 通配命中
+		{"keep.log", false, false},       // 反选后命中者胜
+		{"sub/keep.log", false, false},   // 反选任意层
+		{"rootonly.txt", false, true},    // 锚定命中
 		{"a/rootonly.txt", false, false}, // 锚定不匹配子层
-		{"docs/build", true, true},      // 带斜杠按根相对
-		{"src/docs/build", true, false}, // 带斜杠不匹配任意层
+		{"docs/build", true, true},       // 带斜杠按根相对
+		{"src/docs/build", true, false},  // 带斜杠不匹配任意层
 		{"main.go", false, false},
 	}
 	for _, c := range cases {

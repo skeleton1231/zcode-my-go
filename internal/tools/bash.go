@@ -303,10 +303,10 @@ type localBgProcess struct {
 	out io.ReadCloser
 }
 
-func (l localBgProcess) Start() error             { return l.cmd.Start() }
-func (l localBgProcess) KillTree() error          { return killTree(l.cmd) }
-func (l localBgProcess) Wait() error              { return l.cmd.Wait() }
-func (l localBgProcess) Stdout() io.ReadCloser    { return l.out }
+func (l localBgProcess) Start() error          { return l.cmd.Start() }
+func (l localBgProcess) KillTree() error       { return killTree(l.cmd) }
+func (l localBgProcess) Wait() error           { return l.cmd.Wait() }
+func (l localBgProcess) Stdout() io.ReadCloser { return l.out }
 
 // jobWriter feeds a job's output buffer from an io.Copy.
 type jobWriter struct{ job *Job }

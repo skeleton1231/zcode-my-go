@@ -330,6 +330,17 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
+   （规则 50/51 由 pending 的后台子代理 PR 预留。）
+
+52. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
+   本层抽取——词法级 stream 段收集 + FlateDecode 解压 + Tj/TJ/'/" 文
+   本算子（Td/TD/T* 换行启发），字面串（转义/八进制/嵌套括号）与十六
+   进制串（UTF-16BE BOM 检测）解码。有界：单流 16MB、产出 256KB rune
+   截断标注。**可读率闸门**：产出可打印字符占比 <85% 即报错（CID 编
+   码无 ToUnicode 的中文 PDF 常见）——宁报错并建议 bash 转换，不静默
+   产乱码；无文本层（扫描件/图片型）同样报错。SSH 工作区经网线读字
+   节同构。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
