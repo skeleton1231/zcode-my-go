@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -194,11 +195,20 @@ func TestTrustStoreRoundtrip(t *testing.T) {
 	if s.IsTrusted("D:/ws") {
 		t.Fatal("empty store trusted")
 	}
-	if err := s.Grant("d:\\ws", "cli"); err != nil {
-		t.Fatal(err)
-	}
-	if !s.IsTrusted("D:/ws") || !s.IsTrusted("d:\\ws") {
-		t.Fatal("drive-letter normalization failed")
+	if runtime.GOOS == "windows" {
+		if err := s.Grant("d:\\ws", "cli"); err != nil {
+			t.Fatal(err)
+		}
+		if !s.IsTrusted("D:/ws") || !s.IsTrusted("d:\\ws") {
+			t.Fatal("drive-letter normalization failed")
+		}
+	} else {
+		if err := s.Grant("D:/ws", "cli"); err != nil {
+			t.Fatal(err)
+		}
+		if !s.IsTrusted("D:/ws") {
+			t.Fatal("plain path key failed")
+		}
 	}
 	if err := s.Grant("D:/ws", "slash"); err != nil {
 		t.Fatal(err)
@@ -207,7 +217,11 @@ func TestTrustStoreRoundtrip(t *testing.T) {
 	if len(list) != 1 || list[0].Via != "slash" {
 		t.Fatalf("list = %+v", list)
 	}
-	if err := s.Revoke("D:/WS"); err != nil {
+	revokeForm := "D:/WS"
+	if runtime.GOOS != "windows" {
+		revokeForm = "D:/ws"
+	}
+	if err := s.Revoke(revokeForm); err != nil {
 		t.Fatal(err)
 	}
 	if s.IsTrusted("D:/ws") {
