@@ -163,6 +163,11 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    恢复后重发）；`/resend <新文本>` 编辑重发（同语义、替换文本）。两
    者经表面 Rerun 钩子走既有 EditAndResend（运行守卫先于文件恢复）；
    无历史回合/运行中/钩子缺失各有明确提示；事件流按常规渲染。
+34. diff 持久化与导出：tool-result 块携带 Diff（edit/write/patch
+   等改动类工具的统一 diff，随转录 JSONL 持久化——此前只在事件流上
+   存在，重载/导出即丢）；HTML 导出以彩色行渲染（+绿/-红）、
+   Markdown 以 diff 围栏（```diff）呈现于工具输出之后；HTML 导出同
+   时补齐 thinking 块（<details> 折叠，与 Markdown 对称）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

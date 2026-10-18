@@ -80,3 +80,30 @@ func TestHTMLExportEmbedsImages(t *testing.T) {
 		t.Fatal("user text lost")
 	}
 }
+
+// TestHTMLExportThinkingAndDiff 验证导出完整性（spec 规则 34）：
+// thinking 块折叠呈现、tool-result 携带的 diff 彩色渲染（+绿/-红）。
+func TestHTMLExportThinkingAndDiff(t *testing.T) {
+	msgs := []ai.Message{
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "改一下"}}},
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{
+			{Kind: ai.BlockThinking, Text: "先看文件"},
+			{Kind: ai.BlockToolCall, ID: "c1", Name: "edit", Arguments: `{"path":"a"}`},
+		}},
+		{Role: ai.RoleToolResult, Blocks: []ai.Block{
+			{Kind: ai.BlockToolResult, ToolCallID: "c1", Text: "edited",
+				Diff: "--- a\n+++ b\n-old\n+new\n ctx"},
+		}},
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "完成"}}},
+	}
+	got := HTML(msgs, "t", "m", "/w")
+	if !strings.Contains(got, "思考过程") || !strings.Contains(got, "先看文件") {
+		t.Fatalf("thinking block missing:\n%.600s", got)
+	}
+	if !strings.Contains(got, `class="add">+new`) || !strings.Contains(got, `class="del">-old`) {
+		t.Fatalf("diff coloring missing:\n%.800s", got)
+	}
+	if !strings.Contains(got, "ctx") { // 上下文行不着色
+		t.Fatalf("context line lost:\n%.800s", got)
+	}
+}

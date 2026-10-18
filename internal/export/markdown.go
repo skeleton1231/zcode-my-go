@@ -97,6 +97,10 @@ func Markdown(messages []ai.Message, title, model, workspace string) string {
 				var out strings.Builder
 				out.WriteString(FenceFor(blk.Text) + "text\n" +
 					strings.TrimRight(blk.Text, "\n") + "\n" + FenceFor(blk.Text) + "\n\n")
+				// 改动类工具的 diff 以 ```diff 围栏呈现（spec 规则 34）。
+				if blk.Diff != "" {
+					out.WriteString("```diff\n" + strings.TrimRight(blk.Diff, "\n") + "\n```\n\n")
+				}
 				pendingTools = append(pendingTools,
 					"**"+name+"**"+mark+"：\n\n"+out.String())
 			}

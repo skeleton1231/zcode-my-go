@@ -299,7 +299,7 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 		result = l.execute(ctx, turn, msg, call)
 	}
 	return ai.Block{Kind: ai.BlockToolResult, ToolCallID: call.ID,
-		Text: result.Content, IsError: result.IsError}
+		Text: result.Content, IsError: result.IsError, Diff: result.Diff}
 }
 
 // executeBatchParallel overlaps the batch's execution: each tool emits its

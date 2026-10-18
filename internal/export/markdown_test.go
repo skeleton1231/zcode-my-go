@@ -106,3 +106,20 @@ func TestMarkdownExportEmbedsImages(t *testing.T) {
 		t.Fatalf("empty block emitted: %q", got)
 	}
 }
+
+// TestMarkdownExportDiff 验证工具 diff 的 ```diff 围栏（spec 规则 34）。
+func TestMarkdownExportDiff(t *testing.T) {
+	msgs := []ai.Message{
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{
+			{Kind: ai.BlockToolCall, ID: "c1", Name: "write", Arguments: "{}"},
+		}},
+		{Role: ai.RoleToolResult, Blocks: []ai.Block{
+			{Kind: ai.BlockToolResult, ToolCallID: "c1", Text: "wrote",
+				Diff: "+hello\n-world"},
+		}},
+	}
+	got := Markdown(msgs, "t", "m", "/w")
+	if !strings.Contains(got, "```diff\n+hello\n-world\n```") {
+		t.Fatalf("diff fence missing:\n%s", got)
+	}
+}

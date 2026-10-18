@@ -208,6 +208,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    文件恢复，检查点同恢复）；TUI rerunChat 与 REPL 闭包装，事件流照常
    渲染；回滚三面（⟲/RewindTo//rewind）+ 重做三面（桌面编辑重发/终端
    retry+resend）至此对齐。
+**diff 持久化与导出**（spec 规则 34）：tool-result 块携带 Diff 随
+   转录 JSONL 持久化（此前只在事件流上存在，重载即丢）；HTML 导出彩
+   色 diff（+绿/-红，context 不着色）+ 补齐 thinking 折叠（与 Markdown
+   对称）；Markdown 导出 ```diff 围栏。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
