@@ -354,3 +354,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    50 条）；workflow 工具 {steps[, saveAs]}/{run: 名}/{resume: 运行
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
+
+**read 读 PDF**（ZCode read-pdf 的落地，spec 规则 52）：internal/
+   pdftext——词法级 stream 收集 + Flate 解压 + Tj/TJ 文本算子（换行启
+   发）、字面/十六进制串（UTF-16BE BOM）；16MB/256KB 有界；可读率
+   闸门（<85% 报错——CID 无 ToUnicode 宁失败不乱码）。
