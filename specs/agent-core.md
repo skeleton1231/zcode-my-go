@@ -342,7 +342,9 @@ dc907a4 (feat: glob and grep honor .gitignore)
    径：`/trust`（当前会话工作区，即时重载项目规则——在跑会话经
    ApplyProjectRules 生效）、`zgo trust <路径>`（print/CI 预授信）、
    `zgo trust --list / --revoke <路径>`（撤销即时清空在跑会话的项
-   目规则）。未授信时终端三表面在会话建立时打 stderr 提示。
+   目规则）。未授信时终端三表面在会话建立时打 stderr 提示；桌面首开
+   未授信工作区弹信任确认（路径 + 风险说明，「信任并加载」经服务授
+   信落表、「暂不」仅关窗不授信）。
 
 ## 状态所有者
 
