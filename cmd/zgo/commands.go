@@ -15,8 +15,8 @@ type commandEnv struct {
 	info      *agent.SessionInfo
 	workspace string
 	out       func(string)
-	attach    *attachments // 终端表面的 /attach 状态（可空）
-	send      func(string)  // /mcp 展开后直接发送（可空即不支持）
+	attach    *attachments       // 终端表面的 /attach 状态（可空）
+	send      func(string)       // /mcp 展开后直接发送（可空即不支持）
 	rerun     func(string) error // /retry、/resend 的 EditAndResend 包装（可空即不支持）
 }
 

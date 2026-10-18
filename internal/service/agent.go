@@ -35,6 +35,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 	"github.com/skeleton1231/zcode-my-go/internal/usage"
+	"github.com/skeleton1231/zcode-my-go/internal/workflow"
 )
 
 // DefaultBaseURL is the Anthropic Messages API; GLM and other compatible
@@ -83,10 +84,11 @@ type AgentService struct {
 	refreshMu        sync.Mutex                 // OAuth 刷新 single-flight（issue #136）
 	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
 	autoTitleOn      bool                       // 首回合后自动命名（默认开）
-	day             *usage.Day                 // 当日 token 记账（spec 规则 35）
+	day              *usage.Day                 // 当日 token 记账（spec 规则 35）
 	titleWG          sync.WaitGroup             // 命名 goroutine 的收束（Close 等待）
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
+	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -99,6 +101,7 @@ func New(dataDir string) (*AgentService, error) {
 		wsCache:     map[string]tools.Workspace{},
 		wsClose:     map[string]func(){},
 		autoTitleOn: true,
+		wfStore:     workflow.NewStore(dataDir),
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -260,11 +263,21 @@ func (s *AgentService) rewire() {
 				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
 				tools.NewWebFetchTool(tools.WebFetcher))
-			wfProvider := func() ai.Provider { return s.providerFor(cfg) }
+			wfProvider := func() ai.Provider {
+				if o := s.providerSnapshot(); o != nil {
+					return o()
+				}
+				return s.providerFor(cfg)
+			}
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
 			wfAsk := s.ask
-			dispProvider := func() ai.Provider { return s.providerFor(cfg) }
+			dispProvider := func() ai.Provider {
+				if o := s.providerSnapshot(); o != nil {
+					return o()
+				}
+				return s.providerFor(cfg)
+			}
 			dispModel := cfg.Model
 			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string) []agent.SubtaskResult {
 				return agent.RunSubtasks(ctx, agent.SubtaskConfig{
@@ -274,16 +287,20 @@ func (s *AgentService) rewire() {
 					Tools:    tools.ReadOnly(workspace),
 				}, prompts)
 			}))
-			all = append(all, tools.NewWorkflow(func(ctx context.Context, steps []agent.WorkflowStep) ([]agent.StepResult, error) {
-				return agent.RunWorkflow(ctx, agent.WorkflowConfig{
-					Provider:    wfProvider(),
-					Model:       wfModel,
-					System:      prompt.SystemFS(workspace, contextRead),
-					ReadOnly:    tools.ReadOnly(workspace),
-					Editable:    tools.AllW(ws, state, question),
-					Permissions: wfPerms,
-					Ask:         wfAsk,
-				}, steps)
+			all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
+				return s.execWorkflow(ctx, sessionID, workspace, req,
+					func(ctx context.Context, steps []agent.WorkflowStep, prefill map[int]agent.StepResult) ([]agent.StepResult, error) {
+						return agent.RunWorkflow(ctx, agent.WorkflowConfig{
+							Provider:    wfProvider(),
+							Model:       wfModel,
+							System:      prompt.SystemFS(workspace, contextRead),
+							ReadOnly:    tools.ReadOnly(workspace),
+							Editable:    tools.AllW(ws, state, question),
+							Permissions: wfPerms,
+							Ask:         wfAsk,
+							Prefill:     prefill,
+						}, steps)
+					})
 			}))
 			for _, server := range s.mcpServers() {
 				all = append(all, mcp.AgentTools(server)...)
@@ -348,6 +365,16 @@ func thinkingLevelOf(v string) ai.ThinkingLevel {
 // 互斥 + 锁内重读（issue #136：并行子代理/DAG 同时撞过期会多路 Refresh
 // 同一 refresh_token，服务端轮换后其余路 invalid_grant 回退旧 access
 // token → 401 且不重试）。
+// providerSnapshot 持锁快照 e2e 的 provider 注入（UseProviderForTesting）：
+// 工具内嵌套循环（workflow/dispatch 子任务）必须与主循环同一 provider
+// 源——直连 providerFor 会让注入对子任务不生效，真实客户端带着空 key
+// 出网（首个 workflow e2e 抓到）。nil 即无注入。
+func (s *AgentService) providerSnapshot() func() ai.Provider {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.providerOverride
+}
+
 func (s *AgentService) providerFor(cfg settings) ai.Provider {
 	switch cfg.API {
 	case "openai":
@@ -1029,7 +1056,7 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 		})
 	} else {
 		roots = append(roots, skills.Root{
-			Base: filepath.Join(ws.Root, filepath.FromSlash(skillsBaseDir)),
+			Base:  filepath.Join(ws.Root, filepath.FromSlash(skillsBaseDir)),
 			Scope: skills.ScopeProject, FS: skills.LocalFS{},
 		})
 	}
@@ -1060,7 +1087,7 @@ func (s *AgentService) Skills(workspace string) skills.Outcome {
 	roots := []skills.Root{project}
 	if home, err := os.UserHomeDir(); err == nil {
 		roots = append(roots, skills.Root{
-			Base: filepath.Join(home, ".zgo", "skills"),
+			Base:  filepath.Join(home, ".zgo", "skills"),
 			Scope: skills.ScopeUser, FS: skills.LocalFS{},
 		})
 	}
@@ -1088,6 +1115,85 @@ func (f remoteSkillsFS) ReadDir(dir string) ([]skills.DirEntry, error) {
 		out[i] = skills.DirEntry{Name: e.Name, IsDir: e.IsDir}
 	}
 	return out, nil
+}
+
+// execWorkflow 是 workflow 工具的执行面（spec 规则 48）：解析三种调用
+// 形态（临场步骤/按名/续跑），开跑即落盘运行记录，终态回填；saveAs 在
+// 校验通过后把定义持久化（运行失败不影响保存——定义本身仍有效）。
+func (s *AgentService) execWorkflow(ctx context.Context, sessionID, workspace string,
+	req tools.WorkflowRequest, run func(ctx context.Context, steps []agent.WorkflowStep, prefill map[int]agent.StepResult) ([]agent.StepResult, error)) (tools.WorkflowOutcome, error) {
+	var outcome tools.WorkflowOutcome
+	steps := req.Steps
+	name := ""
+	var prefill map[int]agent.StepResult
+	switch {
+	case len(req.Steps) > 0:
+		if _, err := agent.ValidateWorkflowSteps(req.Steps); err != nil {
+			return outcome, err
+		}
+	case req.Run != "":
+		def, err := s.wfStore.Get(req.Run)
+		if err != nil {
+			return outcome, err
+		}
+		steps, name = def.Steps, def.Name
+	case req.Resume != "":
+		prev, err := s.wfStore.GetRun(req.Resume)
+		if err != nil {
+			return outcome, err
+		}
+		if prev.Status == "running" || prev.Status == "completed" {
+			if prev.Status == "completed" {
+				return outcome, fmt.Errorf("运行 %s 已完成，无需续跑", req.Resume)
+			}
+		}
+		if prev.Name != "" {
+			if def, err := s.wfStore.Get(prev.Name); err == nil {
+				steps, name = def.Steps, def.Name // 定义优先（记录里的步骤表无 After 语义漂移防护）
+			} else {
+				steps = prev.StepsOf()
+			}
+		} else {
+			steps = prev.StepsOf()
+		}
+		prefill = prev.PrefillOf(steps)
+	default:
+		return outcome, fmt.Errorf("workflow needs steps, run or resume")
+	}
+	if _, err := agent.ValidateWorkflowSteps(steps); err != nil {
+		return outcome, err
+	}
+	rec, err := s.wfStore.StartRun(name, workspace, steps)
+	if err != nil {
+		return outcome, err
+	}
+	outcome.RunID = rec.ID
+	results, runErr := run(ctx, steps, prefill)
+	status := "completed"
+	if runErr != nil {
+		status = "failed"
+	}
+	_ = s.wfStore.FinishRun(rec, results, status, errText(runErr))
+	outcome.Results = results
+	if req.SaveAs != "" {
+		if err := s.wfStore.Save(workflow.Definition{Name: req.SaveAs, Steps: steps}); err != nil {
+			runErr = fmt.Errorf("%v（工作流已执行，但保存失败）", err)
+		} else {
+			outcome.SavedAs = req.SaveAs
+		}
+	}
+	return outcome, runErr
+}
+
+// WorkflowStore 暴露工作流存储面（CLI 只读视图用）。
+func (s *AgentService) WorkflowStore() *workflow.Store { return s.wfStore }
+
+// errText 安全取错误文本（nil → ""）。
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // memoryFor returns (creating) the workspace's memory store.

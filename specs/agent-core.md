@@ -309,6 +309,19 @@ dc907a4 (feat: glob and grep honor .gitignore)
    到摘要。SSH 工作区经网线读字节，同构。
 1d468ec (feat: read tool returns images — multimodal tool results)
 
+48. 工作流持久化与复用（ZCode saved-workflows / workflow-runs 的落
+   地）：internal/workflow——定义存 dataDir/workflows/<名>.json（名限
+   小写字母/数字/连字符，1..64；原子写；校验通过才保存），运行记录存
+   dataDir/workflow-runs/<id>.json（开跑即落盘 running——崩溃后未完
+   记录可续跑；终态回填每步结果/完成标记/错误；保留最近 50 条，开跑
+   与收尾都裁）。workflow 工具三形态：{steps[, saveAs]} 临场执行可命
+   名保存（保存不因运行失败而废——定义仍有效）；{run: 名} 从存储加
+   载定义执行；{resume: 运行 ID} 续跑——已完成步骤（成功且定义未漂
+   移）注入既往结果跳过执行，下游照常看到其文本（顺序模式按位、
+   DAG 预置 done 状态；已完成运行拒绝续跑；命名运行的步骤表从定义
+   取、临场运行从记录重建含 after）。zgo workflow list/show/runs 只读
+   运维面。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

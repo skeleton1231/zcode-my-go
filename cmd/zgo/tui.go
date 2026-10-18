@@ -67,15 +67,15 @@ type tuiState struct {
 	turns   []int
 	turnCur int
 
-	plan   []tools.TodoTask     // 任务面板：todo 工具落盘后刷新
-	onPlan   func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
+	plan    []tools.TodoTask        // 任务面板：todo 工具落盘后刷新
+	onPlan  func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
 	onUsage func() string           // 生产读会话累计用量（spec 规则 40），测试注入桩
-	abort  func()                   // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
+	abort   func()                  // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
 
 	// 输入历史（spec 规则 30）：已提交的用户消息；histCur==-1 表示在
 	// 实时输入（离开时的草稿保存在 histDraft）。
 	history   []string
-	think     string                    // 当前回合的思考流缓冲（灰显行）
+	think     string // 当前回合的思考流缓冲（灰显行）
 	histCur   int
 	histDraft []rune
 }
