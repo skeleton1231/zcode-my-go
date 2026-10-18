@@ -39,10 +39,11 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   「总是允许」规则、只读工具自动放行；桌面弹窗或终端 stdin 确认。
 - **上下文压缩**（译自 ZCode compact/）：token 预算阈值自动摘要 + 尾部
   保留，连续失败熔断，也可 `Ctrl+K` 手动压缩。
-- **任务清单与提问**：todo 工具跟踪计划（会话级状态）；ask 工具把只有
-  用户能答的问题送达界面。
+- **任务清单与提问**：todo 工具跟踪计划（会话级状态，桌面任务面板与
+  TUI 顶部计划块同步刷新）；ask 工具把只有用户能答的问题送达界面。
 - **终端三形态**：`zgo -p "任务"` print 模式、行式 REPL（/compact /plan
-  /new）、`zgo -t` 全屏 TUI（ANSI 备用屏 + 流式刷新）。
+  /new /rewind /export /attach）、`zgo -t` 全屏 TUI（ANSI 备用屏 + 流式刷新
+  + 任务面板 + Ctrl+↑/↓ 回合导航）。
 - **多文件补丁**：apply_patch 工具（Add/Update/Delete，上下文唯一匹配）。
 - **长期记忆**：workspace 级记忆跨会话存活，自动注入系统提示。
 - **子代理与工作流**：task 工具派发只读研究；workflow 工具编排多步计划，
@@ -57,8 +58,9 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
 - **SSH 远程工作区**：会话目标 `ssh://user@host:port/path`，read/write/edit/
   bash/grep/glob/ls/patch 全量经 SSH 客户端在远端执行，同样的 path jail。
 - **工作区检查点与回滚**：git 工作区每回合前快照（临时索引，不触碰真实
-  索引），「回滚最近一回合」/编辑重发/重试同时恢复转录与文件（分支与历史
-  不动）。
+  索引），「回滚最近一回合」/任意回合回滚（桌面 ⟲ 回滚到此、终端
+  `/rewind [n]`，撤掉第 n..末轮的文件与转录）/编辑重发/重试同时恢复
+  转录与文件（分支与历史不动）。
 - **diff 全链路**：edit/write/patch 的工具块彩色展示统一 diff；权限确认弹窗
   **批准前预览**待执行改动（试算不落盘）；patch 多文件按段聚合。
 - **多模态输入**：composer 📎 添加图片（三协议 base64/dataURL/inlineData）；
@@ -74,7 +76,7 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
 - **性能**：启动惰性装载会话（只读 meta 行）；Anthropic 前缀缓存三断点，
   命中按缓存计价。
 - **CLI 运维家族**：`zgo cron`（定时任务）、`zgo doctor`（环境诊断）、
-  `zgo sessions`（列表/导出/删除）、`zgo memory`（工作区记忆）、
+  `zgo sessions`（列表/导出/删除/搜索）、`zgo memory`（工作区记忆）、
   `zgo models`（模型目录与校验）。
 - **会话导出即分享**：HTML / Markdown 自包含导出（无上传服务——个人 agent
   的分享物就是导出文件本身）。

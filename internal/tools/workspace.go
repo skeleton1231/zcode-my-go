@@ -5,6 +5,7 @@ package tools
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -251,6 +252,9 @@ func splitPath(p string) []string {
 // the session's target is ssh:// (the tools never dial themselves).
 type RemoteFS interface {
 	Exec(command string) (ExecOutcome, error)
+	// StartBackground 启动不等待完成的远端命令（后台 shell 的远程形
+	// 态）；返回的进程与本地后台同构（tools.BgProcess）。
+	StartBackground(command string) (BgProcess, error)
 	ReadFile(name string) ([]byte, error)
 	WriteFile(name string, data []byte, perm os.FileMode) error
 	ReadDir(name string) ([]DirEntry, error)
@@ -259,6 +263,16 @@ type RemoteFS interface {
 	// ReadLink 报告远程符号链接的目标（远程 jail 的 symlink 复查，
 	// issue #89）；非链接时 isLink 为 false。
 	ReadLink(name string) (target string, isLink bool, err error)
+}
+
+// BgProcess 是后台命令的进程抽象：本地 exec 与远端 SSH 通道同构
+// （remote.BgProcess 结构化实现本接口，不反向依赖）。Stdout 的合并输
+// 出流由调用方排空；Wait 返回后流到达 EOF。
+type BgProcess interface {
+	Start() error
+	KillTree() error
+	Wait() error
+	Stdout() io.ReadCloser
 }
 
 // ExecOutcome mirrors remote.ExecResult without the import.
