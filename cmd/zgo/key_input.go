@@ -21,6 +21,8 @@ const (
 const (
 	seqCtrlUp   = "\x1b[1;5A"
 	seqCtrlDown = "\x1b[1;5B"
+	seqUp       = "\x1b[A"
+	seqDown     = "\x1b[B"
 	seqPageUp   = "\x1b[5~"
 	seqPageDown = "\x1b[6~"
 )
@@ -97,6 +99,10 @@ func (k *keyStream) dispatchNav(s *tuiState, seq string) {
 		s.pageScroll(-1)
 	case seqPageDown:
 		s.pageScroll(1)
+	case seqUp:
+		s.historyMove(-1)
+	case seqDown:
+		s.historyMove(1)
 	}
 }
 
