@@ -342,6 +342,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
    地工具面，远程嵌套循环读的是本地磁盘）。
 
+
 51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
    对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
    后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
