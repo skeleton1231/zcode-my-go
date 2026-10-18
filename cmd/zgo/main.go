@@ -113,6 +113,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "workflow" {
 		os.Exit(runWorkflow(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "eval" {
+		os.Exit(runEval(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "trust" {
 		os.Exit(runTrust(os.Args[2:]))
 	}

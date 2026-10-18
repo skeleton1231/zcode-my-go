@@ -1,0 +1,15 @@
+{
+  "name": "write-read",
+  "description": "写后读回环：write 落盘、read 读回转录",
+  "turns": [
+    {"tool": "write", "args": {"path": "notes.txt", "content": "第一行\n第二行"}},
+    {"tool": "read", "args": {"path": "notes.txt"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "file_contains": {"notes.txt": "第二行"},
+    "transcript_contains": ["第二行"],
+    "no_tool_errors": true,
+    "event_count": {"tool_execution_end": 2}
+  }
+}

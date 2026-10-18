@@ -344,6 +344,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    `zgo trust --list / --revoke <路径>`（撤销即时清空在跑会话的项
    目规则）。未授信时终端三表面在会话建立时打 stderr 提示。
 
+54. 场景评测（`zgo eval`，pi evals 的数据化形态）：用户可写 JSON 场
+   景——种工作区文件（files）、脚本回合（tool+args 或 text，工具真实
+   执行）、四类断言（transcript_contains 含工具结果块 / file_contains
+   / no_tool_errors / event_count）。运行面与 e2e 同构：临时 dataDir +
+   临时工作区（种文件即授信——场景是用户自己写的）+ 脚本 provider +
+   自动放行 asker；关自动命名。目录默认 ./evals 不存在则 ~/.zgo/
+   evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
