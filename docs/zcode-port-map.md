@@ -316,3 +316,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    校验拒绝非法值；budgetDailyTokens 非负；写盘热生效）；SetAPIKey 直
    写不经 SaveSettings（后者对 model 无条件覆盖，组合写会互相抹）。
 
+
+**webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 45）：
+   internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
+   逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
+   IPv4-mapped/NAT64 先还原再判；普通域名不做 DNS 预解析——ZCode 同款
+   取舍）+ 重定向手动逐跳（同主机 www 容忍自动跟随、上限 10；跨主机停
+   在链上报告，跳转目标同过 egress 门）+ 文本类抽取（HTML 剥
+   script/style、标题/链接/列表保形、实体解码；10MB/100K 字符双封顶；
+   错误页带摘录自纠）+ 15 分钟 TTL 缓存（进程级共享）。权限：预批准文
+   档站清单（ZCode 同款，路径前缀防 %2f 绕过）只读放行，其余主机询问。

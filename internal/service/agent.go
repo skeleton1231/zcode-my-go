@@ -252,7 +252,9 @@ func (s *AgentService) rewire() {
 			ws := s.workspaceFor(sessionID, workspace)
 			contextRead := contextReader(ws)
 			all := append(tools.AllW(ws, state, question), task,
-				tools.NewMemoryTool(s.memoryFor(workspace)))
+				tools.NewMemoryTool(s.memoryFor(workspace)),
+				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
+				tools.NewWebFetchTool(tools.WebFetcher))
 			wfProvider := func() ai.Provider { return s.providerFor(cfg) }
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
