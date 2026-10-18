@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pkg/sftp"
 	ssh "golang.org/x/crypto/ssh"
@@ -79,7 +80,14 @@ func (t *firstLineTee) Read(p []byte) (int, error) {
 // Start boots the server on an ephemeral loopback port.
 func Start(t *testing.T) *Server {
 	t.Helper()
-	root := t.TempDir()
+	// 不用 t.TempDir：它的清理是一次性 RemoveAll——被击杀进程的句柄
+	// 释放（以及杀软对刚终止进程的短暂扫描）在 Windows 上有毫秒级尾
+	// 巴，全量负载下真实撞过"目录被占用"。自建目录 + 重试删除兜底。
+	root, err := os.MkdirTemp("", "zgo-remotetest-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { removeWithRetry(root) })
 
 	// Host key.
 	_, hostPriv, err := ed25519.GenerateKey(rand.Reader)
@@ -303,4 +311,27 @@ func indexIn(s, sep string) int {
 		}
 	}
 	return -1
+}
+
+// removeWithRetry 删除测试目录，容忍被击杀进程句柄释放的毫秒级尾巴
+// （最多 5s；仍失败则留给系统临时目录清扫，不判测试失败——被测行为
+// 与目录清理正交）。
+func removeWithRetry(dir string) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := os.RemoveAll(dir)
+		if err == nil || !os.IsExist(err) {
+			if err == nil {
+				return
+			}
+			// Windows 的"文件被占用"以 ERROR_SHARING_VIOLATION 形态
+			// 出现，os.IsExist 不认——按可重试处理直到超时。
+			if time.Now().After(deadline) {
+				return
+			}
+		} else if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

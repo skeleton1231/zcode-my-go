@@ -184,6 +184,9 @@ func (s *AgentService) startMCP() { s.syncMCP() }
 
 // Close shuts down MCP servers and every session's background jobs.
 func (s *AgentService) Close() {
+	// 命名 goroutine 可能在写会话 meta——先等它落地（最长一次 15s 补
+	// 全超时），否则退出竞态会让 TempDir 清理/退出路径看到半写状态。
+	s.titleWG.Wait()
 	// sessionStart 钩子由 Close 收束（spec 规则 24）：外部命令可达 10s
 	// 超时，退出前等它跑完，避免钩子进程活过服务。
 	s.hookWG.Wait()
