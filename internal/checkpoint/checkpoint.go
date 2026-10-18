@@ -61,8 +61,15 @@ func isRepoRoot(git, dir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// Windows 上 git 的 toplevel 可能以正斜杠返回（本机与 runner 的
-	// 版本/形态各异）——归一化到同一分隔符再比大小写。
+	// Windows 上 git 的 toplevel 形态各异：正斜杠、8.3 短名
+	// （RUNNER~1）都与 filepath.Abs 的形态不同——字符串比较必误判
+	// （CI 首跑实测）。os.SameFile 按 volume+file-id 比对，对路径形
+	// 态免疫；stat 失败退回归一化字符串比较。
+	if fa, aerr := os.Stat(abs); aerr == nil {
+		if fb, berr := os.Stat(top); berr == nil {
+			return os.SameFile(fa, fb), nil
+		}
+	}
 	samePath := func(a, b string) bool {
 		return strings.EqualFold(filepath.ToSlash(filepath.Clean(a)),
 			filepath.ToSlash(filepath.Clean(b)))

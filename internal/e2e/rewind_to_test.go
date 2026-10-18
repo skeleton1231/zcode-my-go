@@ -118,6 +118,11 @@ func TestE2ERewindToRefusesWhileRunning(t *testing.T) {
 		t.Fatal("rewind accepted during a run")
 	}
 	h.Svc.Abort(h.SessionID)
+	// 等回合真正收尾：跑动中的 goroutine 还会写会话目录，清理竞态
+	// 会让 TempDir RemoveAll 撞"directory not empty"（CI 首跑实测）。
+	if !waitFor(5*time.Second, func() bool { return !h.Svc.SessionRunning(h.SessionID) }) {
+		t.Fatal("run never ended after abort")
+	}
 }
 
 // TestE2ERewindToPrunedCheckpointAborts: git 仓库里回退到检查点已被保留

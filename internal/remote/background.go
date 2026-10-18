@@ -2,6 +2,7 @@ package remote
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -118,6 +119,11 @@ func (p *BgProcess) Wait() error {
 func (p *BgProcess) KillTree() error {
 	err := p.sess.Close()
 	p.pw.Close()
+	// EOF 是"通道已在关闭中"——击杀目的已达成（Linux 服务器在断开
+	// 竞态下 Close 常回 io.EOF，CI 首跑实测），按成功处理。
+	if err != nil && errors.Is(err, io.EOF) {
+		err = nil
+	}
 	p.mu.Lock()
 	pid := p.pid
 	p.mu.Unlock()

@@ -67,7 +67,9 @@ func TestSessionsListExportRm(t *testing.T) {
 
 	// 前缀导出 Markdown（同一秒创建的两个会话，取到纳秒差异的长度），
 	// 显式 -o 指到临时目录（默认落 CWD，测试不污染仓库）。
-	prefix := ids[1][:len(ids[1])-6]
+	// 完整 id：快时钟下同纳秒创建会得到 Manager 追加的 "-2" 后缀，
+	// 切尾 6 字符的前缀构造随之失真（CI 首跑实测）；前缀解析另有专测。
+	prefix := ids[1]
 	dest := filepath.Join(t.TempDir(), "export.md")
 	code, out = runSessionsCaptured(t, dir, "export", "--md", "-o", dest, prefix)
 	if code != 0 || !strings.Contains(out, "已导出") {
