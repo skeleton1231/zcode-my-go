@@ -52,6 +52,11 @@ func Markdown(messages []ai.Message, title, model, workspace string) string {
 		case ai.RoleUser:
 			flush()
 			b.WriteString("**你**：\n\n" + strings.TrimRight(m.Text(), "\n") + "\n\n")
+			for _, blk := range m.Blocks {
+				if src, ok := imageDataURI(blk); ok {
+					b.WriteString("![图片附件](" + src + ")\n\n")
+				}
+			}
 		case ai.RoleAssistant:
 			flush()
 			for _, blk := range m.Blocks {

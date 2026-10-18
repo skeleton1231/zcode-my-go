@@ -57,3 +57,26 @@ func TestHTMLToolSummaryNames(t *testing.T) {
 		t.Fatal("tool summary lacks name/args")
 	}
 }
+
+// TestHTMLExportEmbedsImages 验证用户图片块内嵌为 data URI（spec
+// desktop-shell 规则 22）：png 附件出现在 img src，非 image/* 媒体跳过。
+func TestHTMLExportEmbedsImages(t *testing.T) {
+	msgs := []ai.Message{{
+		Role: ai.RoleUser,
+		Blocks: []ai.Block{
+			{Kind: ai.BlockText, Text: "看这张图"},
+			{Kind: ai.BlockImage, Media: "image/png", Data: "aWNvbmc="},
+			{Kind: ai.BlockImage, Media: "text/html", Data: "eG1s"}, // 坏媒体跳过
+		},
+	}}
+	got := HTML(msgs, "t", "m", "/w")
+	if !strings.Contains(got, `src="data:image/png;base64,aWNvbmc="`) {
+		t.Fatalf("png data URI missing:\n%s", got)
+	}
+	if strings.Contains(got, "text/html") || strings.Contains(got, "eG1s") {
+		t.Fatal("non-image media leaked into export")
+	}
+	if !strings.Contains(got, "看这张图") {
+		t.Fatal("user text lost")
+	}
+}
