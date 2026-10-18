@@ -238,6 +238,7 @@ func (s *AgentService) rewire() {
 				}, prompt)
 			})
 			ws := s.workspaceFor(sessionID, workspace)
+			contextRead := contextReader(ws)
 			all := append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)))
 			wfProvider := func() ai.Provider { return s.providerFor(cfg) }
@@ -258,7 +259,7 @@ func (s *AgentService) rewire() {
 				return agent.RunWorkflow(ctx, agent.WorkflowConfig{
 					Provider:    wfProvider(),
 					Model:       wfModel,
-					System:      prompt.System(workspace),
+					System:      prompt.SystemFS(workspace, contextRead),
 					ReadOnly:    tools.ReadOnly(workspace),
 					Editable:    tools.AllW(ws, state, question),
 					Permissions: wfPerms,
@@ -270,8 +271,8 @@ func (s *AgentService) rewire() {
 			}
 			return all
 		},
-		System: func(workspace string) string {
-			return prompt.System(workspace) + s.memoryFor(workspace).Section()
+		System: func(workspace, sessionID string) string {
+			return prompt.SystemFS(workspace, contextReader(s.workspaceFor(sessionID, workspace))) + s.memoryFor(workspace).Section()
 		},
 		Ask:          s.ask,
 		ProjectRules: loadProjectRules,
@@ -867,6 +868,16 @@ func (s *AgentService) PlanMode(id string, on bool) error {
 	}
 	sess.SetPlanMode(on)
 	return nil
+}
+
+// contextReader returns the remote context-file reader (root-relative),
+// or nil for local workspaces——远程会话的项目上下文经网线读取（此前读
+// 本地路径必然落空、静默丢失）。
+func contextReader(ws tools.Workspace) func(string) ([]byte, error) {
+	if !ws.IsRemote() {
+		return nil
+	}
+	return ws.Remote.ReadFile
 }
 
 // memoryFor returns (creating) the workspace's memory store.

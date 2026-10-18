@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/remote"
+	"github.com/skeleton1231/zcode-my-go/internal/remotetest"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -124,7 +127,23 @@ type Harness struct {
 	Svc       *service.AgentService
 	Script    *Script
 	SessionID string
-	Workspace string
+	Workspace string // 本地模式的工作区；远程模式即服务器侧磁盘根
+
+	// Probe 是远程模式的断言通道（与服务同服务器的第二条连接）；
+	// 本地模式为 nil。
+	Probe *remote.Client
+}
+
+// wire swaps in the scripted provider and the auto-allow asker.
+func wire(t *testing.T, svc *service.AgentService, turns []Turn) *Script {
+	t.Helper()
+	script := &Script{turns: turns}
+	svc.UseProviderForTesting(func() ai.Provider { return script })
+	t.Cleanup(func() { svc.UseProviderForTesting(nil) })
+	svc.SetAsker(func(agent.AskRequest) agent.AskResponse {
+		return agent.AskResponse{} // allow this call, no session rule
+	})
+	return script
 }
 
 // New boots the harness. The configured provider is swapped for the
@@ -132,27 +151,81 @@ type Harness struct {
 // flow install their own asker through Svc.SetAsker.
 func New(t *testing.T, turns ...Turn) *Harness {
 	t.Helper()
-	dataDir := t.TempDir()
-	ws := t.TempDir()
-
-	svc, err := service.New(dataDir)
+	svc, err := service.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("service: %v", err)
 	}
 	t.Cleanup(svc.Close)
+	script := wire(t, svc, turns)
 
-	script := &Script{turns: turns}
-	svc.UseProviderForTesting(func() ai.Provider { return script })
-	t.Cleanup(func() { svc.UseProviderForTesting(nil) })
-	svc.SetAsker(func(agent.AskRequest) agent.AskResponse {
-		return agent.AskResponse{} // allow this call, no session rule
-	})
-
+	ws := t.TempDir()
 	info, err := svc.NewSession(ws)
 	if err != nil {
 		t.Fatalf("session: %v", err)
 	}
 	return &Harness{t: t, Svc: svc, Script: script, SessionID: info.ID, Workspace: ws}
+}
+
+// NewRemote boots the harness against an in-process SSH workspace: the
+// session target is ssh://（凭据经 ZGO_SSH_KEY，与服务真实拨号路径一
+// 致），每个工具都走网线到 remotetest 服务器。Probe 提供根相对的
+// 断言（ReadRemote/RemoteHas）。
+func NewRemote(t *testing.T, turns ...Turn) *Harness {
+	t.Helper()
+	srv := remotetest.Start(t)
+	host, port, err := net.SplitHostPort(srv.Address)
+	if err != nil {
+		t.Fatalf("split address: %v", err)
+	}
+	t.Setenv("ZGO_SSH_KEY", srv.KeyPEM) // openWorkspace 的凭据通道
+	target := "ssh://tester@" + net.JoinHostPort(host, port) +
+		"/" + strings.ReplaceAll(filepath.ToSlash(srv.Root), "\\", "/")
+
+	svc, err := service.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("service: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	script := wire(t, svc, turns)
+
+	info, err := svc.NewSession(target)
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+
+	probe, err := remote.Dial(remote.Config{
+		User: "tester", Host: host, Port: port,
+		Key: srv.KeyPEM, Root: srv.Root,
+	})
+	if err != nil {
+		t.Fatalf("probe dial: %v", err)
+	}
+	t.Cleanup(func() { probe.Close() })
+	return &Harness{t: t, Svc: svc, Script: script, SessionID: info.ID,
+		Workspace: srv.Root, Probe: probe}
+}
+
+// ReadRemote reads a workspace-root-relative file over the probe client.
+func (h *Harness) ReadRemote(rel string) string {
+	h.t.Helper()
+	if h.Probe == nil {
+		h.t.Fatal("ReadRemote on a local harness")
+	}
+	data, err := h.Probe.ReadFile(rel)
+	if err != nil {
+		h.t.Fatalf("probe read %s: %v", rel, err)
+	}
+	return string(data)
+}
+
+// RemoteHas reports whether a root-relative file exists remotely.
+func (h *Harness) RemoteHas(rel string) bool {
+	h.t.Helper()
+	if h.Probe == nil {
+		h.t.Fatal("RemoteHas on a local harness")
+	}
+	_, err := h.Probe.ReadFile(rel)
+	return err == nil
 }
 
 // Ask runs one chat turn and collects the events.

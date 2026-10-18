@@ -46,6 +46,10 @@ func (r clientRemote) Exec(command string) (ExecOutcome, error) {
 	res, err := r.c.Exec(command)
 	return ExecOutcome{Output: res.Output, ExitCode: res.ExitCode}, err
 }
+
+func (r clientRemote) StartBackground(command string) (BgProcess, error) {
+	return r.c.StartBackground(command)
+}
 func (r clientRemote) ReadFile(name string) ([]byte, error) { return r.c.ReadFile(name) }
 func (r clientRemote) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return r.c.WriteFile(name, data, perm)
