@@ -172,3 +172,63 @@ func waitSvcRunning(t *testing.T, svc *AgentService, id string) {
 	}
 	t.Fatal("session never started running")
 }
+
+// oneTextProvider 回一段文本后结束（系统提示词断言用的最小 provider）。
+type oneTextProvider struct {
+	onReq func(ai.Request)
+}
+
+func (p oneTextProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	if p.onReq != nil {
+		p.onReq(req)
+	}
+	out := make(chan ai.StreamEvent, 3)
+	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "ok"}
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	close(out)
+	return out
+}
+
+// TestRemoteSessionSystemContext: 远程会话的系统提示词携带服务器侧根
+// 上下文文件（经 RemoteFS 根相对读取——此前 prompt 读本地路径必然落
+// 空，远程会话静默丢失项目上下文）。
+func TestRemoteSessionSystemContext(t *testing.T) {
+	srv := remotetest.Start(t)
+	t.Setenv("ZGO_SSH_KEY", srv.KeyPEM)
+	host := srv.Address[:strings.LastIndexByte(srv.Address, ':')]
+	port := srv.Address[strings.LastIndexByte(srv.Address, ':')+1:]
+	target := "ssh://tester@" + host + ":" + port + "/" + filepath.ToSlash(srv.Root)
+	if err := os.WriteFile(filepath.Join(srv.Root, "ZGO.md"),
+		[]byte("remote workspace rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	var systems []string
+	svc.UseProviderForTesting(func() ai.Provider {
+		return oneTextProvider{onReq: func(r ai.Request) { systems = append(systems, r.System) }}
+	})
+	t.Cleanup(func() { svc.UseProviderForTesting(nil) })
+
+	info, err := svc.NewSession(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Chat(info.ID, "hi", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, sys := range systems {
+		if strings.Contains(sys, "remote workspace rules") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("remote context file missing from system prompt:\n%.400s", systems[0])
+	}
+}
