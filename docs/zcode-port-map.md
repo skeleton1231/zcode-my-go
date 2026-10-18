@@ -469,3 +469,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    {event, sessionId, workspace, lastText}。notification 在权限询问即将
    阻塞时触发（观察者，payload {event, sessionId, workspace, tool,
    reason}，退出码不影响主流程）——headless/TUI 接系统通知的挂点。
+
+**MCP Streamable HTTP 传输**（2025-03 规范，spec 规则 69，issue #204）：
+   Config 增 url+headers（与 command 互斥）；每条 JSON-RPC 消息 POST 到
+   endpoint（Accept: application/json, text/event-stream），响应按
+   Content-Type 分流——JSON 直读、SSE 事件流取首个响应；initialize 的
+   Mcp-Session-Id 头记存回传，404 判会话失效→清会话重握手重试一次（断
+   线重连不重启）；握手/tools/prompts/resources 流程与 stdio 完全共用
+   （差异只在 transport 层）。鉴权 headers 不进日志/JSONL/界面；热重载
+   签名覆盖 url+headers（sha256——值敏感但读不出凭据）。
