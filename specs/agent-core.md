@@ -342,7 +342,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
    地工具面，远程嵌套循环读的是本地磁盘）。
 
-   （规则 51/52 由 pending PR 预留：51 子代理续话、52 read 读 PDF。）
+51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+   对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
+   后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
+   绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
+   RunSubtaskSeeded（prior 为空即新任务、非空即续跑，历史拷贝隔离）；
+   注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
+   有一个生效）。
+
+   （规则 52 由 pending 的 read PDF PR 预留。）
 
 53. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
    本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来

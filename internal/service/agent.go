@@ -273,6 +273,16 @@ func (s *AgentService) rewire() {
 				}, prompt)
 			})
 			contextRead := contextReader(ws)
+			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
+			// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
+			agentRunner := func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+				return agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
+					Provider: provider(),
+					Model:    model,
+					System:   agent.SubtaskSystem(),
+					Tools:    roTools,
+				}, prior, prompt)
+			}
 			all := append(tools.AllW(ws, state, question), task,
 				tools.NewMemoryTool(s.memoryFor(workspace)),
 				tools.NewSkillTool(func() []skills.Root {
@@ -280,6 +290,7 @@ func (s *AgentService) rewire() {
 				}),
 				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
 				tools.NewWebFetchTool(tools.WebFetcher),
+<<<<<<< HEAD
 				// 后台子代理三件套（spec 规则 50）。
 				tools.NewAgentTool(state.Agents, func(ctx context.Context, prompt string) (agent.SubtaskResult, error) {
 					return agent.RunSubtask(ctx, agent.SubtaskConfig{
@@ -289,8 +300,13 @@ func (s *AgentService) rewire() {
 						Tools:    roTools,
 					}, prompt)
 				}),
+=======
+				// 后台子代理三件套 + 续话（spec 规则 50/51）。
+				tools.NewAgentTool(state.Agents, agentRunner),
+>>>>>>> origin/feat/agent-send
 				tools.NewAgentOutputTool(state.Agents),
-				tools.NewAgentStopTool(state.Agents))
+				tools.NewAgentStopTool(state.Agents),
+				tools.NewAgentSendTool(state.Agents, agentRunner))
 			wfProvider := provider
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
@@ -1560,6 +1576,18 @@ func (s *AgentService) ExportSessionHTML(id, dest string) error {
 	info := sess.Info()
 	doc := exporthtml.HTML(sess.Messages(), info.Title, s.resolve().Model, info.Workspace)
 	return os.WriteFile(dest, []byte(doc), 0o644)
+}
+
+// AgentJobStates 返回会话的后台子代理快照（e2e 等待终态、后续 UI 面
+// 同源）。
+func (s *AgentService) AgentJobStates(sessionID string) []tools.AgentJobView {
+	s.mu.Lock()
+	state, ok := s.states[sessionID]
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return state.Agents.Snapshots()
 }
 
 // TodoPlan returns the session's live task plan (the todo tool's state).
