@@ -221,3 +221,35 @@ func TestSystemHierarchyCaseFoldedWorkspace(t *testing.T) {
 		t.Fatalf("workspace layer missing:\n%s", got)
 	}
 }
+
+// TestSystemHierarchyShortNameWorkspace: 工作区以 8.3 短名传入（CI
+// runner 的 TMP 即 RUNNER~1 形态）时层级不得降级单层——git toplevel 返
+// 回长形态，两侧须归一后再判祖先（winpath.Long）。
+func TestSystemHierarchyShortNameWorkspace(t *testing.T) {
+	hermeticContext(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	sub := filepath.Join(root, "long-sub", "a")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s", out)
+	}
+	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("repo-level rules"), 0o644)
+	os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("nested specifics"), 0o644)
+
+	short, ok := shortPathOf(t, sub)
+	if !ok {
+		t.Skip("volume has 8dot3 disabled")
+	}
+	got := System(short)
+	if !strings.Contains(got, "repo-level rules") {
+		t.Fatalf("short-name workspace lost repo layer:\n%s", got)
+	}
+	if !strings.Contains(got, "nested specifics") {
+		t.Fatalf("workspace layer missing:\n%s", got)
+	}
+}

@@ -107,7 +107,8 @@ func TestE2ERewindToMiddleTurn(t *testing.T) {
 // file restore（issue #110 的任意回合版）.
 func TestE2ERewindToRefusesWhileRunning(t *testing.T) {
 	h := New(t, Turn{Text: "慢回复", BlockAfterText: true})
-	go func() { _ = h.Svc.Chat(h.SessionID, "问", func(agent.Event) {}) }()
+	chatDone := make(chan struct{})
+	go func() { defer close(chatDone); _ = h.Svc.Chat(h.SessionID, "问", func(agent.Event) {}) }()
 	// 秒级预算：run 启动要过会话查找→wiring→provider，全套件并行下
 	// 500ms 手写预算真实超时过（issue #155）。
 	if !waitFor(5*time.Second, func() bool { return h.Svc.SessionRunning(h.SessionID) }) {
@@ -118,6 +119,10 @@ func TestE2ERewindToRefusesWhileRunning(t *testing.T) {
 		t.Fatal("rewind accepted during a run")
 	}
 	h.Svc.Abort(h.SessionID)
+	// Chat 收尾（中止后的转录落盘）必须先于 TempDir 清理——不等它，
+	// 清理与末次 JSONL 追加赛跑（CI ubuntu 实测 unlinkat "directory
+	// not empty"）。
+	<-chatDone
 }
 
 // TestE2ERewindToPrunedCheckpointAborts: git 仓库里回退到检查点已被保留
