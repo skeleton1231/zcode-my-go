@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
@@ -13,11 +14,13 @@ import (
 // explores.
 type Task struct {
 	// Run executes a subtask; the service wires it to agent.RunSubtask.
-	Run func(ctx context.Context, prompt string) (agent.SubtaskResult, error)
+	// agentName 为空走默认研究子代理；命中 .zgo/agents 定义则用其
+	// persona 与工具白名单（spec 规则 51），未命中由 runner 报错自纠。
+	Run func(ctx context.Context, prompt, agentName string) (agent.SubtaskResult, error)
 }
 
 // NewTask builds the task tool over a runner.
-func NewTask(run func(ctx context.Context, prompt string) (agent.SubtaskResult, error)) *Task {
+func NewTask(run func(ctx context.Context, prompt, agentName string) (agent.SubtaskResult, error)) *Task {
 	return &Task{Run: run}
 }
 
@@ -29,13 +32,16 @@ func (t *Task) Description() string {
 	return "Delegate a self-contained research question to a read-only " +
 		"subagent: exploring the codebase, answering how something works, " +
 		"finding where a behavior lives. Give it a complete, specific brief; " +
-		"it returns findings without modifying anything."
+		"it returns findings without modifying anything. Optional agent " +
+		"names a defined subagent persona (.zgo/agents) with its own " +
+		"system prompt and tool whitelist."
 }
 
 // Parameters implements agent.Tool.
 func (t *Task) Parameters() map[string]any {
 	return objectSchema(map[string]any{
 		"prompt": prop("string", "The complete brief for the subagent, self-contained"),
+		"agent":  prop("string", "Optional named subagent persona to run as (see available agents in the system prompt)"),
 	}, "prompt")
 }
 
@@ -43,14 +49,18 @@ func (t *Task) Parameters() map[string]any {
 func (t *Task) Execute(ctx context.Context, args json.RawMessage) agent.ToolResult {
 	var a struct {
 		Prompt string `json:"prompt"`
+		Agent  string `json:"agent"`
 	}
 	if err := decodeArgs(args, &a); err != nil {
 		return errResult("%v", err)
 	}
+	if strings.TrimSpace(a.Agent) != "" && strings.ContainsAny(a.Agent, `/\ `) {
+		return errResult("invalid agent name %q", a.Agent)
+	}
 	if t.Run == nil {
 		return errResult("no subagent runner wired")
 	}
-	res, err := t.Run(ctx, a.Prompt)
+	res, err := t.Run(ctx, a.Prompt, strings.TrimSpace(a.Agent))
 	if err != nil {
 		return errResult("subtask failed: %v", err)
 	}
