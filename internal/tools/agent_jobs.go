@@ -41,12 +41,12 @@ type AgentJob struct {
 	state   string
 	text    string // 结论（终态）
 	err     string
-	history []ai.Message // 子代理转录（续跑的上下文，spec 规则 51）
+	history []ai.Message // 子代理转录（续跑的上下文，spec 规则 52）
 }
 
 // AgentRunFunc 是子代理运行器：prior 为空即全新任务，非空即续跑（历史
 // 由注册表提供）；id 是注册表分配的代理标识（升级提问的上下文前缀，
-// spec 规则 62）；返回终态历史供再次续跑。
+// spec 规则 63）；返回终态历史供再次续跑。
 type AgentRunFunc func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error)
 
 // AgentJobView 是注册项的只读快照（UI/工具输出用）。
@@ -98,7 +98,7 @@ func (a *AgentJobs) Spawn(run AgentRunFunc, prompt string) *AgentJob {
 	return j
 }
 
-// Resume 续跑一个终态子代理（spec 规则 51）：追加用户消息、带着既有
+// Resume 续跑一个终态子代理（spec 规则 52）：追加用户消息、带着既有
 // 历史重新进入后台运行——同 ID 复用（收割面不变）。运行中的任务拒绝
 // 续跑（等完成或先停止）。
 func (a *AgentJobs) Resume(id, message string, run AgentRunFunc) (*AgentJob, error) {

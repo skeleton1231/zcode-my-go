@@ -32,7 +32,7 @@
   （三协议 wire 各自适配/降级）。
 - **场景评测**（#245）：zgo eval——JSON 场景（种文件/脚本回合/四类断
   言）驱动真实回放，失败退出码 1 可进 CI；/find 会话内搜索（TUI 标记
-  跳转 + REPL 清单，spec 规则 56）。
+  跳转 + REPL 清单，spec 规则 57）。
 - **MCP/运维面**：/mcp add/remove（免手编 settings.json，热重载）、
   cron 任务级模型（Job.Model 补执行面 + 会话模型覆盖）、zgo bugreport
   （脱敏自包含问题报告）。

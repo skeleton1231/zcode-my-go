@@ -452,7 +452,7 @@ func repl(workspace string, cont bool, resume string) int {
 				fmt.Fprintln(os.Stderr, "[重跑] 撤最后一轮并重发：", text)
 				return svc.EditAndResend(info.ID, text, func(ev agent.Event) { render(ev) })
 			},
-			find: func(q string) string { // /find：REPL 无视口——列命中清单（spec 规则 56）
+			find: func(q string) string { // /find：REPL 无视口——列命中清单（spec 规则 57）
 				return replFind(svc, info.ID, q)
 			},
 		}, line)

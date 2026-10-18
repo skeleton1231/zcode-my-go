@@ -357,12 +357,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
    一经持锁快照 + ReadOnlyW 拨号工作区。
 
-**子代理续话**（ZCode SendMessage 的落地，spec 规则 51）：agent_send
+**子代理续话**（ZCode SendMessage 的落地，spec 规则 52）：agent_send
    {id, message} 对终态后台子代理带全部历史续跑（同 ID、收割面不变；
    运行中拒绝）；RunSubtaskSeeded 统一新任务/续跑形态（历史拷贝隔
    离）；注册表终态存转录、续跑翻转持锁原子。
 
-**read 读 PDF**（ZCode read-pdf 的落地，spec 规则 52）：internal/
+**read 读 PDF**（ZCode read-pdf 的落地，spec 规则 53）：internal/
    pdftext——词法级 stream 收集 + Flate 解压 + Tj/TJ 文本算子（换行启
    发）、字面/十六进制串（UTF-16BE BOM）；16MB/256KB 有界；可读率
    闸门（<85% 报错——CID 无 ToUnicode 宁失败不乱码）。
@@ -374,51 +374,51 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    即时重载在跑会话规则、zgo trust CLI（grant/list/revoke，撤销即时
    清空）；终端三表面未授信提示。
 
-**桌面信任确认**（spec 规则 53 桌面半边，基于工作区信任门堆叠）：
+**桌面信任确认**（spec 规则 54 桌面半边，基于工作区信任门堆叠）：
    首开未授信工作区弹信任确认（路径 + 风险说明——恶意仓库可借规则
    文件放权）；信任并加载经服务授信落表，暂不仅关窗。
 
-**场景评测（zgo eval）**（pi evals 的数据化形态，spec 规则 54）：
+**场景评测（zgo eval）**（pi evals 的数据化形态，spec 规则 55）：
    internal/eval——JSON 场景（种文件/脚本回合/四类断言：转录含工具
    结果块、工作区文件、无错误工具、事件计数）驱动真实 service 回放；
    evals/ 内置三个起步场景（write-read、skill-load、webfetch-guard）；
    --filter 筛选、失败退出码 1 可进 CI。
 
-**会话内搜索 /find**（桌面搜索的终端对齐，spec 规则 56）：slash 表面
+**会话内搜索 /find**（桌面搜索的终端对齐，spec 规则 57）：slash 表面
    钩子——TUI 标记模式（▶/当前命中、n/N 环绕跳转、空输入区才拦截、
    Esc 先退搜索）；REPL 列命中清单（回合+片段）。
 
-**模型兜底链**（spec 规则 55）：settings.fallbackModels——主模型可重
+**模型兜底链**（spec 规则 56）：settings.fallbackModels——主模型可重
    试失败（429/过载）时 ai.NewFailover 按序换模型重发同一请求；非可
    重试错误透传（换模型无用）；耗尽透传末次错误保持可重试；e2e 注入
    不经兜底；zgo config get/set fallbackModels。
 
-**MCP 配置命令**（spec 规则 57）：/mcp add <名> -- <命令> [参数…] 与
+**MCP 配置命令**（spec 规则 58）：/mcp add <名> -- <命令> [参数…] 与
    /mcp remove <名>——此前唯一途径是手编 settings.json；服务面
    SetMCPServer/RemoveMCPServer（校验+上限 32）写盘并 syncMCP 热重载
    （握手失败降级，诊断面可见）。
 
-**后台代理可视化**（spec 规则 58）：/agents 清单命令（状态标记/耗时/
+**后台代理可视化**（spec 规则 59）：/agents 清单命令（状态标记/耗时/
 任务摘要/折叠）+ TUI 固定块（计划块同款，重画即取快照）——agent 四
 件套此前在终端完全不可见。
 
-**问题报告 zgo bugreport**（pi bug-report 的落地，spec 规则 59）：自
+**问题报告 zgo bugreport**（pi bug-report 的落地，spec 规则 60）：自
    包含 Markdown（版本/平台/脱敏配置/兜底链/MCP 诊断/会话概况元数
    据/工具链）；密钥与转录正文绝不落盘。
 
-**cron 任务级模型**（spec 规则 60）：Job.Model 此前只存不用——补执
+**cron 任务级模型**（spec 规则 61）：Job.Model 此前只存不用——补执
    行面 Manager.SetSessionModel（会话模型闭包替换，后续回合/压缩即时
    生效，空恢复全局）；scheduleRunner 覆盖任务模型；cron list 增列。
 
-**桌面后台代理状态条**（spec 规则 61）：聊天流上方的实时状态条（四态
+**桌面后台代理状态条**（spec 规则 62）：聊天流上方的实时状态条（四态
    标记/耗时/摘要/折叠，空不占位）；回合结束与会话打开启动 1s 轮询
    （单飞守卫、变化才回主线程、清空即退）。
 
-**子代理升级提问**（ZCode escalate 的落地，spec 规则 62）：后台子代
+**子代理升级提问**（ZCode escalate 的落地，spec 规则 63）：后台子代
    理工具面加 ask——问题经会话提问通道升级（带 [后台代理 <id>] 前
    缀），答案回转录继续跑；AgentRunFunc 增 id；前台短任务不带。
 
-**cron 时间窗**（pi off-peak 的 Zgo 形态，spec 规则 63）：Job.Window
+**cron 时间窗**（pi off-peak 的 Zgo 形态，spec 规则 64）：Job.Window
    （HH:MM-HH:MM 可跨午夜）——窗口外到期不 fire 不动 LastRun，窗口
    一开补跑（推迟而非错过）；cron add --window 即校验，list 附 ⏰。
 
@@ -426,11 +426,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    作区——trust-gate/trust-granted 双向断言信任门（回归即红）；
    edit-roundtrip、glob-find 场景；CI 增 `zgo eval evals` 门禁步骤。
 
-**grep 远程并发**（性能路线第一条，spec 规则 64）：ssh:// 的 grep 逐文
+**grep 远程并发**（性能路线第一条，spec 规则 65）：ssh:// 的 grep 逐文
    件拉取改 8 路并发（RTT 并行化：16×50ms 顺序 800ms→~200ms）；归并
    语义与顺序版一致。本地保持顺序+早停——实测 Windows+Defender 下
    文件打开被杀软串行化，并发零收益；稠密命中的早停才是本地大 win。
 
-**MCP 启动异步**（性能路线第二条，spec 规则 65）：构造期 startMCP 后
+**MCP 启动异步**（性能路线第二条，spec 规则 66）：构造期 startMCP 后
    台跑——握手 20s 曾把每个 zgo 命令卡满超时；显式重载仍同步；
    syncMCP 串行化 + Close 守卫（在途握手不泄漏进程）。

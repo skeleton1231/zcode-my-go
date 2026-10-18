@@ -97,7 +97,7 @@ loop:
 			k.buf = k.buf[n:]
 		case b < 0x80:
 			k.buf = k.buf[1:]
-			// 搜索激活时 n/N 是跳转键（spec 规则 56）——仅输入区为空
+			// 搜索激活时 n/N 是跳转键（spec 规则 57）——仅输入区为空
 			// 时拦截，正在打字不受影响（输入含 n 的词不误触）。
 			if s.findQ != "" && len(s.input) == 0 && (b == 'n' || b == 'N') {
 				if b == 'n' {
@@ -123,7 +123,7 @@ loop:
 	if len(k.buf) == 1 && k.buf[0] == 0x1b {
 		k.buf = k.buf[:0]
 		if s.findQ != "" {
-			s.findClear() // 搜索激活：Esc 先退搜索（spec 规则 56）
+			s.findClear() // 搜索激活：Esc 先退搜索（spec 规则 57）
 			return keyNone
 		}
 		s.abortRun()

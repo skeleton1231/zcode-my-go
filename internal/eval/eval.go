@@ -1,5 +1,5 @@
 // Package eval 把 e2e 的脚本化回放能力做成用户可写的数据场景（spec
-// 规则 54）：JSON 场景——种工作区文件、脚本回合驱动真实 service/
+// 规则 55）：JSON 场景——种工作区文件、脚本回合驱动真实 service/
 // loop/工具、断言转录/工作区终态。不写 Go 也能钉自己的回归。
 package eval
 
@@ -42,7 +42,7 @@ type Scenario struct {
 	Files       map[string]string `json:"files,omitempty"` // 种进工作区（空串即空文件）
 	Turns       []TurnSpec        `json:"turns"`
 	Expect      Expectations      `json:"expect"`
-	// Trusted 控制工作区授信（spec 规则 53 的安全回归网）：默认 true
+	// Trusted 控制工作区授信（spec 规则 54 的安全回归网）：默认 true
 	// （种文件即授信——场景是用户自己写的）；显式 false 模拟未授信工
 	// 作区——工作区层（.zgo/skills、.zgo/commands、.zgorules.json）不
 	// 加载，安全边界场景据此断言。

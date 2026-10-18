@@ -1,6 +1,6 @@
 package schedule
 
-// 时间窗（spec 规则 63，pi off-peak 的 Zgo 形态）：例行重活限定窗口跑
+// 时间窗（spec 规则 64，pi off-peak 的 Zgo 形态）：例行重活限定窗口跑
 //（如 22:00-06:00 夜间重建索引）。跨午夜的窗口自然支持。
 
 import (

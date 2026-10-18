@@ -120,7 +120,7 @@ func (a *App) renameModal(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// trustModal 首开未授信工作区的信任确认（spec 规则 53 的桌面半边）：
+// trustModal 首开未授信工作区的信任确认（spec 规则 54 的桌面半边）：
 // 授信即加载其 .zgorules.json 与 .zgo 命令/技能层；暂不则仅全局层，
 // 之后可经 /trust 授信。
 func (a *App) trustModal(c *ui.Context, t *ui.Theme) {

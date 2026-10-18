@@ -56,7 +56,7 @@ func maybeSteer(svc *service.AgentService, sessionID, text string) (steered bool
 	return true, "[插话] 已入队，当前回合结束后生效"
 }
 
-// trustHint 未授信工作区的表面提示（spec 规则 53）：规则/命令/技能层
+// trustHint 未授信工作区的表面提示（spec 规则 54）：规则/命令/技能层
 // 未加载；授信途径 /trust 或 zgo trust <路径>（print 无法交互，提示走
 // stderr）。
 func trustHint(w io.Writer, svc *service.AgentService, workspace string) {

@@ -8,7 +8,7 @@ import (
 )
 
 // TestFallbackModelsSettingRoundtrip 设置面：写盘热生效、读回、去空
-// 去重（spec 规则 55）。
+// 去重（spec 规则 56）。
 func TestFallbackModelsSettingRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	svc, err := New(dir)

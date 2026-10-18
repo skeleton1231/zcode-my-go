@@ -9,7 +9,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
-// runTrust 是工作区授信子命令（spec 规则 53）：
+// runTrust 是工作区授信子命令（spec 规则 54）：
 //
 //	zgo trust <路径>          授信（print/CI 预授信——未授信工作区的
 //	                          .zgorules.json 与工作区命令/技能层不加载）

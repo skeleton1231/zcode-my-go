@@ -55,7 +55,7 @@ type settings struct {
 	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)
 	// BudgetDailyTokens 是每日软预算（0=不限，spec 规则 35）。
 	BudgetDailyTokens int `json:"budgetDailyTokens"`
-	// FallbackModels 是模型兜底链（spec 规则 55）：主模型可重试失败
+	// FallbackModels 是模型兜底链（spec 规则 56）：主模型可重试失败
 	// （429/过载）时按序降级重发。
 	FallbackModels []string `json:"fallbackModels"`
 }
@@ -95,7 +95,7 @@ type AgentService struct {
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
-	trustStore       *trust.Store               // 工作区授信表（spec 规则 53）
+	trustStore       *trust.Store               // 工作区授信表（spec 规则 54）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -132,7 +132,7 @@ func New(dataDir string) (*AgentService, error) {
 // mcpNameMax 限制配置的服务器数（防误配炸启动面）。
 const mcpNameMax = 32
 
-// SetMCPServer 配置/更新一个 MCP 服务器并热重载（spec 规则 57）：名
+// SetMCPServer 配置/更新一个 MCP 服务器并热重载（spec 规则 58）：名
 // 非空且无空白/斜杠（文件与键的安全形态）；命令非空。写盘经
 // saveSettingsLocked，启动经 syncMCP（失败降级不阻断——诊断面可见）。
 func (s *AgentService) SetMCPServer(name string, cfg mcp.Config) error {
@@ -353,7 +353,7 @@ func (s *AgentService) rewire() {
 			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
 			// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
 			agentRunner := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
-				// 升级提问（spec 规则 62，ZCode escalate）：后台研究代理
+				// 升级提问（spec 规则 63，ZCode escalate）：后台研究代理
 				// 遇到只有用户能答的问题时经会话提问通道升级——问题带
 				// 代理标识前缀，答案回转录继续跑。
 				agentAsk := tools.NewAsk(func(ctx context.Context, q agent.Question) (string, error) {
@@ -425,7 +425,7 @@ func (s *AgentService) rewire() {
 		},
 		Ask: s.ask,
 		ProjectRules: func(workspace string) permission.Ruleset {
-			// 工作区信任门（spec 规则 53）：未授信的本地工作区不加载
+			// 工作区信任门（spec 规则 54）：未授信的本地工作区不加载
 			// 其 .zgorules.json——克隆来的恶意仓库不能靠自带 allow
 			// 规则给自己放权（提权面）。ssh:// 目标是用户显式拨号的
 			// 远端，视为授信。
@@ -1159,7 +1159,7 @@ func (s *AgentService) PlanMode(id string, on bool) error {
 	return nil
 }
 
-// workspaceTrusted 报告工作区是否受信（spec 规则 53）：ssh:// 目标是
+// workspaceTrusted 报告工作区是否受信（spec 规则 54）：ssh:// 目标是
 // 用户显式拨号的远端——视为授信；本地路径查授信表。
 func (s *AgentService) workspaceTrusted(workspace string) bool {
 	if strings.HasPrefix(workspace, "ssh://") {
@@ -1200,7 +1200,7 @@ func (s *AgentService) TrustSession(sessionID, via string) error {
 }
 
 // RevokeWorkspace 撤销授信（在跑会话的项目规则即时清空——授信回退
-// 生效，spec 规则 53）。
+// 生效，spec 规则 54）。
 func (s *AgentService) RevokeWorkspace(workspace string) error {
 	if err := s.trustStore.Revoke(workspace); err != nil {
 		return err
@@ -1237,7 +1237,7 @@ const skillsBaseDir = ".zgo/skills"
 func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 	ws := s.workspaceFor(sessionID, workspace)
 	var roots []skills.Root
-	// 信任门（spec 规则 53）：未授信的本地工作区不带其技能层（提示
+	// 信任门（spec 规则 54）：未授信的本地工作区不带其技能层（提示
 	// 注入面）；全局层不受影响。
 	if !ws.IsRemote() && !s.workspaceTrusted(workspace) {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -1272,7 +1272,7 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 // 同一根源——工作区层经 openWorkspace 解析目标，远程走网线）。
 func (s *AgentService) Skills(workspace string) skills.Outcome {
 	if !s.workspaceTrusted(workspace) {
-		// 信任门与 skillRoots 同款（spec 规则 53）：列表面不显示未
+		// 信任门与 skillRoots 同款（spec 规则 54）：列表面不显示未
 		// 授信工作区的技能层。
 		var roots []skills.Root
 		if home, err := os.UserHomeDir(); err == nil {
@@ -1892,7 +1892,7 @@ func (s *AgentService) SessionPermissionRules(sessionID string) []permission.Rul
 	return s.mgr.SessionPermissions(sessionID).SessionRules()
 }
 
-// SetFallbackModels 更新模型兜底链（spec 规则 55；空即关闭）。模型名
+// SetFallbackModels 更新模型兜底链（spec 规则 56；空即关闭）。模型名
 // 去重且首项不得与自身重复；写盘热生效（rewire 同既有路径）。
 func (s *AgentService) SetFallbackModels(models []string) error {
 	seen := map[string]bool{}
@@ -1972,7 +1972,7 @@ const commandCapRunes = 60 << 10
 func (s *AgentService) CustomCommands(workspace string) []CustomCommand {
 	out := map[string]string{}
 	// 全局先入，工作区覆盖（未授信的本地工作区不带工作区层——提示
-	// 注入面，spec 规则 53）。
+	// 注入面，spec 规则 54）。
 	if home, err := os.UserHomeDir(); err == nil {
 		loadCommandsDir(out, filepath.Join(home, ".zgo", "commands"), nil)
 	}

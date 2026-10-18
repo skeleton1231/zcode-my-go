@@ -71,7 +71,7 @@ func TestConfigListGetSet(t *testing.T) {
 	}
 }
 
-// TestConfigFallbackModels 兜底链配置面（spec 规则 55）：set 去空去
+// TestConfigFallbackModels 兜底链配置面（spec 规则 56）：set 去空去
 // 重、清空回空。
 func TestConfigFallbackModels(t *testing.T) {
 	dataDir := t.TempDir()

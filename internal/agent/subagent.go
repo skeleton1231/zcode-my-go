@@ -37,7 +37,7 @@ func RunSubtask(ctx context.Context, cfg SubtaskConfig, prompt string) (SubtaskR
 	return res, err
 }
 
-// RunSubtaskResume 在既有子代理历史上续跑（spec 规则 51，ZCode
+// RunSubtaskResume 在既有子代理历史上续跑（spec 规则 52，ZCode
 // SendMessage 的落地）：追加一条用户消息后继续嵌套循环——此前的调查、
 // 工具结果与结论全部保留，子代理无需重看上下文。返回终态历史供再次
 // 续跑。

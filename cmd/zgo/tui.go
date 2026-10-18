@@ -71,14 +71,14 @@ type tuiState struct {
 	plan   []tools.TodoTask        // 任务面板：todo 工具落盘后刷新
 	onPlan func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
 
-	// 后台代理面板（spec 规则 58）：每次重画前经 onAgents 取快照——
+	// 后台代理面板（spec 规则 59）：每次重画前经 onAgents 取快照——
 	// 事件触发的重画都带最新状态；空清单不占行。
 	onAgents func() []tools.AgentJobView
 	agents   []tools.AgentJobView // 最近一次快照（draw 刷新）
 	onUsage  func() string        // 生产读会话累计用量（spec 规则 40），测试注入桩
 	abort    func()               // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
 
-	// 会话内搜索（spec 规则 56）：findQ 非空即激活；findHits 是命中行
+	// 会话内搜索（spec 规则 57）：findQ 非空即激活；findHits 是命中行
 	// 下标，findCur 是当前命中（渲染 ▶/▶▶ 标记，n/N 跳转，Esc 退出）。
 	findQ    string
 	findHits []int
@@ -214,7 +214,7 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 			rerun: func(text string) error {
 				return s.rerunChat(svc, info, text)
 			},
-			// /find（spec 规则 56）：进入标记模式并跳到最近命中。
+			// /find（spec 规则 57）：进入标记模式并跳到最近命中。
 			find: func(q string) string { return s.findStart(q) },
 		}, line)
 		if quit {
@@ -379,7 +379,7 @@ func (s *tuiState) pushTurn(line string) {
 	s.requestRedraw()
 }
 
-// findStart 开始会话内搜索（/find 钩子的 TUI 实现，spec 规则 56）：
+// findStart 开始会话内搜索（/find 钩子的 TUI 实现，spec 规则 57）：
 // 大小写不敏感匹配转录行，跳到最近一处命中；状态行给出跳转键提示。
 func (s *tuiState) findStart(q string) string {
 	q = strings.TrimSpace(q)
@@ -562,7 +562,7 @@ func (s *tuiState) draw(out io.Writer) {
 	}
 	var b strings.Builder
 	b.WriteString("\x1b[?1049h\x1b[2J\x1b[H") // 备用屏 + 清屏 + 回起点
-	if s.onAgents != nil {                    // 后台代理快照：重画即取（事件驱动的重画都带最新，规则 58）
+	if s.onAgents != nil {                    // 后台代理快照：重画即取（事件驱动的重画都带最新，规则 59）
 		s.agents = s.onAgents()
 	}
 	plan := planLines(s.plan, planMaxRows)
@@ -575,7 +575,7 @@ func (s *tuiState) draw(out io.Writer) {
 		body = 1
 	}
 	var visible []string
-	base := 0          // 可见窗口首行的绝对下标（搜索标记用，spec 规则 56）
+	base := 0          // 可见窗口首行的绝对下标（搜索标记用，spec 规则 57）
 	if s.topIdx >= 0 { // 回合导航/滚动：绝对下标窗口，夹紧防越界
 		top := s.topIdx
 		if maxTop := len(s.lines) - body; top > maxTop {
@@ -766,7 +766,7 @@ func tuiTokens(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// agentPanelLines 渲染后台代理固定块（spec 规则 58，slash.FormatAgents
+// agentPanelLines 渲染后台代理固定块（spec 规则 59，slash.FormatAgents
 // 同数据源）：运行中 ▶ 带耗时；空清单不占行；超 4 条折叠 …+N。
 func agentPanelLines(views []tools.AgentJobView) []string {
 	if len(views) == 0 {

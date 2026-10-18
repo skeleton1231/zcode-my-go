@@ -545,7 +545,7 @@ func TestAttachmentTotalBudget(t *testing.T) {
 	}
 }
 
-// TestTrustModalRoundTrip 首开未授信工作区的信任确认（spec 规则 53 桌
+// TestTrustModalRoundTrip 首开未授信工作区的信任确认（spec 规则 54 桌
 // 半边）：弹窗展示路径与风险说明；「信任并加载」经服务授信落表。
 func TestTrustModalRoundTrip(t *testing.T) {
 	svc, err := service.New(t.TempDir())

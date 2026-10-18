@@ -54,7 +54,7 @@ type App struct {
 
 	// automation panel state（specs/automation.md 的管理面）.
 	jobsOpen                                       bool
-	agents                                         []tools.AgentJobView // 后台子代理状态条（spec 规则 61）
+	agents                                         []tools.AgentJobView // 后台子代理状态条（spec 规则 62）
 	agentsMu                                       sync.Mutex           // agents 快照专用锁（a.mu 非重入，见 agents.go）
 	agentsWatching                                 atomic.Bool          // 轮询 goroutine 单飞守卫
 	jobs                                           []schedule.Job
@@ -204,7 +204,7 @@ func (a *App) NewSession() {
 		a.update(func() {
 			a.refreshSessions()
 			a.open(info.ID)
-			// 首开未授信：弹信任确认（spec 规则 53 桌面半边）。
+			// 首开未授信：弹信任确认（spec 规则 54 桌面半边）。
 			if !a.svc.IsWorkspaceTrusted(ws) {
 				a.trustWS = ws
 				a.trustOpen = true
@@ -485,7 +485,7 @@ func (a *App) Send() {
 			a.refreshSessions()
 			a.RefreshPlan()
 			a.RefreshBudget() // 运行结束即刷新：否则仪表停在运行前的旧值
-			a.refreshAgents() // 后台代理状态条（spec 规则 61）：回合可能刚 spawn
+			a.refreshAgents() // 后台代理状态条（spec 规则 62）：回合可能刚 spawn
 			a.watchAgents()
 		})
 	}()

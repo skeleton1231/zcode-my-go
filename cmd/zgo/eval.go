@@ -10,7 +10,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/eval"
 )
 
-// runEval 是场景评测子命令（spec 规则 54）：
+// runEval 是场景评测子命令（spec 规则 55）：
 //
 //	zgo eval [目录] [--filter 子串]
 //

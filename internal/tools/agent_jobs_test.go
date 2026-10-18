@@ -120,7 +120,7 @@ func TestAgentToolsFlow(t *testing.T) {
 	}
 }
 
-// TestAgentJobsResumeWithHistory 续跑（spec 规则 51）：终态后带历史续
+// TestAgentJobsResumeWithHistory 续跑（spec 规则 52）：终态后带历史续
 // 跑——运行器收到的 prior 即首次转录，同 ID 复用，新结论覆盖旧值。
 func TestAgentJobsResumeWithHistory(t *testing.T) {
 	jobs := NewAgentJobs()

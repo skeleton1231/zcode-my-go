@@ -1,6 +1,6 @@
 package e2e
 
-// 子代理续话（spec 规则 51）的全栈 e2e：agent 启动 → agent_send 带全
+// 子代理续话（spec 规则 52）的全栈 e2e：agent 启动 → agent_send 带全
 // 部历史续跑（真实嵌套循环收到既有转录与追问）→ agent_output 收割新
 // 结论。父/子请求经内容路由（后台并发不依赖回合次序）。
 

@@ -1,6 +1,6 @@
 package e2e
 
-// 子代理升级提问（spec 规则 62，ZCode escalate 的落地）的全栈 e2e：
+// 子代理升级提问（spec 规则 63，ZCode escalate 的落地）的全栈 e2e：
 // 后台代理的脚本回合调用 ask → 经会话提问通道升级（带代理 ID 前缀）
 // → 答案回转录、代理据此作答完成。
 
