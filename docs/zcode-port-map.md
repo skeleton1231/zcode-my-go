@@ -316,3 +316,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    校验拒绝非法值；budgetDailyTokens 非负；写盘热生效）；SetAPIKey 直
    写不经 SaveSettings（后者对 model 无条件覆盖，组合写会互相抹）。
 
+
+**技能子系统**（ZCode core/skills + bundled-skills，spec 规则 44）：
+   internal/skills——SKILL.md + frontmatter（平铺 YAML 子集）发现、
+   校验（诊断不静默）、按名加载（去 frontmatter、100KB 截断标注、附基
+   目录）；两层根（工作区 .zgo/skills——ssh:// 经网线根相对；全局
+   ~/.zgo/skills——本地），同名工作区覆盖全局（与自定义命令同约定）；
+   系统提示尾部注入可用清单（渐进披露：20KB 预算超限降级仅名列）；
+   skill 工具（只读自动放行，not-found 附可用名自纠）+ /skills 终端
+   命令。ZCode 的 plugin 来源/别名（qualifiedName、symlink 信任边界）
+   随插件生态按需承接（Zgo 以两层根 + MCP 承接）。
