@@ -117,11 +117,14 @@ func (t *recordingTool) Execute(context.Context, json.RawMessage) ToolResult {
 
 // promptEchoProvider answers with the prompt it was given.
 type promptEchoProvider struct {
+	mu     sync.Mutex // DAG 模式下步骤并行，记录追加须持锁（CI -race 逮过）
 	record *[]string
 }
 
 func (p *promptEchoProvider) Stream(_ context.Context, req ai.Request) <-chan ai.StreamEvent {
+	p.mu.Lock()
 	*p.record = append(*p.record, req.Messages[len(req.Messages)-1].Text())
+	p.mu.Unlock()
 	out := make(chan ai.StreamEvent, 3)
 	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
 	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "step done"}
