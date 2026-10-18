@@ -12,6 +12,11 @@ import (
 // attachCapBytes bounds one attached image（与桌面 📎 同限）.
 const attachCapBytes = 5 << 20
 
+// attachTotalCapBytes bounds one message's pending images（编码后口径，
+// 与桌面 attachmentTotalCapBytes 及 session 层 maxImageTotal 兜底同限：
+// 挂载时提前拒绝并提示分条——而不是发送时才被兜底静默少发，issue #132）.
+const attachTotalCapBytes = 6 << 20
+
 // loadImageBlocks turns image paths into message blocks; failures come
 // back as human-readable errors instead of aborting the whole send.
 func loadImageBlocks(paths []string) (blocks []ai.Block, errs []string) {
@@ -44,15 +49,29 @@ type attachments struct {
 }
 
 // add validates and queues one image; the returned line is the user
-// feedback.
+// feedback. 总量按编码字节数提前拒绝（与桌面同文案口径）。
 func (a *attachments) add(path string) string {
 	blocks, errs := loadImageBlocks([]string{path})
 	if len(errs) > 0 {
 		return errs[0]
 	}
-	a.pending = append(a.pending, blocks...)
+	blk := blocks[0]
+	if a.totalBytes()+len(blk.Data) > attachTotalCapBytes {
+		return fmt.Sprintf("附件总量超过 %dMB 上限，请分条发送：%s",
+			attachTotalCapBytes>>20, path)
+	}
+	a.pending = append(a.pending, blk)
 	a.names = append(a.names, path)
 	return fmt.Sprintf("已附 %s（发送下一条消息时随行，共 %d 张）", path, len(a.pending))
+}
+
+// totalBytes 报告待发附件的编码总量（base64 字节数，与兜底口径一致）。
+func (a *attachments) totalBytes() int {
+	n := 0
+	for _, b := range a.pending {
+		n += len(b.Data)
+	}
+	return n
 }
 
 // take drains the queue for sending.
