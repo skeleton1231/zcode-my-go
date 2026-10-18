@@ -30,6 +30,7 @@ type Server struct {
 	pending   map[int64]chan json.RawMessage
 	nextID    int64
 	tools     []ToolDef
+	prompts   []PromptDef
 }
 
 // ToolDef is a tool an MCP server advertises.
@@ -138,6 +139,16 @@ func Start(ctx context.Context, name string, cfg Config) (*Server, error) {
 	s.mu.Lock()
 	s.tools = init.Tools
 	s.mu.Unlock()
+	// prompts 是可选能力（spec 规则 28）：不支持/出错的服务器静默无提
+	// 示词，不影响启动——tools 才是硬性要求。
+	var plist struct {
+		Prompts []PromptDef `json:"prompts"`
+	}
+	if err := s.call(ctx, "prompts/list", map[string]any{}, &plist); err == nil {
+		s.mu.Lock()
+		s.prompts = plist.Prompts
+		s.mu.Unlock()
+	}
 	return s, nil
 }
 
@@ -297,4 +308,102 @@ func (s *Server) failPending(err error) {
 		delete(s.pending, id)
 	}
 	_ = err
+}
+
+// --- prompts ---------------------------------------------------------------
+
+// PromptDef is one advertised prompt（prompts/list）.
+type PromptDef struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Arguments   []PromptArg `json:"arguments"`
+}
+
+// PromptArg is a prompt's declared argument（* 标必填）.
+type PromptArg struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Required    bool   `json:"required"`
+}
+
+// PromptMessage is one message of a prompts/get result（role + content
+// blocks；只消费 text 块）.
+type PromptMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+// PromptResult is the prompts/get payload.
+type PromptResult struct {
+	Description string          `json:"description"`
+	Messages    []PromptMessage `json:"messages"`
+}
+
+// PromptText flattens a prompt's messages to one user-sendable string：
+// 文本块按序拼接，assistant 段加角色标注（用户可编辑后再发）。
+func (r PromptResult) PromptText() string {
+	var b strings.Builder
+	for _, m := range r.Messages {
+		text := contentText(m.Content)
+		if text == "" {
+			continue
+		}
+		if m.Role == "assistant" {
+			b.WriteString("[assistant] ")
+		}
+		b.WriteString(text)
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// contentText extracts text from a content block（object 或数组形态）.
+func contentText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if raw[0] == '[' {
+		if json.Unmarshal(raw, &blocks) != nil {
+			return ""
+		}
+	} else {
+		var one struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(raw, &one) != nil {
+			return ""
+		}
+		blocks = append(blocks, one)
+	}
+	var texts []string
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			texts = append(texts, b.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
+// Prompts returns the server's advertised prompts（握手时探测；未声明
+// 能力或出错的服务器为空——能力可选）.
+func (s *Server) Prompts() []PromptDef {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.prompts
+}
+
+// GetPrompt expands one prompt with arguments（prompts/get）.
+func (s *Server) GetPrompt(ctx context.Context, name string, args map[string]string) (PromptResult, error) {
+	var res PromptResult
+	if err := s.call(ctx, "prompts/get", map[string]any{
+		"name": name, "arguments": args,
+	}, &res); err != nil {
+		return PromptResult{}, err
+	}
+	return res, nil
 }

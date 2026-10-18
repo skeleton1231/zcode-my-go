@@ -30,6 +30,9 @@ type Env struct {
 	// Attach queues an image for the next message（终端表面的 /attach；
 	// 桌面走自己的 📎，不填即不可用）.
 	Attach func(path string) string
+	// Send submits a message as if the user typed it（/mcp 展开后直接
+	// 发送；不填即该表面不支持直接发送）.
+	Send func(text string)
 }
 
 // Run dispatches one line; handled reports whether it was a command,
@@ -151,6 +154,16 @@ var commands = []command{
 				return "[压缩失败] " + err.Error()
 			}
 			return "[压缩] 会话已压缩"
+		},
+	},
+	{
+		name: "/mcp", usage: "/mcp [server.prompt [k=v…]]",
+		help: "MCP 提示词：列出或展开为消息直接发送",
+		run: func(env *Env, args string) string {
+			if strings.TrimSpace(args) == "" {
+				return mcpList(env)
+			}
+			return mcpRun(env, strings.TrimSpace(args))
 		},
 	},
 	{
@@ -380,4 +393,57 @@ func Match(query string) []Command {
 		}
 	}
 	return out
+}
+
+// mcpList renders every server's prompts（spec 规则 28）.
+func mcpList(env *Env) string {
+	entries := env.Svc.MCPPrompts()
+	if len(entries) == 0 {
+		return "[mcp] 没有可用的提示词（服务器未声明或未运行）"
+	}
+	var b strings.Builder
+	b.WriteString("[mcp] 可用提示词：\n")
+	for _, e := range entries {
+		args := ""
+		for _, a := range e.Prompt.Arguments {
+			mark := ""
+			if a.Required {
+				mark = "*"
+			}
+			args += " " + a.Name + mark
+		}
+		line := e.Server + "." + e.Prompt.Name
+		if e.Prompt.Description != "" {
+			line += " — " + e.Prompt.Description
+		}
+		if args != "" {
+			line += "（参数:" + args + "）"
+		}
+		b.WriteString("  " + line + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// mcpRun expands and sends one prompt: /mcp server.prompt k=v…
+func mcpRun(env *Env, args string) string {
+	target, rest, _ := strings.Cut(args, " ")
+	server, prompt, found := strings.Cut(target, ".")
+	if !found || server == "" || prompt == "" {
+		return "[用法] /mcp <server>.<prompt> [k=v…]（/mcp 查看全部）"
+	}
+	kv := map[string]string{}
+	for _, pair := range strings.Fields(rest) {
+		if k, v, ok := strings.Cut(pair, "="); ok && k != "" {
+			kv[k] = v
+		}
+	}
+	text, err := env.Svc.MCPGetPrompt(server, prompt, kv)
+	if err != nil {
+		return "[mcp 失败] " + err.Error() + "\n" + mcpList(env)
+	}
+	if env.Send == nil {
+		return "[mcp 不支持] 此表面不能直接发送，展开结果：\n" + text
+	}
+	env.Send(text)
+	return "[mcp] 已发送 " + target
 }

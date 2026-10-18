@@ -397,6 +397,12 @@ func repl(workspace string, cont bool, resume string) int {
 			svc: svc, info: &info, workspace: workspace,
 			out:    func(msg string) { fmt.Fprintln(os.Stderr, msg) },
 			attach: &pending,
+			send: func(text string) { // /mcp 展开：常规发送路径复用
+				if err := svc.ChatMedia(info.ID, text, pending.take(), func(ev agent.Event) { render(ev) }); err != nil {
+					fmt.Fprintln(os.Stderr, "错误：", err)
+				}
+				fmt.Println()
+			},
 		}, line)
 		if quit {
 			return 0

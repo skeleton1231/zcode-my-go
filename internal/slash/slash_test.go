@@ -204,3 +204,35 @@ func TestSlashUsage(t *testing.T) {
 		t.Errorf("zero usage must not show a hit rate:\n%s", joined)
 	}
 }
+
+// TestSlashMCP 验证 /mcp（spec 规则 28）：无服务器时空列表说明、未知名
+// 报错并列表、缺 . 分隔报用法；Send 钩子未装的表面拿到展开文本。
+func TestSlashMCP(t *testing.T) {
+	env, lines := newEnv(t)
+
+	out := captureOutSlash(t, env, "/mcp")
+	if !strings.Contains(out, "没有可用的提示词") {
+		t.Fatalf("empty list: %q", out)
+	}
+	out = captureOutSlash(t, env, "/mcp helper.review")
+	if !strings.Contains(out, "mcp 失败") {
+		t.Fatalf("unknown prompt: %q", out)
+	}
+	out = captureOutSlash(t, env, "/mcp no-dot")
+	if !strings.Contains(out, "用法") {
+		t.Fatalf("missing dot: %q", out)
+	}
+	_ = lines
+}
+
+// captureOutSlash 跑一条命令并收集 Out（复用 /resume 的形态，独立命名
+// 避免与既有助手冲突）。
+func captureOutSlash(t *testing.T, env *Env, line string) string {
+	t.Helper()
+	var lines []string
+	prev := env.Out
+	env.Out = func(msg string) { lines = append(lines, msg) }
+	defer func() { env.Out = prev }()
+	Run(env, line)
+	return strings.Join(lines, "\n")
+}

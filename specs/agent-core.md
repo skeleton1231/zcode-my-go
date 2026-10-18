@@ -152,6 +152,12 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    计截断到 60K 字符并注明（与 @ 引用 mentionTextCap 同口径——ASCII
    管道保满额度）。REPL/TUI 不受影响（stdin 是交互端）。
 
+28. MCP 提示词（CC /mcp:name 的对应）：握手后并行探测 prompts/list
+   （能力可选——不支持的服务器静默无提示词）；`/mcp` 列出全部
+   server.prompt（描述与参数，* 为必填）；`/mcp <server>.<prompt>
+   [k=v…]` 经 prompts/get 展开为用户消息直接发送（文本块按角色拼接，
+   assistant 段标注）；未知名字给可读报错并列出可用项；不支持直接发
+   送的表面明确说明。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

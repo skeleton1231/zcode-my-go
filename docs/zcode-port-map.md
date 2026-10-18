@@ -195,6 +195,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    -p/--print 且 stdin 非终端时，管道/重定向内容以「标准输入：」围栏
    并入提示词（@ 引用同款形态）——`git diff | zgo -p "review"
    --output-format json` 全链自动化；60KB rune 安全截断注明。
+**MCP 提示词**（CC /mcp:name 的对应，spec 规则 28）：握手并行探测
+   prompts/list（能力可选，不支持的服务器静默无提示词）；/mcp 列出全
+   部 server.prompt（描述/参数/* 必填），/mcp <server>.<prompt> [k=v…]
+   经 prompts/get 展开为用户消息直接发送（slash.Env.Send 表面钩子，
+   TUI 提取 sendChat 共用常规路径、REPL 复用发送闭包；assistant 段加
+   角色标注）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
