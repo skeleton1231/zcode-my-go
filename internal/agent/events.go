@@ -23,6 +23,7 @@ const (
 	EvAgentEnd           EventKind = "agent_end"
 	EvCompaction         EventKind = "compaction"
 	EvTurnRetry          EventKind = "turn_retry"
+	EvBudgetNotice       EventKind = "budget_notice"
 )
 
 // Event is one streamed agent event, JSON-friendly for the mygo channel.

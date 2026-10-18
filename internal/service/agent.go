@@ -32,6 +32,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
+	"github.com/skeleton1231/zcode-my-go/internal/usage"
 )
 
 // DefaultBaseURL is the Anthropic Messages API; GLM and other compatible
@@ -48,6 +49,8 @@ type settings struct {
 	MCPServers map[string]mcp.Config `json:"mcpServers"`
 	Hooks      agent.CommandHooks    `json:"hooks"`
 	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)
+	// BudgetDailyTokens 是每日软预算（0=不限，spec 规则 35）。
+	BudgetDailyTokens int `json:"budgetDailyTokens"`
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
@@ -78,6 +81,7 @@ type AgentService struct {
 	refreshMu        sync.Mutex                 // OAuth 刷新 single-flight（issue #136）
 	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
 	autoTitleOn      bool                       // 首回合后自动命名（默认开）
+	day             *usage.Day                 // 当日 token 记账（spec 规则 35）
 	titleWG          sync.WaitGroup             // 命名 goroutine 的收束（Close 等待）
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
@@ -97,6 +101,7 @@ func New(dataDir string) (*AgentService, error) {
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
+	s.day = usage.Load(dataDir)
 	mgr, err := agent.NewManager(filepath.Join(dataDir, "sessions"))
 	if err != nil {
 		return nil, err
@@ -729,9 +734,13 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	// 回合开始前快照工作区（本地 git 仓库时）：seq = 新用户消息的序号
 	//（现有用户消息数），回滚按序号定位。
 	s.captureCheckpoint(sess, userTurnCount(sess.Messages()))
+	before := sess.UsageTotal()
 	text, media = s.expandMentions(sessionID, text, media)
 	err := sess.ChatMedia(text, media, emit)
 	if err == nil {
+		// 每日预算记账（spec 规则 35）：回合增量折算入当日记账，跨阈
+		// 值发一次通知（软预算——不阻断）。
+		s.recordDailyUsage(before, sess.UsageTotal(), emit)
 		// 首个回合成功结束后尝试自动命名（规则 21）：等值守卫在内部，
 		// 改过名的会话这里直接空手而归；WaitGroup 让 Close 收束它。
 		s.titleWG.Add(1)
@@ -1139,6 +1148,9 @@ type UsageSummary struct {
 	Title     string
 	Usage     ai.Usage
 	Turns     int // 用户回合数
+	// Today/TodayBudget 是当日记账与预算（0=不限，spec 规则 35）。
+	Today       int
+	TodayBudget int
 }
 
 // UsageSummaryOf collects a session's usage accounting for display.
@@ -1148,11 +1160,14 @@ func (s *AgentService) UsageSummaryOf(id string) (UsageSummary, error) {
 		return UsageSummary{}, fmt.Errorf("no session %s", id)
 	}
 	info := sess.Info()
+	today, budget := s.DailyUsage()
 	return UsageSummary{
-		SessionID: info.ID,
-		Title:     info.Title,
-		Usage:     sess.UsageTotal(),
-		Turns:     userTurnCount(sess.Messages()),
+		SessionID:   info.ID,
+		Title:       info.Title,
+		Usage:       sess.UsageTotal(),
+		Turns:       userTurnCount(sess.Messages()),
+		Today:       today,
+		TodayBudget: budget,
 	}, nil
 }
 
@@ -1165,10 +1180,14 @@ func FormatUsage(u UsageSummary) string {
 		pct := u.Usage.CacheReadTokens * 100 / total
 		hit = fmt.Sprintf("（前缀缓存命中 %d%%）", pct)
 	}
-	return fmt.Sprintf("会话 %s · %s\n回合 %d\n↑ 输入      %d tokens\n↓ 输出      %d tokens\n⤒ 缓存读    %d tokens %s\n⤓ 缓存写    %d tokens",
+	today := fmt.Sprintf("今日        %d tokens", u.Today)
+	if u.TodayBudget > 0 {
+		today += fmt.Sprintf("（预算 %d）", u.TodayBudget)
+	}
+	return fmt.Sprintf("会话 %s · %s\n回合 %d\n↑ 输入      %d tokens\n↓ 输出      %d tokens\n⤒ 缓存读    %d tokens %s\n⤓ 缓存写    %d tokens\n%s",
 		shortIDOf(u.SessionID), u.Title, u.Turns,
 		u.Usage.InputTokens, u.Usage.OutputTokens,
-		u.Usage.CacheReadTokens, hit, u.Usage.CacheWriteTokens)
+		u.Usage.CacheReadTokens, hit, u.Usage.CacheWriteTokens, today)
 }
 
 // shortIDOf keeps the formatter self-contained（cmd 包另有同名助手）.
@@ -1396,4 +1415,35 @@ func capResourceText(text string) string {
 	}
 	return string(r[:mcpResourceCapRunes]) +
 		fmt.Sprintf("\n…（资源超长，已截断，原 %d 字符）", len(r))
+}
+
+// recordDailyUsage 把本回合的用量增量折算入当日记账，跨阈值发一次通
+// 知（80%/100%，spec 规则 35）。
+func (s *AgentService) recordDailyUsage(before, after ai.Usage, emit func(agent.Event)) {
+	delta := usage.Priced(
+		after.InputTokens-before.InputTokens,
+		after.OutputTokens-before.OutputTokens,
+		after.CacheReadTokens-before.CacheReadTokens,
+		after.CacheWriteTokens-before.CacheWriteTokens)
+	if delta <= 0 {
+		return
+	}
+	if err := s.day.Add(delta); err != nil {
+		log.Printf("daily usage: %v", err)
+		return
+	}
+	budget := s.resolve().BudgetDailyTokens
+	switch s.day.CheckBudget(budget) {
+	case "near":
+		emit(agent.Event{Kind: agent.EvBudgetNotice,
+			Text: fmt.Sprintf("今日已用 %d token（预算的 80%%+）", s.day.Total())})
+	case "over":
+		emit(agent.Event{Kind: agent.EvBudgetNotice,
+			Text: fmt.Sprintf("今日已用 %d token，超出预算 %d", s.day.Total(), budget)})
+	}
+}
+
+// DailyUsage 报告今日已计价 token 与预算（0=不限）。
+func (s *AgentService) DailyUsage() (used, budget int) {
+	return s.day.Total(), s.resolve().BudgetDailyTokens
 }
