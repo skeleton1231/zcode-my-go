@@ -227,6 +227,12 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    位替换为参数原文；builtin 优先，自定义不遮蔽；/help 列出自定义段；
    不可发送的表面展示展开文本。SSH 工作区同享（经 path jail 读取）。（命令文件文本 60K rune 封顶——issue #195 家族口径。）
 
+
+40. TUI 信息可见性（与桌面对齐）：思考流灰显——EvThinkingDelta 累积渲染
+   为「◌ …」行（首条文本 delta 到达即定稿，zgo 文本流行复位）；状态
+   栏在回合结束后携带会话累计用量（↑输入+缓存 ↓输出，k/M 缩写，经
+   UsageSummaryOf，零用量时保持「就绪」）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

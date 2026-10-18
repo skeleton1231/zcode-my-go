@@ -68,12 +68,14 @@ type tuiState struct {
 	turnCur int
 
 	plan   []tools.TodoTask     // 任务面板：todo 工具落盘后刷新
-	onPlan func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
+	onPlan   func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
+	onUsage func() string           // 生产读会话累计用量（spec 规则 40），测试注入桩
 	abort  func()                   // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
 
 	// 输入历史（spec 规则 30）：已提交的用户消息；histCur==-1 表示在
 	// 实时输入（离开时的草稿保存在 histDraft）。
 	history   []string
+	think     string                    // 当前回合的思考流缓冲（灰显行）
 	histCur   int
 	histDraft []rune
 }
@@ -120,6 +122,13 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 	}
 	// 闭包按引用捕获 info：/new 经 SetSession 换 ID 后面板读到新会话。
 	s.onPlan = func() []tools.TodoTask { return svc.TodoPlan(info.ID) }
+	s.onUsage = func() string {
+		u, err := svc.UsageSummaryOf(info.ID)
+		if err != nil || (u.Usage.InputTokens == 0 && u.Usage.OutputTokens == 0) {
+			return ""
+		}
+		return fmt.Sprintf("↑%s ↓%s", tuiTokens(u.Usage.InputTokens+u.Usage.CacheReadTokens+u.Usage.CacheWriteTokens), tuiTokens(u.Usage.OutputTokens))
+	}
 	// Esc 中止（spec 规则 38）：闭包按引用捕获 info——/resume 换会话
 	// 后中止的是当前会话的运行。
 	s.abort = func() {
@@ -230,6 +239,11 @@ func (s *tuiState) sendChat(svc *service.AgentService, info *agent.SessionInfo, 
 		s.mu.Lock()
 		s.running = false
 		s.status = "就绪"
+		if s.onUsage != nil {
+			if u := s.onUsage(); u != "" {
+				s.status = "就绪 · " + u
+			}
+		}
 		s.mu.Unlock()
 		s.requestRedraw()
 	}()
@@ -264,13 +278,28 @@ func (s *tuiState) applyEvent(ev agent.Event, last *string) {
 	switch ev.Kind {
 	case agent.EvTextDelta:
 		*last += ev.Text
+		// 思考已展示过：定稿后补回文本流行（zgo 行被 ◌ 顶到上面了）。
+		if s.think != "" {
+			s.think = ""
+			s.lines = append(s.lines, ansi(ansiBold, "zgo > "))
+		}
 		// 流式：替换最后一条 assistant 行（由 message_start 预置）。
 		if len(s.lines) > 0 && strings.HasPrefix(s.lines[len(s.lines)-1], "zgo") {
 			s.lines[len(s.lines)-1] = ansi(ansiBold, "zgo > ") + wrap(*last, s.width)
 		}
 	case agent.EvMessageStart:
 		*last = ""
+		s.think = ""
 		s.lines = append(s.lines, ansi(ansiBold, "zgo > "))
+	case agent.EvThinkingDelta:
+		// 思考流灰显（spec 规则 40）：累积渲染为「◌ …」行；首条文本
+		// delta 到达即定稿（不再更新）。
+		s.think += ev.Text
+		if n := len(s.lines); n == 0 || !strings.HasPrefix(s.lines[n-1], ansi(ansiDim, "◌")) {
+			s.lines = append(s.lines, ansi(ansiDim, "◌ "))
+		}
+		n := len(s.lines)
+		s.lines[n-1] = ansi(ansiDim, "◌ "+wrap(s.think, s.width))
 	case agent.EvMessageEnd:
 		if ev.StopReason == "error" && ev.ErrorMessage != "" {
 			s.lines = append(s.lines, ansi(ansiRed, "[错误] "+ev.ErrorMessage))
@@ -639,4 +668,15 @@ func (s *tuiState) abortRun() {
 	s.abort()
 	s.push(ansi(ansiYellow, "[已中止] Esc 中断了当前回合"))
 	s.requestRedraw()
+}
+
+// tuiTokens 折算 token 数（与桌面 formatTokens 同形：k/万级缩写）。
+func tuiTokens(n int) string {
+	if n >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1000000)
+	}
+	if n >= 1000 {
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }

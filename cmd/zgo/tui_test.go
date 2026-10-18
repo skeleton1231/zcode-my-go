@@ -401,3 +401,40 @@ func TestTuiBudgetNoticeRender(t *testing.T) {
 
 	}
 }
+
+// TestTuiThinkingAndUsageStatus 验证 TUI 信息可见性（spec 规则 40）：思考
+// 流灰显行 → 文本流定稿接管；状态栏在回合后携带用量。
+func TestTuiThinkingAndUsageStatus(t *testing.T) {
+	defer func(enabled bool) { colorEnabled = enabled }(colorEnabled)
+	colorEnabled = false
+
+	s := &tuiState{width: 80, topIdx: -1, turnCur: -1,
+		onUsage: func() string { return "↑1.2k ↓30" }}
+	s.setStatus("运行中…", true)
+	s.applyEvent(agent.Event{Kind: agent.EvMessageStart}, new(string))
+	s.applyEvent(agent.Event{Kind: agent.EvThinkingDelta, Text: "先想一想"}, new(string))
+	joined := strings.Join(s.lines, "\n")
+	if !strings.Contains(joined, "◌ 先想一想") {
+		t.Fatalf("thinking not dim-rendered: %q", joined)
+	}
+	s.applyEvent(agent.Event{Kind: agent.EvTextDelta, Text: "答案"}, new(string))
+	joined = strings.Join(s.lines, "\n")
+	if !strings.Contains(joined, "zgo > 答案") {
+		t.Fatalf("text stream missing: %q", joined)
+	}
+	if !strings.Contains(joined, "◌ 先想一想") {
+		t.Fatalf("thinking lost after text: %q", joined)
+	}
+
+	// 回合收尾：状态带用量（直接驱动 sendChat 的 defer 语义——重放设置）。
+	s.mu.Lock()
+	s.running = false
+	s.status = "就绪"
+	if u := s.onUsage(); u != "" {
+		s.status = "就绪 · " + u
+	}
+	s.mu.Unlock()
+	if !strings.Contains(s.status, "↑1.2k") {
+		t.Fatalf("usage not in status: %q", s.status)
+	}
+}
