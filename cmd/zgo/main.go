@@ -29,13 +29,15 @@ func usage(w io.Writer) {
   -p, --print <prompt>   运行一个任务后退出（与位置参数二选一）
   -t, --tui              全屏终端界面
   -C <dir>               工作区目录（默认当前目录）
+  -c, --continue         恢复同工作区最近会话（无则新建）
+  -r, --resume <前缀>    恢复指定会话（唯一前缀；-r 优先于 -c）
 
 不带 -p 时进入 REPL。`)
 }
 
 // parseArgs 严格解析 argv：取值型 flag 的值不得形似 flag（否则报错而非
 // 静默吞掉），未知 flag 与缺值一律报错。
-func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images []string, err error) {
+func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images []string, cont bool, resume string, err error) {
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
 		next := ""
@@ -45,7 +47,7 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images
 		switch {
 		case arg == "-p" || arg == "--print":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, fmt.Errorf("-p/--print 需要一个 prompt 值")
+				return "", "", false, nil, false, "", fmt.Errorf("-p/--print 需要一个 prompt 值")
 			}
 			i++
 			prompt = argv[i]
@@ -53,26 +55,34 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images
 			fullscreen = true
 		case arg == "-i" || arg == "--image":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, fmt.Errorf("-i/--image 需要一个图片路径")
+				return "", "", false, nil, false, "", fmt.Errorf("-i/--image 需要一个图片路径")
 			}
 			i++
 			images = append(images, argv[i])
 		case arg == "-C":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, fmt.Errorf("-C 需要一个目录值")
+				return "", "", false, nil, false, "", fmt.Errorf("-C 需要一个目录值")
 			}
 			i++
 			workspace = argv[i]
+		case arg == "-c" || arg == "--continue":
+			cont = true
+		case arg == "-r" || arg == "--resume":
+			if next == "" || strings.HasPrefix(next, "-") {
+				return "", "", false, nil, false, "", fmt.Errorf("-r/--resume 需要一个会话前缀")
+			}
+			i++
+			resume = argv[i]
 		case strings.HasPrefix(arg, "-"):
-			return "", "", false, nil, fmt.Errorf("未知参数 %q", arg)
+			return "", "", false, nil, false, "", fmt.Errorf("未知参数 %q", arg)
 		default:
 			if prompt != "" {
-				return "", "", false, nil, fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)
+				return "", "", false, nil, false, "", fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)
 			}
 			prompt = arg
 		}
 	}
-	return prompt, workspace, fullscreen, images, nil
+	return prompt, workspace, fullscreen, images, cont, resume, nil
 }
 
 func main() {
@@ -91,7 +101,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "models" {
 		os.Exit(runModels(os.Args[2:]))
 	}
-	prompt, workspace, fullscreen, images, err := parseArgs(os.Args[1:])
+	prompt, workspace, fullscreen, images, cont, resume, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)
 		usage(os.Stderr)
@@ -112,10 +122,14 @@ func main() {
 			fatal(err)
 		}
 		defer svc.Close()
-		os.Exit(runTUI(svc, workspace))
+		tuiInfo, tuiResumed, tuiErr := resolveResume(svc, workspace, cont, resume)
+		if tuiErr != nil {
+			fatal(tuiErr)
+		}
+		os.Exit(runTUI(svc, workspace, tuiInfo, tuiResumed))
 	}
 	if prompt == "" {
-		os.Exit(repl(workspace))
+		os.Exit(repl(workspace, cont, resume))
 	}
 	if workspace == "" {
 		if cwd, err := os.Getwd(); err == nil {
@@ -134,9 +148,15 @@ func main() {
 	svc.SetAsker(stdinAsker)
 	svc.SetQuestion(stdinQuestion)
 
-	info, err := svc.NewSession(workspace)
-	if err != nil {
-		fatal(err)
+	info, resumed, rerr := resolveResume(svc, workspace, cont, resume)
+	if rerr != nil {
+		fatal(rerr)
+	}
+	if !resumed {
+		info, err = svc.NewSession(workspace)
+		if err != nil {
+			fatal(err)
+		}
 	}
 
 	media, attachErrs := loadImageBlocks(images)
@@ -291,7 +311,9 @@ func fatal(err error) {
 
 // repl runs the interactive loop (zcode-cli's interactive mode): one
 // session, streamed turns, slash commands. It returns the exit code.
-func repl(workspace string) int {
+// resumed（--continue/--resume 解析结果）时沿用该会话（历史随 Chat 全
+// 量带上，无需回放——REPL 本就不重绘历史）.
+func repl(workspace string, cont bool, resume string) int {
 	var pending attachments // /attach 攒的图，随下一条消息发送
 	if workspace == "" {
 		if cwd, err := os.Getwd(); err == nil {
@@ -310,11 +332,24 @@ func repl(workspace string) int {
 	svc.SetAsker(stdinAsker)
 	svc.SetQuestion(stdinQuestion)
 
-	info, err := svc.NewSession(workspace)
-	if err != nil {
-		fatal(err)
+	info, resumed, rerr := resolveResume(svc, workspace, cont, resume)
+	if rerr != nil {
+		fatal(rerr)
 	}
-	fmt.Fprintf(os.Stderr, "zgo 交互模式 · 工作区 %s\n命令：/exit 退出 · /compact 压缩 · /plan 切换计划模式 · /new 新会话\n", workspace)
+	if !resumed {
+		info, err = svc.NewSession(workspace)
+		if err != nil {
+			fatal(err)
+		}
+	}
+	if resumed {
+		// 恢复会话沿用其自身工作区（即使与当前目录不同）。
+		workspace = info.Workspace
+		fmt.Fprintf(os.Stderr, "zgo 交互模式 · 恢复会话 %s · %s\n", shortID(info.ID), info.Title)
+	} else {
+		fmt.Fprintf(os.Stderr, "zgo 交互模式 · 工作区 %s\n", workspace)
+	}
+	fmt.Fprintln(os.Stderr, "命令：/exit 退出 · /compact 压缩 · /plan 切换计划模式 · /new 新会话")
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for {
@@ -349,4 +384,29 @@ func repl(workspace string) int {
 		}
 		fmt.Println()
 	}
+}
+
+// resolveResume 把 -c/-r 解析成既有会话（规则 22）：--resume 走唯一前
+// 缀（未知名报错，提示 zgo sessions list）；--continue 取同工作区最近
+// 会话，无候选返回未恢复（调用方退回新建——首用不报错）；-r 优先于
+// -c。返回 (info, resumed, err)。
+func resolveResume(svc *service.AgentService, workspace string, cont bool, prefix string) (agent.SessionInfo, bool, error) {
+	if prefix != "" {
+		id, ok := svc.ResolveSession(prefix)
+		if !ok {
+			return agent.SessionInfo{}, false,
+				fmt.Errorf("没有会话 %q（完整 ID 见 zgo sessions list；支持唯一前缀）", prefix)
+		}
+		for _, info := range svc.ListSessions() {
+			if info.ID == id {
+				return info, true, nil
+			}
+		}
+	}
+	if cont {
+		if info, ok := svc.ContinueSession(workspace); ok {
+			return info, true, nil
+		}
+	}
+	return agent.SessionInfo{}, false, nil
 }

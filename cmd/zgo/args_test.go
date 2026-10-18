@@ -6,7 +6,7 @@ import "testing"
 // 以及别名与位置参数的合法形态。
 func TestParseArgsStrict(t *testing.T) {
 	ok := func(argv ...string) (prompt, workspace string, fullscreen bool, images []string) {
-		p, w, f, imgs, err := parseArgs(argv)
+		p, w, f, imgs, _, _, err := parseArgs(argv)
 		if err != nil {
 			t.Fatalf("parseArgs(%v): %v", argv, err)
 		}
@@ -45,8 +45,31 @@ func TestParseArgsStrict(t *testing.T) {
 		"多余位置参数":    {"hi", "extra"},
 	}
 	for name, argv := range bad {
-		if _, _, _, _, err := parseArgs(argv); err == nil {
+		if _, _, _, _, _, _, err := parseArgs(argv); err == nil {
 			t.Errorf("%s: parseArgs(%v) accepted", name, argv)
 		}
+	}
+}
+
+// TestParseArgsResume 验证 -c/-r 的解析与错误形态（规则 22）。
+func TestParseArgsResume(t *testing.T) {
+	p, w, f, _, c, r, err := parseArgs([]string{"-c"})
+	if err != nil || !c || r != "" || p != "" || w != "" || f {
+		t.Fatalf("-c = %q %q %v %v %q %v", p, w, f, c, r, err)
+	}
+	if _, _, _, _, c, r, err := parseArgs([]string{"--continue", "-t"}); err != nil || !c || r != "" {
+		t.Fatalf("--continue -t = %v %q %v", c, r, err)
+	}
+	if _, _, _, _, c, r, err := parseArgs([]string{"-r", "abc123", "-p", "hi"}); err != nil || c || r != "abc123" {
+		t.Fatalf("-r = %v %q %v", c, r, err)
+	}
+	if _, _, _, _, _, _, err := parseArgs([]string{"-r"}); err == nil {
+		t.Fatal("bare -r accepted")
+	}
+	if _, _, _, _, _, _, err := parseArgs([]string{"--resume"}); err == nil {
+		t.Fatal("bare --resume accepted")
+	}
+	if _, _, _, _, _, _, err := parseArgs([]string{"-r", "-t"}); err == nil {
+		t.Fatal("-r swallowing a flag accepted")
 	}
 }

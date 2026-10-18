@@ -587,6 +587,23 @@ func (s *AgentService) HasSession(idOrPrefix string) bool {
 	return ok
 }
 
+// ContinueSession picks the workspace's most recently modified session
+// （终端 --continue：同工作区最近会话；无候选返回 false，调用方退回新
+// 建——首用不报错）.
+func (s *AgentService) ContinueSession(workspace string) (agent.SessionInfo, bool) {
+	var best agent.SessionInfo
+	found := false
+	for _, info := range s.ListSessions() {
+		if info.Workspace != workspace {
+			continue
+		}
+		if !found || info.UpdatedAt.After(best.UpdatedAt) {
+			best, found = info, true
+		}
+	}
+	return best, found
+}
+
 // ResolveSession maps a unique id prefix to the full session id — CLI
 // ergonomics（时间戳前缀早早唯一，敲 15 位足够）.
 func (s *AgentService) ResolveSession(idOrPrefix string) (string, bool) {

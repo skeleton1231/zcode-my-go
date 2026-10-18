@@ -81,6 +81,13 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    口贴底），Ctrl+↑/↓ 在用户回合行间跳转（跳离末尾停尾随、越过最新恢复
    尾随），PageUp/PageDown 半屏滚动，窗口越界夹紧；/new 切会话清空计划
    与回合锚点。
+22. 终端会话恢复（Claude Code --continue/--resume 的落地）：`-c/
+   --continue` 取同工作区最近修改的会话，`-r/--resume <前缀>` 经唯一
+   前缀指定会话（未知名/歧义报错，完整 ID 见 zgo sessions list）；解析
+   成功则沿用该会话及其工作区（即使与当前目录不同），print 携带全部
+   历史发起新回合，REPL/TUI 回放既有转录后继续（用户回合登记导航锚
+   点，恢复行提示会话与标题）；--continue 无候选会话时退回新建（首用
+   不报错）。-c 与 -r 同给时 -r 优先。
 20. 层级项目上下文（ZCode context-hierarchy）：系统提示注入用户全局
    （~/.zgo/ZGO.md）+ 自工作区向上到 git 顶（含）每层第一个命中的上下
    文件（ZGO.md/AGENTS.md/CLAUDE.md，逐层择一），浅→深拼接（一般→具

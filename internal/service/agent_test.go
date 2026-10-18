@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -262,5 +263,69 @@ func TestMemoryIsPerWorkspace(t *testing.T) {
 	}
 	if s.memoryFor(a) != s.memoryFor(a) {
 		t.Fatal("memory not cached per workspace")
+	}
+}
+
+// TestContinueSessionPicksLatestInWorkspace 验证 --continue 的候选选择：
+// 同工作区取最近修改的会话，其他工作区忽略，无候选明确返回 false。
+// 间隔 2ms 创建——时钟粒度不足以区分时会话 UpdatedAt 不可比。
+func TestContinueSessionPicksLatestInWorkspace(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	wsA, wsB := t.TempDir(), t.TempDir()
+
+	older, err := svc.NewSession(wsA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	other, err := svc.NewSession(wsB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	newer, err := svc.NewSession(wsA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if older.ID == newer.ID || older.ID == other.ID {
+		t.Fatalf("session ids collided: %q %q %q", older.ID, other.ID, newer.ID)
+	}
+
+	got, ok := svc.ContinueSession(wsA)
+	if !ok {
+		t.Fatal("no candidate for wsA")
+	}
+	if got.ID != newer.ID {
+		t.Fatalf("candidate = %q, want newest %q", got.ID, newer.ID)
+	}
+	if _, ok := svc.ContinueSession(t.TempDir()); ok {
+		t.Fatal("empty workspace must report no candidate")
+	}
+}
+
+// TestSessionIDNoCollisionOnSameTick 验证同一时钟节拍内的并发/连续创建
+// 不撞 ID（Windows 时钟粒度百纳秒级时 Format 时间戳会同值——曾让两个
+// 会话互相覆盖）。
+func TestSessionIDNoCollisionOnSameTick(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	ws := t.TempDir()
+	ids := make(map[string]bool)
+	for i := 0; i < 50; i++ {
+		info, err := svc.NewSession(ws)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ids[info.ID] {
+			t.Fatalf("duplicate session id %q at iteration %d", info.ID, i)
+		}
+		ids[info.ID] = true
 	}
 }

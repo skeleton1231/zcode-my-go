@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
@@ -217,5 +218,38 @@ func TestTuiTodoEventRefreshesPlan(t *testing.T) {
 	s2.applyEvent(agent.Event{Kind: agent.EvToolExecutionEnd, ToolName: "read"}, new(string))
 	if s2.plan != nil {
 		t.Fatal("read should not refresh plan")
+	}
+}
+
+// TestReplayHistory 验证恢复会话的转录回放：用户回合登记导航锚点、助
+// 手文本常规样式、空文本消息跳过（规则 22）。
+func TestReplayHistory(t *testing.T) {
+	defer func(enabled bool) { colorEnabled = enabled }(colorEnabled)
+	colorEnabled = false
+
+	s := &tuiState{width: 80, topIdx: -1, turnCur: -1}
+	msgs := []ai.Message{
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "第一个问题"}}},
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "第一个回答"}}},
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: ""}}}, // 空文本跳过
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "第二个回答"}}},
+		{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "第二个问题"}}},
+	}
+	if n := replayHistory(s, msgs); n != 2 {
+		t.Fatalf("turns = %d, want 2", n)
+	}
+	if len(s.turns) != 2 {
+		t.Fatalf("anchors = %v, want 2", s.turns)
+	}
+	joined := strings.Join(s.lines, "\n")
+	for _, want := range []string{"你 > 第一个问题", "zgo > 第一个回答", "zgo > 第二个回答", "你 > 第二个问题"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q in replay:\n%s", want, joined)
+		}
+	}
+	// 回放后的回合可导航：首跳到最后一轮（第二个问题所在行）。
+	s.jumpTurn(-1)
+	if s.turnCur != 1 {
+		t.Fatalf("turnCur = %d, want 1", s.turnCur)
 	}
 }

@@ -143,6 +143,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    搜索子系统三面齐备（桌面弹窗、服务 API、终端命令）。
 **任务导航**（ZCode task-navigation）：Ctrl+↑/↓ 用户回合间跳转（居中、
    停跟随、边界不动、随搜索过滤行走）。
+**终端会话恢复**（Claude Code --continue/--resume 的落地，spec 规则
+   22）：`-c/--continue` 取同工作区最近会话（service.ContinueSession，
+   无候选退回新建——首用不报错）、`-r/--resume <前缀>` 经唯一前缀指定
+   （未知名报错并指向 zgo sessions list；-r 优先于 -c）；三形态共享
+   resolveResume——print 携带全部历史发起新回合、REPL 提示恢复行、TUI
+   回放既有转录（replayHistory：用户回合登记 Ctrl+↑/↓ 导航锚点、恢复
+   行提示会话与标题），恢复会话沿用其自身工作区。
 **会话自动命名**（ZCode auto-title）：首个回合成功后若标题仍是首条
    用户消息的截断默认值（等值守卫，无需持久化标志——用户/模型改过即失
    资格），后台经一次小额补全（同 provider、MaxTokens 48、15s 超时）生成
