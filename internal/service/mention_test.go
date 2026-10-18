@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 )
 
 // mentionEnv boots a service with a session over a temp workspace and
@@ -125,5 +126,38 @@ func TestMentionTotalBudget(t *testing.T) {
 	// 总展开量受预算约束（2MB + 原文 + 围栏开销）。
 	if len(out) > mentionTotalCap+64<<10 {
 		t.Fatalf("expanded output = %d bytes", len(out))
+	}
+}
+
+// TestMentionFenceSurvivesMarkdown: @ 引用的 Markdown 含行首裸 ```/````
+// 时围栏必须加长（issue #178：#71 的动态围栏方案没带到 @ 展开与 stdin
+// 管道两个新位点——固定三反引号被内容提前闭合，其后内容裸奔进提示）。
+func TestMentionFenceSurvivesMarkdown(t *testing.T) {
+	svc, id, ws := mentionEnv(t)
+	md := "# 文档\n\n```go\nfmt.Println(1)\n```\n\n````md\n嵌套围栏\n````\n\n正文"
+	if err := os.WriteFile(filepath.Join(ws, "doc.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := svc.expandMentions(id, "读 @doc.md", nil)
+	// 内容完整在场（未被围栏碰撞截走）。
+	for _, want := range []string{"fmt.Println(1)", "嵌套围栏", "正文"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("content %q lost in:\n%s", want, out)
+		}
+	}
+	// 开围栏长于内容里任何反引号串：行首 ``` 与 ```` 都不能提前闭合
+	//（最长串按原始内容度量——输出里的围栏自身不算）。
+	longest := 0
+	for _, l := range strings.Split(md, "\n") {
+		if n := len(l) - len(strings.TrimLeft(l, "`")); n > longest {
+			longest = n
+		}
+	}
+	fenceLen := len(exporthtml.FenceFor(md))
+	if fenceLen <= longest {
+		t.Fatalf("fence %d <= content run %d:\n%s", fenceLen, longest, out)
+	}
+	if n := strings.Count(out, strings.Repeat("`", fenceLen)); n < 2 {
+		t.Fatalf("fence lines %d < 2 in:\n%s", n, out)
 	}
 }

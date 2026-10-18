@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/skeleton1231/zcode-my-go/internal/export"
 )
 
 // TestParseArgsStrict 验证 issue #35 的四类静默误行为全部变为显式报错，
@@ -141,5 +143,38 @@ func TestBuildStdinPrompt(t *testing.T) {
 	if got := buildStdinPrompt("p", over); !strings.Contains(got, "已截断") ||
 		strings.Count(got, "x") != stdinCapRunes {
 		t.Errorf("ascii over-cap = %d x", strings.Count(got, "x"))
+	}
+}
+
+// TestBuildStdinPromptFenceSurvivesMarkdown: 管道高频输入恰是 Markdown
+// （cat README.md | zgo -p）——行首裸 ```/```` 不得提前闭合围栏（issue
+// #178，#71 同类）：围栏按内容最长反引号串 +1 动态加长。
+func TestBuildStdinPromptFenceSurvivesMarkdown(t *testing.T) {
+	md := "# 文档\n\n```go\nfmt.Println(1)\n```\n\n````md\n嵌套围栏\n````\n\n正文"
+	got := buildStdinPrompt("总结", strings.NewReader(md))
+	for _, want := range []string{"fmt.Println(1)", "嵌套围栏", "正文", "标准输入："} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("content %q lost in:\n%s", want, got)
+		}
+	}
+	// 开/闭围栏是仅有的两行最长纯反引号，且长于内容里任何反引号行。
+	longest := 0 // 内容自身的最长反引号串
+	for _, l := range strings.Split(md, "\n") {
+		if n := len(l) - len(strings.TrimLeft(l, "`")); n > longest {
+			longest = n
+		}
+	}
+	fenceLen := len(export.FenceFor(md))
+	if fenceLen <= longest {
+		t.Fatalf("fence %d <= content run %d", fenceLen, longest)
+	}
+	maxFences := 0
+	for _, l := range strings.Split(got, "\n") {
+		if l == strings.Repeat("`", fenceLen) {
+			maxFences++
+		}
+	}
+	if maxFences != 2 {
+		t.Fatalf("expected exactly 2 max-length fences, got %d:\n%s", maxFences, got)
 	}
 }

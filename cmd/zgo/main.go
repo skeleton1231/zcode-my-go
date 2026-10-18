@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -471,5 +472,9 @@ func buildStdinPrompt(prompt string, r io.Reader) string {
 		content = string(runes[:stdinCapRunes])
 		note = "\n…（管道输入超长，已截断）"
 	}
-	return prompt + "\n\n标准输入：\n```\n" + strings.TrimRight(content, "\n") + "\n```" + note
+	// 动态围栏（issue #178，与 #71 同方案）：管道高频输入恰是 Markdown，
+	// 行首裸 ``` 会提前闭合固定围栏——按内容最长反引号串 +1 加长。
+	fence := export.FenceFor(content)
+	return prompt + "\n\n标准输入：\n" + fence + "\n" +
+		strings.TrimRight(content, "\n") + "\n" + fence + note
 }
