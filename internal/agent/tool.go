@@ -18,6 +18,10 @@ type ToolResult struct {
 	// Diff 携带统一 diff（edit/write/patch 等改动类工具填写）；随事件
 	// 透传给 UI 做彩色渲染，不进模型上下文（Content 仍是给模型看的摘要）。
 	Diff string
+	// Images 携带图片块（read 读图片文件等场景）：BlockImage 形态，
+	// 紧跟工具结果块进入转录（spec 规则 47）。Content 仍是一段可读摘
+	// 要——协议不支持图片工具结果时（OpenAI）模型至少看到摘要。
+	Images []ai.Block
 }
 
 // Tool is one capability the model may call. Implementations must honor the

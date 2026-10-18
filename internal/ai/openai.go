@@ -311,12 +311,26 @@ func toOpenAI(system string, messages []Message) []openaiMessage {
 			}
 			out = append(out, om)
 		case RoleToolResult:
+			images := 0
 			for _, b := range m.Blocks {
-				if b.Kind == BlockToolResult {
-					out = append(out, openaiMessage{
-						Role: "tool", ToolCallID: b.ToolCallID, Content: b.Text,
-					})
+				if b.Kind == BlockImage {
+					images++
 				}
+			}
+			for _, b := range m.Blocks {
+				if b.Kind != BlockToolResult {
+					continue
+				}
+				content := b.Text
+				if images > 0 {
+					// Chat Completions 的 tool 消息只收文本（spec 规则
+					// 47 降级）：明确告知图片未上送，模型不至于误以为
+					// 看到了图。
+					content += fmt.Sprintf("\n[%d 张图片未上送：本协议的工具结果不支持图片]", images)
+				}
+				out = append(out, openaiMessage{
+					Role: "tool", ToolCallID: b.ToolCallID, Content: content,
+				})
 			}
 		}
 	}

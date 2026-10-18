@@ -282,15 +282,16 @@ func (l *Loop) executeBatch(ctx context.Context, turn int, msg ai.Message, calls
 	if l.cfg.ToolExecution == ParallelExecution && batchIsParallelizable(l.cfg.Tools, calls) {
 		return l.executeBatchParallel(ctx, turn, msg, calls, stop)
 	}
-	blocks := make([]ai.Block, 0, len(calls))
+	var blocks []ai.Block
 	for _, call := range calls {
-		blocks = append(blocks, l.executeOne(ctx, turn, msg, call, stop))
+		blocks = append(blocks, l.executeOne(ctx, turn, msg, call, stop)...)
 	}
 	return blocks
 }
 
-// executeOne runs a single call, wrapping its outcome as a result block.
-func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai.Block, stop ai.StopReason) ai.Block {
+// executeOne runs a single call, wrapping its outcome as a result block
+//（工具携带图片时，图片块紧随其后——同一工具结果消息内，spec 规则 47）。
+func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai.Block, stop ai.StopReason) []ai.Block {
 	var result ToolResult
 	if stop == ai.StopLength {
 		result = ToolResult{IsError: true, Content: "error: the response hit the token " +
@@ -298,8 +299,9 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 	} else {
 		result = l.execute(ctx, turn, msg, call)
 	}
-	return ai.Block{Kind: ai.BlockToolResult, ToolCallID: call.ID,
-		Text: result.Content, IsError: result.IsError, Diff: result.Diff}
+	out := []ai.Block{{Kind: ai.BlockToolResult, ToolCallID: call.ID,
+		Text: result.Content, IsError: result.IsError, Diff: result.Diff}}
+	return append(out, result.Images...)
 }
 
 // executeBatchParallel overlaps the batch's execution: each tool emits its
@@ -308,18 +310,22 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 // 读-改-写调用（write/edit/patch）组内顺序执行（issue #78：并行 RMW
 // 竞态曾让同文件多 edit 静默丢改动，10/10 复现），组间保持并行。
 func (l *Loop) executeBatchParallel(ctx context.Context, turn int, msg ai.Message, calls []ai.Block, stop ai.StopReason) []ai.Block {
-	blocks := make([]ai.Block, len(calls))
+	results := make([][]ai.Block, len(calls))
 	var wg sync.WaitGroup
 	for _, group := range l.pathGroups(calls) {
 		wg.Add(1)
 		go func(group []int) {
 			defer wg.Done()
 			for _, i := range group {
-				blocks[i] = l.executeOne(ctx, turn, msg, calls[i], stop)
+				results[i] = l.executeOne(ctx, turn, msg, calls[i], stop)
 			}
 		}(group)
 	}
 	wg.Wait()
+	var blocks []ai.Block
+	for _, rs := range results {
+		blocks = append(blocks, rs...)
+	}
 	return blocks
 }
 
