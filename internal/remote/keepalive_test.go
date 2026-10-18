@@ -1,47 +1,43 @@
 package remote
 
 import (
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/remotetest"
 )
 
-// TestKeepaliveDetectsDeadConnection: keepalive 循环探测服务端断开——
-// 周期内标记死连接（issue #220：死连接不被发现，下一个工具调用挂到
-// 超时）。
-func TestKeepaliveDetectsDeadConnection(t *testing.T) {
-	srv := remotetest.Start(t)
-	host, port, _ := splitHostPort(srv.Address)
-	c, err := Dial(Config{
-		User: "tester", Host: host, Port: port,
-		Key: srv.KeyPEM, Root: srv.Root,
-	})
-	if err != nil {
-		t.Fatalf("dial: %v", err)
+// TestKeepaliveMarksDeadAfterFailures: keepalive 循环连续 3 次探测失
+// 败即标记死连接（issue #220 判死语义）。确定性注入探测缝——CI 上真
+// 实杀连接的时序不可复现（Windows 上关闭后的 SendRequest 行为不稳
+// 定，挂钟断言连续两轮 flake；#233 同族教训）。
+func TestKeepaliveMarksDeadAfterFailures(t *testing.T) {
+	c := &Client{}
+	c.SetKeepAliveInterval(10 * time.Millisecond)
+	var calls int32
+	c.ka.probeFn = func(time.Duration) error {
+		atomic.AddInt32(&calls, 1)
+		return errors.New("probe failed")
 	}
-	t.Cleanup(func() { c.Close() })
-
-	// 加速验证：把探测间隔压到测试尺度。
-	c.SetKeepAliveInterval(50 * time.Millisecond)
 	c.StartKeepAlive()
-
-	// 掐断连接（服务端可见地断开）——keepalive 探测应在数个周期内发现。
-	c.KillConnectionForTesting()
-
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if !c.Alive() {
-			return // 已判死
+			if atomic.LoadInt32(&calls) < 3 {
+				t.Fatalf("marked dead after only %d probes", calls)
+			}
+			return
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("keepalive never marked the dead connection")
 }
 
 // TestReconnectAfterDeath: 死连接的下一次调用自动重连——对上层透明
-//（issue #220：此后每一个工具调用失败到会话结束是稳定性短板）。
+// （issue #220：此后每一个工具调用失败到会话结束是稳定性短板）。
 func TestReconnectAfterDeath(t *testing.T) {
 	srv := remotetest.Start(t)
 	host, port, _ := splitHostPort(srv.Address)

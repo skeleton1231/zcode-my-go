@@ -355,6 +355,23 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
 
+**后台子代理**（ZCode runtime-task registry / Agent 工具的落地，spec
+   规则 50）：agent/agent_output/agent_stop 三件套——启动即回执、父会
+   话继续、收割/停止；注册表会话作用域（ctx 派生注册表根，随
+   DeleteSession/Close 全停）。顺带修复：嵌套循环（task/dispatch/
+   workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、
+   ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
+   一经持锁快照 + ReadOnlyW 拨号工作区。
+**子代理续话**（ZCode SendMessage 的落地，spec 规则 51）：agent_send
+   {id, message} 对终态后台子代理带全部历史续跑（同 ID、收割面不变；
+   运行中拒绝）；RunSubtaskSeeded 统一新任务/续跑形态（历史拷贝隔
+   离）；注册表终态存转录、续跑翻转持锁原子。
+
+**read 读 PDF**（ZCode read-pdf 的落地，spec 规则 52）：internal/
+   pdftext——词法级 stream 收集 + Flate 解压 + Tj/TJ 文本算子（换行启
+   发）、字面/十六进制串（UTF-16BE BOM）；16MB/256KB 有界；可读率
+   闸门（<85% 报错——CID 无 ToUnicode 宁失败不乱码）。
+
 **工作区信任门**（pi project-trust / CC 信任提示的落地，spec 规则
    53）：internal/trust——未授信本地工作区不加载其 .zgorules.json
    （allow 规则即提权面）与 .zgo 命令/技能层（提示注入面）；授信表

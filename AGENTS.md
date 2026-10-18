@@ -71,6 +71,7 @@ internal/agent        agent loop、事件、会话与 JSONL 持久化、子代�
 internal/agent/permission  权限系统（ZCode permission/ 翻译）
 internal/agent/compact    上下文压缩（ZCode compact/ 翻译）
 internal/tools        内置工具：read/write/edit/bash/grep/glob/ls/apply_patch/webfetch/
+                      agent 四件套（后台子代理 spawn/output/stop/send 续话）
                       todo/ask/memory/task/dispatch/workflow
 internal/prompt       系统提示（环境、git、项目上下文文件）
 internal/service      AgentService：UI 唯一入口（设置、会话、Chat 回调、
@@ -83,6 +84,8 @@ internal/skills      技能发现与加载（SKILL.md frontmatter、两层根、
 internal/workflow    工作流定义与运行记录持久化（saveAs/run/resume）
 internal/mcp          MCP 客户端（stdio JSON-RPC）
 internal/webfetch    webfetch 工具（URL 归一、SSRF egress 守卫、重定向策略、文本抽取、缓存）
+internal/pdftext     PDF 文本层抽取（read 读 PDF 的内核，可读率闸门）
+
 internal/trust       工作区授信表（未授信不加载项目规则/命令/技能层）
 docs/                 架构文档 + ZCode 移植地图（zcode-port-map.md）
 mygo.json             打包配置（name/identifier/version/out）

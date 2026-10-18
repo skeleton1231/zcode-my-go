@@ -39,7 +39,7 @@ func TestBashCwdSticky(t *testing.T) {
 }
 
 // TestBashCwdEscapeRejected: cd 出工作区根不持久——下一条仍从根启动
-//（issue #221：越狱沿用 jail 语义）。
+// （issue #221：越狱沿用 jail 语义）。
 func TestBashCwdEscapeRejected(t *testing.T) {
 	if runtime.GOOS == "js" {
 		t.Skip("no process model on wasm")
