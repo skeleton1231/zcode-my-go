@@ -159,7 +159,7 @@ func TestParseTargetDriveRoot(t *testing.T) {
 		{"ssh://u@h:22/C:/Users/x/ws", "C:/Users/x/ws"},
 		{"ssh://u@h/C:/ws", "C:/ws"},
 		{"ssh://u@h/D:/a b/c", "D:/a b/c"},
-		{"ssh://u@h//home/u/ws", "/home/u/ws"}, // POSIX 根不受影响
+		{"ssh://u@h//home/u/ws", "/home/u/ws"},      // POSIX 根不受影响
 		{"ssh://u@h/CD/not-drive", "/CD/not-drive"}, // 第三字节非冒号
 	}
 	for _, c := range cases {

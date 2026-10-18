@@ -487,6 +487,9 @@ func TestCustomCommandTextCapped(t *testing.T) {
 	svc, _ := New(t.TempDir())
 	t.Cleanup(svc.Close)
 	ws := t.TempDir()
+	if err := svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
 	dir := filepath.Join(ws, ".zgo", "commands")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

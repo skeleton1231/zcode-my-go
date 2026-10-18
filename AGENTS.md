@@ -83,6 +83,7 @@ internal/skills      技能发现与加载（SKILL.md frontmatter、两层根、
 internal/workflow    工作流定义与运行记录持久化（saveAs/run/resume）
 internal/mcp          MCP 客户端（stdio JSON-RPC）
 internal/webfetch    webfetch 工具（URL 归一、SSRF egress 守卫、重定向策略、文本抽取、缓存）
+internal/trust       工作区授信表（未授信不加载项目规则/命令/技能层）
 docs/                 架构文档 + ZCode 移植地图（zcode-port-map.md）
 mygo.json             打包配置（name/identifier/version/out）
 ```

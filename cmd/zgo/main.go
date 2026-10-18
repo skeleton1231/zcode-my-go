@@ -113,6 +113,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "workflow" {
 		os.Exit(runWorkflow(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "trust" {
+		os.Exit(runTrust(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "usage" {
 		os.Exit(runUsage(os.Args[2:]))
 	}
@@ -178,6 +181,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
+		trustHint(os.Stderr, svc, workspace)
 	}
 
 	// 管道输入（spec 规则 27）：stdin 非终端（管道/重定向）时并入提示
@@ -374,6 +378,7 @@ func repl(workspace string, cont bool, resume string) int {
 		if err != nil {
 			fatal(err)
 		}
+		trustHint(os.Stderr, svc, workspace)
 	}
 	if resumed {
 		// 恢复会话沿用其自身工作区（即使与当前目录不同）。

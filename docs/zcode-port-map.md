@@ -354,3 +354,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    50 条）；workflow 工具 {steps[, saveAs]}/{run: 名}/{resume: 运行
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
+
+**工作区信任门**（pi project-trust / CC 信任提示的落地，spec 规则
+   53）：internal/trust——未授信本地工作区不加载其 .zgorules.json
+   （allow 规则即提权面）与 .zgo 命令/技能层（提示注入面）；授信表
+   trusted.json（规范化键/原子写）；ssh:// 显式拨号视为授信；/trust
+   即时重载在跑会话规则、zgo trust CLI（grant/list/revoke，撤销即时
+   清空）；终端三表面未授信提示。

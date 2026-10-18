@@ -330,6 +330,20 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
+   （规则 50-52 由 pending PR 预留：50/51 后台子代理与续话、52 read
+   读 PDF。）
+
+53. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
+   本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来
+   的恶意仓库不能靠自带规则文件给自己放权）、不加载其 `.zgo` 命令与
+   技能层（提示注入面）；全局层不受影响。授信表 dataDir/trusted.json
+   （路径键规范化：Clean + Windows 盘符路径整体小写；原子写；损坏即
+   空表重起）。ssh:// 目标是用户显式拨号的远端——视为授信。授信途
+   径：`/trust`（当前会话工作区，即时重载项目规则——在跑会话经
+   ApplyProjectRules 生效）、`zgo trust <路径>`（print/CI 预授信）、
+   `zgo trust --list / --revoke <路径>`（撤销即时清空在跑会话的项
+   目规则）。未授信时终端三表面在会话建立时打 stderr 提示。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
