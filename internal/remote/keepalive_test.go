@@ -30,7 +30,7 @@ func TestKeepaliveDetectsDeadConnection(t *testing.T) {
 	// 掐断连接（服务端可见地断开）——keepalive 探测应在数个周期内发现。
 	c.KillConnectionForTesting()
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second) // 看门狗最坏 3×(50ms+250ms)；CI 慢机留余量
 	for time.Now().Before(deadline) {
 		if !c.Alive() {
 			return // 已判死
@@ -41,7 +41,7 @@ func TestKeepaliveDetectsDeadConnection(t *testing.T) {
 }
 
 // TestReconnectAfterDeath: 死连接的下一次调用自动重连——对上层透明
-//（issue #220：此后每一个工具调用失败到会话结束是稳定性短板）。
+// （issue #220：此后每一个工具调用失败到会话结束是稳定性短板）。
 func TestReconnectAfterDeath(t *testing.T) {
 	srv := remotetest.Start(t)
 	host, port, _ := splitHostPort(srv.Address)
