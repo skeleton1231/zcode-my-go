@@ -195,3 +195,24 @@ func TestRestoreDistinguishesPrunedFromNonRepo(t *testing.T) {
 		t.Fatalf("pruned restore err = %v, want ErrCheckpointPruned", err)
 	}
 }
+
+// TestCaptureRestoreViaShortPath: 工作区以 8.3 短名形态传入（CI runner
+// 的 TMP 即 RUNNER~1 形态）时，git toplevel 的长形态对比不得误判非仓库
+//（winpath.Long 归一——CI 首跑 windows 上检查点全军覆没的根因）。
+func TestCaptureRestoreViaShortPath(t *testing.T) {
+	short, ok := shortPathOf(t, gitRepo(t))
+	if !ok {
+		t.Skip("volume has 8dot3 disabled")
+	}
+	write(t, short, "s.txt", "v1\n")
+	if err := Capture(short, "s1", 0); err != nil {
+		t.Fatalf("capture via short path: %v", err)
+	}
+	write(t, short, "s.txt", "v2\n")
+	if err := Restore(short, "s1", 0); err != nil {
+		t.Fatalf("restore via short path: %v", err)
+	}
+	if got := read(t, short, "s.txt"); got != "v1\n" {
+		t.Fatalf("s.txt = %q", got)
+	}
+}

@@ -65,9 +65,18 @@ func TestSessionsListExportRm(t *testing.T) {
 		}
 	}
 
-	// 前缀导出 Markdown（同一秒创建的两个会话，取到纳秒差异的长度），
-	// 显式 -o 指到临时目录（默认落 CWD，测试不污染仓库）。
-	prefix := ids[1][:len(ids[1])-6]
+	// 前缀导出 Markdown（同一秒创建的两个会话）——前缀自适应到最短唯
+	// 一：砍尾长度的固定假设在快机器上撞前 3 位纳秒同值（CI 双平台实
+	// 测前缀歧义 → resolve 失败）。显式 -o 指到临时目录（默认落 CWD，
+	// 测试不污染仓库）。
+	prefix := ids[1]
+	for len(prefix) > 8 {
+		shorter := prefix[:len(prefix)-1]
+		if strings.HasPrefix(ids[0], shorter) {
+			break // 再短就撞另一会话：这就是最短唯一前缀
+		}
+		prefix = shorter
+	}
 	dest := filepath.Join(t.TempDir(), "export.md")
 	code, out = runSessionsCaptured(t, dir, "export", "--md", "-o", dest, prefix)
 	if code != 0 || !strings.Contains(out, "已导出") {

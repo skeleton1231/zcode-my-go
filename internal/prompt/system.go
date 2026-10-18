@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/skeleton1231/zcode-my-go/internal/winpath"
 )
 
 // contextFiles are looked up per directory, first match wins.
@@ -122,6 +124,10 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 // 每层第一个命中的上下文文件，浅→深拼接（一般→具体）；总量封顶
 // contextCapBytes，超限截断并说明。read 非 nil（远程）只读根层。
 func projectContext(workspace string, read func(name string) ([]byte, error)) string {
+	// 归一长形态：dirChain 内部同样归一，但标签比较用的是这里的
+	// workspace——两侧必须同形态（CI runner 的 TMP 带 RUNNER~1 短名，
+	// 否则 workspace 层永远标成 parent）。
+	workspace = winpath.Long(workspace)
 	var parts []string
 	if g := globalContext(); g != "" {
 		parts = append(parts, "--- user (~/.zgo/ZGO.md) ---\n"+g)
@@ -150,12 +156,15 @@ func projectContext(workspace string, read func(name string) ([]byte, error)) st
 // 非 nil（远程）只含工作区根；本地自工作区向上到 git 顶（含）。git 顶
 // 必须是工作区的真祖先——HOME 自身是 git 仓库的机器上 show-toplevel 会
 // 给出毫不相关的顶，此时退回单层（issue #98 的教训：仓库判定必须
-// show-toplevel 严格归属）。
+// show-toplevel 严格归属）。比较前两侧过 winpath.Long 归一：TMP 带 8.3
+// 短名组件（RUNNER~1）而 git 返回长形态时，字符串级祖先判定会静默降级
+// 单层（CI windows runner 实测）。
 func dirChain(workspace string, read func(name string) ([]byte, error)) []string {
 	if read != nil {
 		return []string{workspace}
 	}
-	top := gitToplevel(workspace)
+	workspace = winpath.Long(workspace)
+	top := winpath.Long(gitToplevel(workspace))
 	if top == "" || !isAncestor(top, workspace) {
 		return []string{workspace}
 	}

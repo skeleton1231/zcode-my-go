@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/skeleton1231/zcode-my-go/internal/winpath"
 )
 
 // Retention is how many checkpoints a session keeps (newest by turn).
@@ -62,10 +64,12 @@ func isRepoRoot(git, dir string) (bool, error) {
 		return false, err
 	}
 	// Windows 上 git 的 toplevel 可能以正斜杠返回（本机与 runner 的
-	// 版本/形态各异）——归一化到同一分隔符再比大小写。
+	// 版本/形态各异），且 TMP 可能带 8.3 短名组件（RUNNER~1）而 git 还
+	// 原长形态——两侧都过 winpath.Long 归一到长形态，再统一分隔符比大
+	// 小写。
 	samePath := func(a, b string) bool {
-		return strings.EqualFold(filepath.ToSlash(filepath.Clean(a)),
-			filepath.ToSlash(filepath.Clean(b)))
+		return strings.EqualFold(filepath.ToSlash(filepath.Clean(winpath.Long(a))),
+			filepath.ToSlash(filepath.Clean(winpath.Long(b))))
 	}
 	return samePath(abs, top), nil
 }

@@ -2,6 +2,7 @@ package remote
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -125,12 +126,17 @@ func (p *BgProcess) KillTree() error {
 		if p.posix {
 			log.Printf("zgo: remote background job killed without captured pid; daemonized survivors possible")
 		}
-		return err
+		return nil
 	}
 	if _, kerr := p.client.Exec(confirmKillLine(pid)); kerr != nil {
 		log.Printf("zgo: remote kill confirm for pid %d failed: %v", pid, kerr)
 	}
-	return err
+	// POSIX 上服务器击杀后先关通道，客户端 Close 见 EOF——击杀语义已
+	// 达成，通道收尾噪声不当错误上抛（CI ubuntu 实测 bash_kill 报 EOF）。
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
 
 // confirmKillLine 覆盖三类目标：进程组（kill -- -pid，组长即 shell），
