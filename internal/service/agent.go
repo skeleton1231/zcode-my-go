@@ -81,6 +81,8 @@ type AgentService struct {
 	question         func(ctx context.Context, q agent.Question) (string, error)
 	states           map[string]*tools.States // session-scoped tool state
 	mcp              []*mcp.Server            // launched MCP servers
+	mcpSyncMu        sync.Mutex               // syncMCP 串行化（异步启动后可能与显式重载并发）
+	mcpClosed        bool                     // Close 后不再入表——在途握手完成即关闭（防进程泄漏）
 	memories         map[string]*tools.Memory // workspace-scoped long-term memory
 	memRoot          string
 	wsCache          map[string]tools.Workspace // sessionID → (possibly remote) workspace
@@ -119,7 +121,11 @@ func New(dataDir string) (*AgentService, error) {
 		return nil, err
 	}
 	s.mgr = mgr
-	s.startMCP()
+	// 启动异步（性能路线第二条）：mcp.Start 的握手最长 20s——同步曾让
+	// 一个挂死的服务器把每个 zgo 命令的启动卡满超时；后台起、握手完
+	// 成即入表（工具面随 mcpServers 快照自然出现）。显式重载仍同步
+	// （设置动作要看到结果）。
+	go s.startMCP()
 	s.rewire()
 	return s, nil
 }
@@ -186,6 +192,8 @@ func (s *AgentService) RemoveMCPServer(name string) error {
 // reload): stopped-and-restarted for changed signatures, closed for
 // removed ones, started for additions; failures degrade, never block.
 func (s *AgentService) syncMCP() {
+	s.mcpSyncMu.Lock() // 串行化：并发的 sync 为同名服务器起两个进程
+	defer s.mcpSyncMu.Unlock()
 	s.mu.Lock()
 	current := map[string]*mcp.Server{}
 	for _, srv := range s.mcp {
@@ -221,7 +229,9 @@ func (s *AgentService) syncMCP() {
 	}
 	s.mu.Unlock()
 
-	// 启动在锁外（握手最长 20s），成功后再入表。
+	// 启动在锁外（握手最长 20s），成功后再入表。Close 后的在途握手直
+	// 接关闭服务器——异步启动（构造期）可能在服务关闭后才完成握手，
+	// 入表即进程泄漏。
 	for _, p := range toStart {
 		server, err := mcp.Start(context.Background(), p.name, p.cfg)
 		if err != nil {
@@ -230,6 +240,11 @@ func (s *AgentService) syncMCP() {
 		}
 		server.Signature = p.sig
 		s.mu.Lock()
+		if s.mcpClosed {
+			s.mu.Unlock()
+			server.Close()
+			continue
+		}
 		s.mcp = append(s.mcp, server)
 		s.mu.Unlock()
 	}
@@ -272,6 +287,7 @@ func (s *AgentService) Close() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.mcpClosed = true
 	for _, server := range s.mcp {
 		server.Close()
 	}
