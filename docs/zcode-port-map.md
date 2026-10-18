@@ -414,3 +414,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **问题报告 zgo bugreport**（pi bug-report 的落地，spec 规则 59）：自
    包含 Markdown（版本/平台/脱敏配置/兜底链/MCP 诊断/会话概况元数
    据/工具链）；密钥与转录正文绝不落盘。
+
+**cron 任务级模型**（spec 规则 60）：Job.Model 此前只存不用——补执
+   行面 Manager.SetSessionModel（会话模型闭包替换，后续回合/压缩即时
+   生效，空恢复全局）；scheduleRunner 覆盖任务模型；cron list 增列。

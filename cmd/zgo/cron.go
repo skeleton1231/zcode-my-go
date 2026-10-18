@@ -76,7 +76,7 @@ func cronList(store *schedule.Store) int {
 	}
 	jobs = schedule.SortedJobs(jobs)
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\t启用\t计划\t下次\t工作区\t上次状态")
+	fmt.Fprintln(w, "ID\t启用\t计划\t下次\t工作区\t模型\t上次状态")
 	for _, j := range jobs {
 		next := schedule.NextDue(j, time.Now())
 		nextStr := "从不"
@@ -87,8 +87,12 @@ func cronList(store *schedule.Store) int {
 		if len(status) > 24 {
 			status = status[:24] + "…"
 		}
-		fmt.Fprintf(w, "%s\t%v\t%s\t%s\t%s\t%s\n",
-			j.ID, j.Enabled, j.Schedule, nextStr, shortPath(j.Workspace), status)
+		model := j.Model
+		if model == "" {
+			model = "（默认）"
+		}
+		fmt.Fprintf(w, "%s\t%v\t%s\t%s\t%s\t%s\t%s\n",
+			j.ID, j.Enabled, j.Schedule, nextStr, shortPath(j.Workspace), model, status)
 	}
 	w.Flush()
 	return 0

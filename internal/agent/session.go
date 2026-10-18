@@ -851,12 +851,7 @@ func (m *Manager) wire(s *Session) {
 		}
 		return m.wiring.Provider()
 	}
-	s.model = func() string {
-		if m.wiring.Model == nil {
-			return ""
-		}
-		return m.wiring.Model()
-	}
+	s.model = m.wiringModel()
 	s.thinking = m.wiring.Thinking
 	s.hooks = m.wiring.Hooks
 	s.buildTools = m.wiring.Tools
@@ -883,6 +878,35 @@ func (s *Session) ApplyProjectRules(rules permission.Ruleset) {
 	if s.permissions != nil {
 		s.permissions.SetProjectRules(rules)
 	}
+}
+
+// wiringModel 是会话默认的模型解析闭包（全局设置）。
+func (m *Manager) wiringModel() func() string {
+	return func() string {
+		if m.wiring.Model == nil {
+			return ""
+		}
+		return m.wiring.Model()
+	}
+}
+
+// SetSessionModel 覆盖单个会话的模型（定时任务的任务级模型，spec 规
+// 则 60）：空串恢复全局解析。后续回合与压缩即刻生效——s.model 是每
+// 次请求的实时读取点。
+func (m *Manager) SetSessionModel(id, model string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return false
+	}
+	if model == "" {
+		s.model = m.wiringModel()
+		return true
+	}
+	fixed := model
+	s.model = func() string { return fixed }
+	return true
 }
 
 // New creates a session for a workspace.
