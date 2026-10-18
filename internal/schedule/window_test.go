@@ -66,7 +66,7 @@ func TestInWindow(t *testing.T) {
 }
 
 // TestSchedulerDefersOutsideWindow 窗口外不 fire 且不动 LastRun——窗口
-// 一开即补跑（spec 规则 63）。
+// 一开即补跑（spec 规则 64）。
 func TestSchedulerDefersOutsideWindow(t *testing.T) {
 	store := NewStore(t.TempDir())
 	// 计划每分钟，窗口 09:00-09:05；now=08:59（窗口外）→ 到期不 fire。

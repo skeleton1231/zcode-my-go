@@ -278,7 +278,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 		if next.IsZero() || next.After(now) {
 			continue
 		}
-		// 时间窗（spec 规则 63，pi off-peak 的形态）：窗口外不 fire 也
+		// 时间窗（spec 规则 64，pi off-peak 的形态）：窗口外不 fire 也
 		// 不动 LastRun——任务保持到期，窗口一开的下一个 tick 即补跑。
 		if !job.InWindow(now) {
 			continue
