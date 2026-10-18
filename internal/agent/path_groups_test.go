@@ -18,6 +18,9 @@ type rmwTool struct {
 	name string
 	mu   sync.Mutex
 	file strings.Builder
+	// inflight/maxInflight：并发在场数及峰值（overlap 的会合证明）。
+	inflight    int
+	maxInflight int
 }
 
 func (t *rmwTool) Name() string { return t.name }
@@ -34,8 +37,26 @@ func (t *rmwTool) Execute(_ context.Context, args json.RawMessage) ToolResult {
 	t.mu.Lock()
 	cur := t.file.String()
 	t.mu.Unlock()
-	time.Sleep(30 * time.Millisecond) // 计算窗口：放大竞态
 	t.mu.Lock()
+	t.inflight++
+	t.mu.Unlock()
+	// 会合证明：并行时两路同时在场（等到第二路到达或 2s 超时——超时
+	// 即串行，断言由 maxInflight 兜底）。计时断言在 CI 慢 runner 上
+	// 真实翻过车（56ms > 50ms，纯调度噪声）。
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		t.mu.Lock()
+		now := t.inflight
+		t.mu.Unlock()
+		if now >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(10 * time.Millisecond)
+	t.mu.Lock()
+	t.maxInflight = max(t.maxInflight, t.inflight)
+	t.inflight--
 	t.file.Reset()
 	t.file.WriteString(cur + a.Mark + "\n")
 	t.mu.Unlock()
@@ -79,7 +100,6 @@ func TestParallelSamePathRMWKeepsBothChanges(t *testing.T) {
 // 两个慢调用不同路径，总耗时应明显小于两倍窗口。
 func TestParallelDifferentPathsStillOverlap(t *testing.T) {
 	tool := &rmwTool{name: "edit"}
-	start := time.Now()
 	loop := NewLoop(LoopConfig{
 		Provider: &fakeProvider{turns: []fakeTurn{{
 			events: []ai.StreamEvent{
@@ -95,7 +115,7 @@ func TestParallelDifferentPathsStillOverlap(t *testing.T) {
 		History:       func() []ai.Message { return nil },
 	}, func(Event) {})
 	loop.Run(context.Background(), func(ai.Message) error { return nil })
-	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
-		t.Fatalf("different paths did not overlap: %v", elapsed)
+	if tool.maxInflight < 2 {
+		t.Fatalf("different paths did not overlap: peak inflight = %d", tool.maxInflight)
 	}
 }
