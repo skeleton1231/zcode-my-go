@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,7 +123,7 @@ func TestNotARepoAndMissingCheckpoint(t *testing.T) {
 	if err := Capture(dir, "s1", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := Restore(dir, "s1", 5); err == nil || !strings.Contains(err.Error(), "no checkpoint") {
+	if err := Restore(dir, "s1", 5); err == nil || !errors.Is(err, ErrCheckpointPruned) {
 		t.Fatalf("missing checkpoint err = %v", err)
 	}
 	// 无 HEAD 的空仓库也能捕获（全部按未跟踪收录）。
@@ -169,5 +170,28 @@ func TestPruneKeepsNewest(t *testing.T) {
 	// 新的仍在。
 	if err := Restore(dir, "s1", Retention+1); err != nil {
 		t.Fatalf("newest pruned: %v", err)
+	}
+}
+
+// TestRestoreDistinguishesPrunedFromNonRepo: 仓库里被保留窗口修剪的 ref
+// 与非仓库降级必须可区分（issue #152：此前共用 ErrNoCheckpoint 哨兵，
+// service 把危险修剪当良性降级——文件静默不回退、转录照常回退）。
+func TestRestoreDistinguishesPrunedFromNonRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	plain := t.TempDir()
+	if err := Restore(plain, "s1", 0); !errors.Is(err, ErrNotARepo) {
+		t.Fatalf("plain dir restore err = %v, want ErrNotARepo", err)
+	}
+	dir := gitRepo(t)
+	if err := Capture(dir, "s9", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := Prune(dir, "s9", 0); err != nil { // 保留窗口清零——旧 ref 修剪
+		t.Fatal(err)
+	}
+	if err := Restore(dir, "s9", 0); !errors.Is(err, ErrCheckpointPruned) {
+		t.Fatalf("pruned restore err = %v, want ErrCheckpointPruned", err)
 	}
 }

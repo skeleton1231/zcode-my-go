@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
 )
 
 // gitInitRepo makes the workspace a repo with one committed file.
@@ -116,4 +118,49 @@ func TestE2ERewindToRefusesWhileRunning(t *testing.T) {
 		t.Fatal("rewind accepted during a run")
 	}
 	h.Svc.Abort(h.SessionID)
+}
+
+// TestE2ERewindToPrunedCheckpointAborts: git 仓库里回退到检查点已被保留
+// 窗口修剪的回合必须整体中止——错误可读且提到修剪，转录原封不动，工
+// 作区文件保持现状（issue #152：静默半回退让模型拿旧假设改新文件）。
+func TestE2ERewindToPrunedCheckpointAborts(t *testing.T) {
+	h := New(t, Turn{Text: "第一回合"}, Turn{Text: "第二回合"})
+	gitInit(t, h.Workspace)
+
+	h.Ask("问一")
+	h.WriteWorkspace("turn2.txt", "第二回合的产物\n")
+	h.Ask("问二")
+	if err := checkpoint.Prune(h.Workspace, h.SessionID, 1); err != nil {
+		t.Fatalf("prune: %v", err) // 只留最新检查点：seq=0 即"被修剪"
+	}
+
+	err := h.Svc.RewindTo(h.SessionID, 1)
+	if err == nil || !strings.Contains(err.Error(), "修剪") {
+		t.Fatalf("rewind err = %v, want pruned-checkpoint abort", err)
+	}
+	// 中止而非半回退：两个回合都还在。
+	msgs, err := h.Svc.Messages(h.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) == 0 {
+		t.Fatal("transcript truncated on aborted rewind")
+	}
+	if userTurnCountText(msgs) != 2 {
+		t.Fatalf("user turns = %d, want 2 (no half rewind)", userTurnCountText(msgs))
+	}
+	if !h.WorkspaceHas("turn2.txt") {
+		t.Fatal("workspace file vanished on aborted rewind")
+	}
+}
+
+// userTurnCountText counts user turns in a transcript (test-local helper).
+func userTurnCountText(msgs []ai.Message) int {
+	n := 0
+	for _, m := range msgs {
+		if m.Role == ai.RoleUser {
+			n++
+		}
+	}
+	return n
 }
