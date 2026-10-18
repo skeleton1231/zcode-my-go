@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unicode/utf8"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 )
