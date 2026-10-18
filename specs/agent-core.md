@@ -258,7 +258,6 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    静态 skipDirs 取并集（无 .gitignore 行为不变）；命中目录整枝剪
    除，命中文件逐个跳过；会话级加载一次（.gitignore 变更下轮会话
    生效）。
-dc907a4 (feat: glob and grep honor .gitignore)
 
 45. 技能（ZCode skills 子系统）：SKILL.md + frontmatter（平铺 YAML
    子集：name/description 必填、when_to_use 可选、引号值去引号；无
@@ -307,7 +306,6 @@ dc907a4 (feat: glob and grep honor .gitignore)
    inlineData part 同住 functionResponse 的 user content；OpenAI 的
    tool 消息只收文本——降级为文本说明（N 张图片未上送），模型至少看
    到摘要。SSH 工作区经网线读字节，同构。
-1d468ec (feat: read tool returns images — multimodal tool results)
 
 48. 工作流持久化与复用（ZCode saved-workflows / workflow-runs 的落
    地）：internal/workflow——定义存 dataDir/workflows/<名>.json（名限
@@ -330,7 +328,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
-   50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
+50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
    `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
    合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
    本，failed/stopped 各有明确形态，未命中列既有 ID 自纠）；`agent_stop
@@ -342,7 +340,21 @@ dc907a4 (feat: glob and grep honor .gitignore)
    agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
    地工具面，远程嵌套循环读的是本地磁盘）。
 
-51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+51. 自定义子代理定义（issue #225）：子代理 persona 用户可编程。定义
+   层 internal/agents——两层平铺 markdown：工作区 `.zgo/agents/*.md` +
+   用户家 `~/.zgo/agents/*.md`（同名工作区优先，与技能/命令同约定）；
+   frontmatter：`name`（缺省取文件名主干）、`description`（路由依据，
+   必填、≤1K 字符）、`tools`（逗号分隔白名单，取自子代理工具词表
+   read/grep/glob/ls/edit/write/patch/todo；空即只读族，对齐现状
+   SubtaskSystem）；正文即该子代理的系统提示（persona）。`task`/
+   `dispatch` 增可选 `agent` 参数：命中则以定义 persona 替换
+   SubtaskSystem、工具面按白名单从会话工具集选取（edit 族仍过主权限
+   门——白名单只收窄不放宽，未列出的名字忽略）；未知名报错列出可用
+   项自纠。主系统提示注入可用 agents 清单（name + description 一行
+   式，对齐技能注入）。发现读上限 64KB、persona 载入上限 100KB（超限
+   截断并标注），描述校验 1K——与注入家族同一套约束。
+
+52. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
    对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
    后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
    绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
@@ -350,7 +362,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
    有一个生效）。
 
-52. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
+53. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
    本层抽取——词法级 stream 段收集 + FlateDecode 解压 + Tj/TJ/'/" 文
    本算子（Td/TD/T* 换行启发），字面串（转义/八进制/嵌套括号）与十六
    进制串（UTF-16BE BOM 检测）解码。有界：单流 16MB、产出 256KB rune
@@ -359,7 +371,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    产乱码；无文本层（扫描件/图片型）同样报错。SSH 工作区经网线读字
    节同构。
 
-53. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
+54. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
    本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来
    的恶意仓库不能靠自带规则文件给自己放权）、不加载其 `.zgo` 命令与
    技能层（提示注入面）；全局层不受影响。授信表 dataDir/trusted.json
@@ -372,7 +384,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    未授信工作区弹信任确认（路径 + 风险说明，「信任并加载」经服务授
    信落表、「暂不」仅关窗不授信）。
 
-54. 场景评测（`zgo eval`，pi evals 的数据化形态）：用户可写 JSON 场
+55. 场景评测（`zgo eval`，pi evals 的数据化形态）：用户可写 JSON 场
    景——种工作区文件（files）、脚本回合（tool+args 或 text，工具真实
    执行）、四类断言（transcript_contains 含工具结果块 / file_contains
    / no_tool_errors / event_count）。运行面与 e2e 同构：临时 dataDir +
@@ -380,7 +392,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    自动放行 asker；关自动命名。目录默认 ./evals 不存在则 ~/.zgo/
    evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。
 
-55. 模型兜底链（spec 规则 54 场景评测之后）：settings.fallbackModels
+56. 模型兜底链（spec 规则 55 场景评测之后）：settings.fallbackModels
    （逗号列表，空即关闭）——rewire 的 Provider 把主模型与兜底序包成
    ai.NewFailover：流以**可重试**错误（429/过载/超时）收尾即换下一模
    型重发同一请求（模型是请求级字段，客户端复用）；非可重试错误（鉴
@@ -388,35 +400,35 @@ dc907a4 (feat: glob and grep honor .gitignore)
    （交上层整链再试）。e2e 注入不经兜底（脚本按模型无关回放）。配置
    面：zgo config get/set fallbackModels（写盘热生效；去空去重）。
 
-56. 会话内搜索（/find，桌面搜索的终端对齐）：slash 表面钩子 Find——
+57. 会话内搜索（/find，桌面搜索的终端对齐）：slash 表面钩子 Find——
    TUI 进入标记模式（大小写不敏感匹配转录行，命中行 ▶ 标记、当前命
    中 ▶；视口跳到最近命中；输入区为空时 n/N 下一处/上一处（环绕），
    有草稿不误触；孤立 Esc 先退搜索而非中止回合）；REPL 无视口——列
    命中清单（回合号 + 60 rune 片段，首 20 条 + 余量计数）。无钩子的
    表面明确报不支持。
 
-57. MCP 配置命令（此前唯一途径是手编 settings.json，桌面亦无编辑面）：
+58. MCP 配置命令（此前唯一途径是手编 settings.json，桌面亦无编辑面）：
    `/mcp add <名> -- <命令> [参数…]`（`--` 后按空白切分，无引号语义
    ——复杂命令进 settings.json；名非空无空白/斜杠，命令必填；上限
    32 个）、`/mcp remove <名>`（不存在报错）。服务面 SetMCPServer/
    RemoveMCPServer/MCPServers：写盘 + syncMCP 热重载（握手失败降级
    不阻断——诊断面可见）。
 
-58. 后台代理可视化（spec 规则 50/51 的可见面）：`/agents` 列出本会话
+59. 后台代理可视化（spec 规则 50/51 的可见面）：`/agents` 列出本会话
    后台子代理（总数/运行数、状态标记 ▶运行带秒级耗时 ✓完成 ✕失败带
    错误 ■停止、任务首行 40 rune 截短、超 10 条折叠余量）；TUI 固定块
    （计划块同款，`代理 · N 运行/M` 头 + 4 条 + 折叠，空清单不占行）
    每次重画经 AgentJobStates 取快照——事件驱动的重画自然带最新状
    态。桌面面板为后续跟进（AgentJobStates 访问器已备）。
 
-59. 问题报告（`zgo bugreport [路径]`，pi bug-report 的落地）：生成自包
+60. 问题报告（`zgo bugreport [路径]`，pi bug-report 的落地）：生成自包
    含 Markdown——版本/平台/数据目录、provider 配置（**脱敏**：key 只
    报已配置/未配置，值与 Hint 都不落盘）、模型与兜底链、每日预算、思
    考档位、授信计数、MCP 诊断（真探测）、会话概况（**计数 + 最近 5
    条元数据**——转录正文绝不进报告）、git/ssh 工具链探测。默认写工
    作区 `zgo-bugreport-<时间戳>.md`。
 
-60. cron 任务级模型：`Job.Model`（cron add --model，此前只存不用——
+61. cron 任务级模型：`Job.Model`（cron add --model，此前只存不用——
    scheduleRunner 一直跑全局模型）。执行面 Manager.SetSessionModel：替
    换会话的模型解析闭包（s.model 是每次请求的实时读取点——后续回合
    与压缩即刻生效；空串恢复全局解析）；scheduleRunner 对 job.Model

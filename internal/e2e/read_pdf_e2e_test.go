@@ -11,7 +11,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 )
 
-// TestE2EReadPDF read 工具读 PDF（spec 规则 52）的全栈：真实工具抽取
+// TestE2EReadPDF read 工具读 PDF（spec 规则 53）的全栈：真实工具抽取
 // 文本层并回传模型。
 func TestE2EReadPDF(t *testing.T) {
 	h := New(t,

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/terminal"
@@ -19,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/clipimg"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
@@ -548,21 +550,48 @@ func (a *App) Attach() {
 				text: "读取附件失败：" + err.Error()})
 			continue
 		}
-		if len(data) > attachmentCapBytes {
-			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
-				text: fmt.Sprintf("附件超过 %dMB 上限：%s", attachmentCapBytes>>20, filepath.Base(path))})
-			continue
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		if attachTotal(a.attach)+len(encoded) > attachmentTotalCapBytes {
-			a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
-				text: fmt.Sprintf("附件总量超过 %dMB 上限，请分条发送：%s",
-					attachmentTotalCapBytes>>20, filepath.Base(path))})
-			continue
-		}
-		a.attach = append(a.attach, attachment{Name: filepath.Base(path),
-			Block: ai.Block{Kind: ai.BlockImage, Media: mt, Data: encoded}})
+		a.addImageAttachment(filepath.Base(path), mt, data)
 	}
+}
+
+// addImageAttachment 把一张图加入待发附件（📎 选择与 Ctrl+V 贴图共
+// 用同一条通道：单张 5MB、总量上限与 notice 形态一致，issue #216 的验
+// 收「复用现有图片上限与总量预算」）。返回是否加入成功。
+func (a *App) addImageAttachment(name, mediaType string, data []byte) bool {
+	if len(data) > attachmentCapBytes {
+		a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+			text: fmt.Sprintf("附件超过 %dMB 上限：%s", attachmentCapBytes>>20, name)})
+		return false
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	if attachTotal(a.attach)+len(encoded) > attachmentTotalCapBytes {
+		a.chat.items = append(a.chat.items, chatItem{kind: itemNotice,
+			text: fmt.Sprintf("附件总量超过 %dMB 上限，请分条发送：%s",
+				attachmentTotalCapBytes>>20, name)})
+		return false
+	}
+	a.attach = append(a.attach, attachment{Name: name,
+		Block: ai.Block{Kind: ai.BlockImage, Media: mediaType, Data: encoded}})
+	return true
+}
+
+// readClipboardImage 是贴图的剪贴板读取点（var 形态便于测试注入，
+// 与 tools.WebFetcher 同约定）。
+var readClipboardImage = clipimg.ReadImage
+
+// PasteImage 探剪贴板位图（issue #216）：命中即按时间戳命名成附件；
+// 无图（ErrNoImage 或打开/解码失败）一律返回 false——调用方放行普通
+// 文本粘贴，不报错不吞文本。
+func (a *App) PasteImage() bool {
+	if a.activeID == "" || a.chat.running {
+		return false
+	}
+	data, err := readClipboardImage()
+	if err != nil {
+		return false
+	}
+	name := "粘贴图片 " + time.Now().Format("15-04-05") + ".png"
+	return a.addImageAttachment(name, "image/png", data)
 }
 
 // attachTotal 报告待发附件的编码总量。
