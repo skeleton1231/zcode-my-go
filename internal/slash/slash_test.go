@@ -124,3 +124,66 @@ func TestLoginCommand(t *testing.T) {
 		t.Fatalf("login output = %q", joined)
 	}
 }
+
+// TestSlashResume 验证 /resume 三形态（spec desktop-shell 规则 23）：无
+// 参切当前工作区最近会话、前缀指定（可跨工作区）、未知名可读报错；切
+// 到当前会话不重复切换。
+func TestSlashResume(t *testing.T) {
+	env, _ := newEnv(t)
+	ws := env.Workspace() // 无参形态按当前工作区取最近会话
+	older, err := env.Svc.NewSession(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	newer, err := env.Svc.NewSession(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 无参：切到工作区最近会话（newer），SetSession 收到它。
+	got := ""
+	env.SetSession = func(info agent.SessionInfo) { got = info.ID }
+	if handled, _ := Run(env, "/resume"); !handled {
+		t.Fatal("/resume not handled")
+	}
+	if got != newer.ID {
+		t.Fatalf("resumed = %q, want %q", got, newer.ID)
+	}
+
+	// 前缀：切回 older（同工作区前缀唯一）。
+	env.SessionID = func() string { return newer.ID }
+	if handled, _ := Run(env, "/resume "+older.ID); !handled {
+		t.Fatal("prefix form not handled")
+	}
+	if got != older.ID {
+		t.Fatalf("prefix resumed = %q, want %q", got, older.ID)
+	}
+
+	// 已在该会话：不切换（SetSession 不被调用）。
+	called := false
+	env.SetSession = func(agent.SessionInfo) { called = true }
+	env.SessionID = func() string { return older.ID }
+	out := captureOut(t, env, "/resume "+older.ID)
+	if called || !strings.Contains(out, "已在") {
+		t.Fatalf("same-session: called=%v out=%q", called, out)
+	}
+
+	// 未知名：可读报错，不切换。
+	out = captureOut(t, env, "/resume zzz")
+	if called || !strings.Contains(out, "没有会话") {
+		t.Fatalf("unknown: called=%v out=%q", called, out)
+	}
+}
+
+// captureOut 跑一条命令并捕获 env.Out 的输出。
+func captureOut(t *testing.T, env *Env, line string) string {
+	t.Helper()
+	var lines []string
+	prev := env.Out
+	env.Out = func(msg string) { lines = append(lines, msg) }
+	defer func() { env.Out = prev }()
+	Run(env, line) // run 的返回串经 env.Out 送达
+	return strings.Join(lines, "\n")
+}
+
