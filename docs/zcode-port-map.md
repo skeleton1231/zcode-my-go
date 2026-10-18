@@ -362,3 +362,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    workflow/后台 agent）的 provider 直连 providerFor 绕过 e2e 注入、
    ssh:// 会话经字符串重建本地工具面（远程嵌套循环读本地磁盘）——统
    一经持锁快照 + ReadOnlyW 拨号工作区。
+
+**自定义子代理定义**（ZCode agents 文件 / .claude/agents 的 Zgo 形
+   态，spec 规则 51，issue #225）：internal/agents——两层平铺
+   markdown（工作区 `.zgo/agents/*.md` + 用户 `~/.zgo/agents/*.md`，
+   同名工作区优先）；frontmatter name/description/tools（白名单，封闭
+   词表 read/grep/glob/ls/edit/write/patch/todo，只收窄不放宽），正文
+   即 persona；task/dispatch 增可选 agent 参数（命中走 persona，未命
+   中报错列可用项）；可用清单注入主系统提示（对齐技能注入）。
