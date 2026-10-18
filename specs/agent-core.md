@@ -251,6 +251,13 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    checkpoint.RemoveAll——该会话全部 refs/zgo-checkpoints/<id>/* 逐
    条 update-ref -d（活 ref 钉住 git 对象，不清是硬泄漏）；非仓库/
    ssh:// 静默无操作，失败记日志不阻断删除。
+44. glob/grep 感知 .gitignore（issue #208）：遍历前解析工作区根
+   .gitignore（经 workspace 抽象，远程同享），实现 git 风格子集——
+   注释/空行、! 反选、尾随 / 目录限定、含 / 锚定、* 与 ? 通配；与
+   静态 skipDirs 取并集（无 .gitignore 行为不变）；命中目录整枝剪
+   除，命中文件逐个跳过；会话级加载一次（.gitignore 变更下轮会话
+   生效）。
+dc907a4 (feat: glob and grep honor .gitignore)
 
 ## 状态所有者
 
