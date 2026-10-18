@@ -16,6 +16,7 @@ type commandEnv struct {
 	workspace string
 	out       func(string)
 	attach    *attachments // 终端表面的 /attach 状态（可空）
+	send      func(string)  // /mcp 展开后直接发送（可空即不支持）
 }
 
 // runSlashCommand adapts slash.Run for the terminal surfaces.
@@ -33,6 +34,7 @@ func runSlashCommand(env *commandEnv, line string) (handled, quit bool) {
 		// 一份 stderr 会让 REPL 双行输出、TUI 全屏被裸文本污染。
 		Out:    env.out,
 		Attach: attachFn,
+		Send:   env.send,
 	}, line)
 }
 

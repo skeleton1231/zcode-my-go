@@ -1292,3 +1292,41 @@ func (s *AgentService) Abort(sessionID string) {
 		sess.Abort()
 	}
 }
+
+// MCPPromptEntry is one listed server prompt（/mcp 的列表项）.
+type MCPPromptEntry struct {
+	Server string
+	Prompt mcp.PromptDef
+}
+
+// MCPPrompts lists every running server's prompts.
+func (s *AgentService) MCPPrompts() []MCPPromptEntry {
+	var out []MCPPromptEntry
+	for _, srv := range s.mcpServers() {
+		for _, p := range srv.Prompts() {
+			out = append(out, MCPPromptEntry{Server: srv.Name, Prompt: p})
+		}
+	}
+	return out
+}
+
+// MCPGetPrompt expands one prompt（spec 规则 28）：k=v 实参经 prompts/get
+// 展开为可直接发送的文本。
+func (s *AgentService) MCPGetPrompt(server, name string, args map[string]string) (string, error) {
+	for _, srv := range s.mcpServers() {
+		if srv.Name != server {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		res, err := srv.GetPrompt(ctx, name, args)
+		if err != nil {
+			return "", err
+		}
+		if text := res.PromptText(); text != "" {
+			return text, nil
+		}
+		return "", fmt.Errorf("prompt %s.%s 展开为空", server, name)
+	}
+	return "", fmt.Errorf("没有 MCP 服务器 %q", server)
+}

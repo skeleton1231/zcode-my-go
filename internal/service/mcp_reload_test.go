@@ -3,8 +3,11 @@ package service
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 )
@@ -18,8 +21,9 @@ func TestMCPHelperProcess(t *testing.T) {
 	enc := json.NewEncoder(os.Stdout)
 	for scanner.Scan() {
 		var req struct {
-			ID     int64  `json:"id"`
-			Method string `json:"method"`
+			ID     int64           `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &req) != nil {
 			continue
@@ -30,6 +34,27 @@ func TestMCPHelperProcess(t *testing.T) {
 		case "tools/list":
 			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
 				"tools": []map[string]any{{"name": "ping"}}}})
+		case "prompts/list":
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
+				"prompts": []map[string]any{{
+					"name": "review", "description": "评审当前改动",
+					"arguments": []map[string]any{{"name": "focus", "required": true}},
+				}}}})
+		case "prompts/get":
+			var p struct {
+				Arguments map[string]string `json:"arguments"`
+			}
+			json.Unmarshal(req.Params, &p)
+			text := "请评审当前改动"
+			if p.Arguments["focus"] != "" {
+				text += "，重点：" + p.Arguments["focus"]
+			}
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
+				"description": "评审当前改动",
+				"messages": []map[string]any{
+					{"role": "user", "content": map[string]any{"type": "text", "text": text}},
+					{"role": "assistant", "content": map[string]any{"type": "text", "text": "收到，我会逐条检查。"}},
+				}}})
 		}
 	}
 	os.Exit(0)
@@ -105,5 +130,47 @@ func TestMCPSignature(t *testing.T) {
 	changed.Args = []string{"run", "y"}
 	if mcpSignature(base) == mcpSignature(changed) {
 		t.Fatal("args change not reflected")
+	}
+}
+
+// TestMCPPrompts 验证 MCP 提示词面（spec 规则 28）：helper 服务器的
+// 提示词可列出（参数标记）、prompts/get 展开含实参与 assistant 段。
+func TestMCPPrompts(t *testing.T) {
+	dir := t.TempDir()
+	settings := fmt.Sprintf(`{"mcpServers":{"helper":{"command":%q,`+
+		`"args":["-test.run=TestMCPHelperProcess","--"],`+
+		`"env":{"ZGO_SVC_MCP_HELPER":"1"}}}}`, os.Args[0])
+	if err := os.WriteFile(dir+"/settings.json", []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && len(svc.MCPPrompts()) == 0 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	entries := svc.MCPPrompts()
+	if len(entries) != 1 || entries[0].Server != "helper" || entries[0].Prompt.Name != "review" {
+		t.Fatalf("prompts = %+v", entries)
+	}
+	if len(entries[0].Prompt.Arguments) != 1 || !entries[0].Prompt.Arguments[0].Required {
+		t.Fatalf("prompt args = %+v", entries[0].Prompt.Arguments)
+	}
+
+	text, err := svc.MCPGetPrompt("helper", "review", map[string]string{"focus": "性能"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"请评审当前改动，重点：性能", "[assistant] 收到"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in:\n%s", want, text)
+		}
+	}
+	if _, err := svc.MCPGetPrompt("nope", "review", nil); err == nil {
+		t.Fatal("unknown server accepted")
 	}
 }

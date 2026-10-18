@@ -162,6 +162,12 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 			svc: svc, info: info, workspace: workspace,
 			out:    func(msg string) { s.push(msg) },
 			attach: &s.attach,
+			// /mcp 展开后直接发送（spec 规则 28）：转录可见 + 常规
+			// 发送路径（含插话判定）。
+			send: func(text string) {
+				s.pushTurn(text)
+				go s.sendChat(svc, info, workspace, text)
+			},
 		}, line)
 		if quit {
 			s.finish(os.Stdout)
@@ -191,19 +197,24 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 		return
 	}
 
+	go s.sendChat(svc, info, workspace, line)
+}
+
+// sendChat runs one chat turn（/mcp 展开与常规输入共用；spec 规则 28）。
+func (s *tuiState) sendChat(svc *service.AgentService, info *agent.SessionInfo, workspace, line string) {
 	s.setStatus("运行中…", true)
-	go func() {
-		var last string
-		err := svc.ChatMedia(info.ID, line, s.attach.take(), func(ev agent.Event) { s.applyEvent(ev, &last) })
+	defer func() {
 		s.mu.Lock()
 		s.running = false
 		s.status = "就绪"
-		if err != nil {
-			s.push("[错误] " + err.Error())
-		}
 		s.mu.Unlock()
 		s.requestRedraw()
 	}()
+	var last string
+	err := svc.ChatMedia(info.ID, line, s.attach.take(), func(ev agent.Event) { s.applyEvent(ev, &last) })
+	if err != nil {
+		s.push("[错误] " + err.Error())
+	}
 }
 
 // applyEvent folds agent events into transcript lines.
