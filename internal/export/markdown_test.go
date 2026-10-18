@@ -123,3 +123,21 @@ func TestMarkdownExportDiff(t *testing.T) {
 		t.Fatalf("diff fence missing:\n%s", got)
 	}
 }
+
+// TestMarkdownDiffFenceSurvivesBacktickLines: diff 内容含 ``` 行（编辑
+// Markdown 文件时常态）不得破 ```diff 围栏——围栏动态加长（issue #178
+// 同类，第五个位点）。
+func TestMarkdownDiffFenceSurvivesBacktickLines(t *testing.T) {
+	msgs := []ai.Message{
+		{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockToolCall,
+			Name: "edit", Arguments: `{"path":"README.md"}`}}},
+		{Role: ai.RoleToolResult, Blocks: []ai.Block{{Kind: ai.BlockToolResult,
+			Text: "ok", Diff: "--- a/README.md\n+++ b/README.md\n-```old\n+```new\n```\n"}}},
+	}
+	got := Markdown(msgs, "t", "m", "/w")
+	fence := FenceFor("--- a/README.md\n+++ b/README.md\n-```old\n+```new\n```\n")
+	want := fence + "diff\n--- a/README.md\n+++ b/README.md\n-```old\n+```new\n```\n" + fence
+	if !strings.Contains(got, want) {
+		t.Fatalf("dynamic diff fence missing (want %q):\n%s", fence, got)
+	}
+}
