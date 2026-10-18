@@ -236,6 +236,8 @@ func render(ev agent.Event) {
 		}
 	case agent.EvCompaction:
 		fmt.Fprintf(os.Stderr, "[压缩] %s\n", ev.Text)
+	case agent.EvBudgetNotice:
+		fmt.Fprintf(os.Stderr, "[预算] %s\n", ev.Text)
 	case agent.EvTurnRetry:
 		// 重试必须可见（issue #40）：否则半截文本与新文本之间没有任何
 		// 说明，用户毫无感知。
