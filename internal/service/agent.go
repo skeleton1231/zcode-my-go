@@ -336,12 +336,22 @@ func (s *AgentService) rewire() {
 			contextRead := contextReader(ws)
 			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
 			// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
-			agentRunner := func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+			agentRunner := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+				// 升级提问（spec 规则 62，ZCode escalate）：后台研究代理
+				// 遇到只有用户能答的问题时经会话提问通道升级——问题带
+				// 代理标识前缀，答案回转录继续跑。
+				agentAsk := tools.NewAsk(func(ctx context.Context, q agent.Question) (string, error) {
+					return question(ctx, agent.Question{
+						Text:    "[后台代理 " + id + "] " + q.Text,
+						Options: q.Options,
+					})
+				})
+				tools := append(append([]agent.Tool{}, roTools...), agentAsk)
 				return agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
 					Provider: provider(),
 					Model:    model,
 					System:   agent.SubtaskSystem(),
-					Tools:    roTools,
+					Tools:    tools,
 				}, prior, prompt)
 			}
 			all := append(tools.AllW(ws, state, question), task,

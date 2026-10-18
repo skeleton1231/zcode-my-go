@@ -429,6 +429,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    （1s、单飞守卫、清空即退、1 小时上限防孤儿）；快照有变化才回主
    线程 update。
 
+62. 子代理升级提问（ZCode escalate 的落地）：后台子代理的工具面加
+   ask——遇到只有用户能答的问题时经会话提问通道升级，问题文本带
+   `[后台代理 <id>]` 前缀（用户可对照 /agents 辨认来源）；答案作为
+   工具结果回到代理转录，代理据此继续。AgentRunFunc 增 id 参数（升
+   级前缀的来源）；ask 保持 SerialOnly 与只读风险。前台 task/
+   dispatch/workflow 的研究步骤不带（短任务自纠，ZCode 同款取舍）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

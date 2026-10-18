@@ -25,7 +25,7 @@ func waitForJobState(j *AgentJob, want string) bool {
 
 func TestAgentJobsSpawnDone(t *testing.T) {
 	jobs := NewAgentJobs()
-	j := jobs.Spawn(func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{Text: "调查结论"}, nil, nil
 	}, "调查一下")
 	if v := j.Snapshot(); v.State != AgentRunning && v.State != AgentDone {
@@ -44,7 +44,7 @@ func TestAgentJobsSpawnDone(t *testing.T) {
 
 func TestAgentJobsFailure(t *testing.T) {
 	jobs := NewAgentJobs()
-	j := jobs.Spawn(func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{}, nil, errors.New("provider down")
 	}, "x")
 	if !waitForJobState(j, AgentFailed) {
@@ -57,7 +57,7 @@ func TestAgentJobsFailure(t *testing.T) {
 
 func TestAgentJobsStopAndCloseAll(t *testing.T) {
 	jobs := NewAgentJobs()
-	j := jobs.Spawn(func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		<-ctx.Done() // 挂住直到停止
 		return agent.SubtaskResult{}, nil, ctx.Err()
 	}, "长调查")
@@ -75,7 +75,7 @@ func TestAgentJobsStopAndCloseAll(t *testing.T) {
 	}
 
 	// CloseAll 全停：root 取消传播到运行中的任务。
-	j2 := jobs.Spawn(func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	j2 := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		<-ctx.Done()
 		return agent.SubtaskResult{}, nil, ctx.Err()
 	}, "另一个")
@@ -87,7 +87,7 @@ func TestAgentJobsStopAndCloseAll(t *testing.T) {
 
 func TestAgentToolsFlow(t *testing.T) {
 	jobs := NewAgentJobs()
-	spawn := func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	spawn := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{Text: "结论：" + prompt}, nil, nil
 	}
 	spawner := NewAgentTool(jobs, spawn)
@@ -125,7 +125,7 @@ func TestAgentToolsFlow(t *testing.T) {
 func TestAgentJobsResumeWithHistory(t *testing.T) {
 	jobs := NewAgentJobs()
 	var gotPrior []ai.Message
-	first := jobs.Spawn(func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	first := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		h := append([]ai.Message(nil), prior...)
 		h = append(h, ai.Message{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: prompt}}},
 			ai.Message{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "首次结论"}}})
@@ -135,7 +135,7 @@ func TestAgentJobsResumeWithHistory(t *testing.T) {
 		t.Fatal("first never done")
 	}
 
-	second, err := jobs.Resume(first.ID, "追问细节", func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	second, err := jobs.Resume(first.ID, "追问细节", func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		gotPrior = prior
 		return agent.SubtaskResult{Text: "追加结论"}, append(prior, ai.Message{Role: ai.RoleAssistant, Blocks: []ai.Block{{Kind: ai.BlockText, Text: "追加结论"}}}), nil
 	})
@@ -164,7 +164,7 @@ func TestAgentJobsResumeWithHistory(t *testing.T) {
 // TestAgentJobsResumeRejectsRunning 运行中的任务拒绝续话。
 func TestAgentJobsResumeRejectsRunning(t *testing.T) {
 	jobs := NewAgentJobs()
-	j := jobs.Spawn(func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		<-ctx.Done()
 		return agent.SubtaskResult{}, nil, ctx.Err()
 	}, "挂住")
@@ -179,13 +179,13 @@ func TestAgentJobsResumeRejectsRunning(t *testing.T) {
 
 func TestAgentSendToolFlow(t *testing.T) {
 	jobs := NewAgentJobs()
-	j := jobs.Spawn(func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	j := jobs.Spawn(func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{Text: "首次"}, nil, nil
 	}, "首查")
 	if !waitForJobState(j, AgentDone) {
 		t.Fatal("never done")
 	}
-	send := NewAgentSendTool(jobs, func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+	send := NewAgentSendTool(jobs, func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
 		return agent.SubtaskResult{Text: "续话结论"}, prior, nil
 	})
 	res := send.Execute(context.Background(), []byte(`{"id":"ag-1","message":"追问"}`))
