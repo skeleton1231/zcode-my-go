@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/terminal"
@@ -53,6 +54,8 @@ type App struct {
 
 	// automation panel state（specs/automation.md 的管理面）.
 	jobsOpen                                       bool
+	agents                                         []tools.AgentJobView // 后台子代理状态条（spec 规则 61）
+	agentsWatching                                 atomic.Bool          // 轮询 goroutine 单飞守卫
 	jobs                                           []schedule.Job
 	jobsErr                                        string
 	jobRunning                                     string
@@ -240,6 +243,8 @@ func (a *App) open(id string) {
 	}
 	a.RefreshBudget()
 	a.RefreshPlan()
+	a.refreshAgents()
+	a.watchAgents()
 }
 
 // OpenSearch toggles the in-session search bar.
@@ -479,6 +484,8 @@ func (a *App) Send() {
 			a.refreshSessions()
 			a.RefreshPlan()
 			a.RefreshBudget() // 运行结束即刷新：否则仪表停在运行前的旧值
+			a.refreshAgents() // 后台代理状态条（spec 规则 61）：回合可能刚 spawn
+			a.watchAgents()
 		})
 	}()
 }
