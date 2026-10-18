@@ -74,8 +74,10 @@ func TestPosArg(t *testing.T) {
 	}
 }
 
-// goplsLikeFake 在 PATH 放一个假 gopls：version 输出标记、slow 睡眠。
-// Windows 写 .cmd 批处理（一等平台，本机即测）；类 Unix 写 /bin/sh。
+// goplsLikeFake 在 PATH 放一个假 gopls：version 输出标记；slow 用纯
+// 内建无限循环（不依赖 ping/sleep 等外部命令——CI 曾因 PATH 解析不到
+// 系统命令、脚本秒退带错，非零退出+非空输出被 Run 视为有效结果）。
+// Windows 写 .cmd（一等平台），类 Unix 写 /bin/sh 脚本。PATH 前置。
 func goplsLikeFake(t *testing.T) bool {
 	t.Helper()
 	bin := t.TempDir()
@@ -83,21 +85,23 @@ func goplsLikeFake(t *testing.T) bool {
 		if err := os.WriteFile(filepath.Join(bin, "gopls.cmd"), []byte(
 			"@echo off\r\n"+
 				"if \"%1\"==\"version\" echo fake-gopls-1.0\r\n"+
-				"if \"%1\"==\"slow\" ping -n 6 127.0.0.1 >nul\r\n"), 0o755); err != nil {
+				"if \"%1\"==\"slow\" goto loop\r\n"+
+				"goto :eof\r\n"+
+				":loop\r\n"+
+				"goto loop\r\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("PATH", bin)
-		return true
+	} else {
+		p := filepath.Join(bin, "gopls")
+		script := "#!/bin/sh\n" +
+			"case \"$1\" in\n" +
+			"  version) echo fake-gopls-1.0 ;;\n" +
+			"  slow) while :; do :; done ;;\n" +
+			"esac\n"
+		if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	p := filepath.Join(bin, "gopls")
-	script := "#!/bin/sh\n" +
-		"case \"$1\" in\n" +
-		"  version) echo fake-gopls-1.0 ;;\n" +
-		"  slow) sleep 5 ;;\n" +
-		"esac\n"
-	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return true
 }
