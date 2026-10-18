@@ -96,7 +96,6 @@ MIT © 2026 skeleton1231
 - read gains PDFs (text-layer extraction with a readability gate) and
   images (returned as image blocks across all three protocols).
 - zgo eval: data-driven JSON scenarios (seed files, scripted turns,
-<<<<<<< HEAD
   four assertion kinds) replayed against the real stack and gated in
   CI — with paired trust-gate/trust-granted scenarios standing guard
   over the workspace trust boundary. /find adds in-session transcript
@@ -104,12 +103,6 @@ MIT © 2026 skeleton1231
   settings.json; zgo bugreport emits a redacted, self-contained issue
   report; cron jobs pin their own model and off-peak window; remote
   grep fetches 8-way concurrent.
-=======
-  four assertion kinds) replayed against the real stack; /find adds
-  in-session transcript search. /mcp add/remove configures MCP
-  servers without hand-editing settings.json; zgo bugreport emits a
-  redacted, self-contained issue report.
->>>>>>> a1cc3b9 (chore: v0.8.0 — changelog, README refresh, capability breadth)
 
 ## v0.7.0 highlights
 
