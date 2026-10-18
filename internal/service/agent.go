@@ -29,6 +29,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
 	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
+	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
@@ -131,6 +132,11 @@ func New(dataDir string) (*AgentService, error) {
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
+	}
+	// edit/write 诊断回灌（spec 规则 67）：gopls 在位即接线，缺位静默
+	// 跳过（回执无尾部，行为与既往一致）。
+	if lsp.Available() {
+		tools.ProbeDiagnostics = lsp.Probe
 	}
 	s.day = usage.Load(dataDir)
 	mgr, err := agent.NewManager(filepath.Join(dataDir, "sessions"))
@@ -472,6 +478,15 @@ func (s *AgentService) rewire() {
 			}))
 			for _, server := range s.mcpServers() {
 				all = append(all, mcp.AgentTools(server)...)
+			}
+			// gopls 三工具（spec 规则 67）：仅本地工作区 + PATH 有 gopls
+			// 时声明（ssh:// 文件不在本地盘，wasm 无子进程）——模型可
+			// 见面随环境稳定收窄，doctor 引导安装。
+			if !ws.IsRemote() && lsp.Available() {
+				all = append(all, tools.NewGoplsTools(ws,
+					func(ctx context.Context, dir string, args ...string) (string, error) {
+						return lsp.Run(ctx, dir, lsp.QueryTimeout, args...)
+					})...)
 			}
 			return all
 		},

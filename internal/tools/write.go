@@ -75,8 +75,10 @@ func (w *Write) Execute(ctx context.Context, args json.RawMessage) agent.ToolRes
 	if !strings.HasSuffix(a.Content, "\n") && a.Content != "" {
 		lines++
 	}
+	// 本地路径且 gopls 在位时回灌即时诊断（spec 规则 67，同 edit）。
 	return agent.ToolResult{Content: fmt.Sprintf("wrote %s (%d lines, %d bytes)",
-		a.Path, lines, len(a.Content)), Diff: textdiff.Unified(oldData, []byte(a.Content))}
+		a.Path, lines, len(a.Content)) + diagTail(ctx, w.ws.Root, abs),
+		Diff: textdiff.Unified(oldData, []byte(a.Content))}
 }
 
 // PreviewDiff implements agent.PreviewDiffer: old (missing = empty)

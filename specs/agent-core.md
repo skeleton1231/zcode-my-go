@@ -477,6 +477,18 @@ dc907a4 (feat: glob and grep honor .gitignore)
    现。显式重载（设置变更/诊断）仍同步。syncMCP 串行化（并发为同
    名起两个进程）；**Close 守卫**：在途握手于服务关闭后才完成的直接
    关闭服务器不入表（异步启动的进程泄漏面）。
+
+67. gopls 集成（LSP 路线 A v1，issue #222/#262）：internal/lsp——v1
+   用 gopls CLI 子进程调用（definition/references/check 子命令，每次
+   spawn 1-2s 起；daemon + JSON-RPC 是后续优化，工具面对模型同构）。
+   三工具（纯只读、路径过 path jail）：`definition {file,line,column}`
+   → 精确跳转点；`references {file,line,column}` → 被调点清单（符号语
+   义——同名方法/注释/字符串不误报，grep 会）；`diagnostics {file?}`
+   → 空参全工作区检查输出。前置约束：gopls 在 PATH 且工作区本地
+   （ssh:// 不声明——文件不在本地盘；wasm 同）。缺 gopls 不声明工具
+   组（模型可见面稳定；doctor 引导安装）。edit/write 成功回执尾部追
+   加该文件即时诊断（gopls check，仅在有错时追加，10s 上限，缺 gopls
+   静默跳过）。工具执行超时 30s、输出照家族截断。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

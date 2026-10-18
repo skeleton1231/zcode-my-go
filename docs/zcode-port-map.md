@@ -453,3 +453,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **MCP 启动异步**（性能路线第二条，spec 规则 66）：构造期 startMCP 后
    台跑——握手 20s 曾把每个 zgo 命令卡满超时；显式重载仍同步；
    syncMCP 串行化 + Close 守卫（在途握手不泄漏进程）。
+
+**gopls 集成**（LSP 路线 A v1，spec 规则 67，issue #222/#262）：internal/
+   lsp——v1 用 gopls CLI 子进程（definition/references/check 子命令），
+   daemon+JSON-RPC 留优化。三工具 definition/references/diagnostics
+   （符号语义，同名方法/注释/字符串不误报；路径过 path jail、输出截
+   断）；edit/write 成功回执回灌该文件即时诊断（10s 上限）。gopls 在
+   PATH 且工作区本地才声明工具组（ssh:// 文件不在本地盘、wasm 无子进
+   程）；缺位由 doctor 引导安装。

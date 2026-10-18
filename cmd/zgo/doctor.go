@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -59,6 +60,11 @@ func runDoctor() int {
 		fmt.Println("✓ ssh 客户端可用（ssh:// 工作区）")
 	} else {
 		fmt.Println("⚠ ssh 不在 PATH：ssh:// 工作区不可用")
+	}
+	if lsp.Available() {
+		fmt.Println("✓ gopls 可用（definition/references/diagnostics 工具）")
+	} else {
+		fmt.Println("⚠ gopls 不在 PATH：符号工具不声明、编辑无诊断回灌（go install golang.org/x/tools/gopls@latest）")
 	}
 	return 0
 }
