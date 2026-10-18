@@ -28,7 +28,7 @@ func TestRunRewindDefaultAndExplicit(t *testing.T) {
 	if containsTurn(msgs, "第三问") || !containsTurn(msgs, "第二问") {
 		t.Fatalf("default rewind = %+v", msgs)
 	}
-	if last := (*out)[len(*out)-1]; !strings.Contains(last, "最近一轮") {
+	if last := out.All()[out.Len()-1]; !strings.Contains(last, "最近一轮") {
 		t.Fatalf("feedback = %q", last)
 	}
 
@@ -38,23 +38,23 @@ func TestRunRewindDefaultAndExplicit(t *testing.T) {
 	if len(msgs) != 0 {
 		t.Fatalf("rewind 1 left %d messages", len(msgs))
 	}
-	if last := (*out)[len(*out)-1]; !strings.Contains(last, "第 1 轮") {
+	if last := out.All()[out.Len()-1]; !strings.Contains(last, "第 1 轮") {
 		t.Fatalf("feedback = %q", last)
 	}
 
 	// 空会话上的越界与用法。
 	Run(env, "/rewind 3")
-	if last := (*out)[len(*out)-1]; !strings.Contains(last, "失败") {
+	if last := out.All()[out.Len()-1]; !strings.Contains(last, "失败") {
 		t.Fatalf("out-of-range = %q", last)
 	}
 	Run(env, "/rewind x")
-	if last := (*out)[len(*out)-1]; !strings.Contains(last, "[用法]") {
+	if last := out.All()[out.Len()-1]; !strings.Contains(last, "[用法]") {
 		t.Fatalf("bad arg = %q", last)
 	}
 
 	// /help 收录。
 	Run(env, "/help")
-	if !strings.Contains(strings.Join(*out, "\n"), "/rewind") {
+	if !strings.Contains(strings.Join(out.All(), "\n"), "/rewind") {
 		t.Fatal("/help missing /rewind")
 	}
 }

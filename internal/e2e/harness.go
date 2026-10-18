@@ -246,11 +246,17 @@ func waitFor(budget time.Duration, cond func() bool) bool {
 	return cond()
 }
 
-// Ask runs one chat turn and collects the events.
+// Ask runs one chat turn and collects the events. emit 会被并行工具的
+// goroutine 并发调用——互斥追加（-race 在 CI 上逮过裸切片追加）。
 func (h *Harness) Ask(text string) []agent.Event {
 	h.t.Helper()
+	var mu sync.Mutex
 	var events []agent.Event
-	err := h.Svc.Chat(h.SessionID, text, func(ev agent.Event) { events = append(events, ev) })
+	err := h.Svc.Chat(h.SessionID, text, func(ev agent.Event) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	})
 	if err != nil {
 		h.t.Fatalf("chat: %v", err)
 	}

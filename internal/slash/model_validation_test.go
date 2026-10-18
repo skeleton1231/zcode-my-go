@@ -15,17 +15,17 @@ func TestModelCommandWarnsOnUnknown(t *testing.T) {
 
 	// 完全无家族前缀的拼写错误：警告可见。
 	Run(env, "/model cloude-sonnet-4-5")
-	if len(*out) == 0 || !strings.Contains((*out)[len(*out)-1], "未识别") {
-		t.Fatalf("unknown model warning = %v", *out)
+	if out.Len() == 0 || !strings.Contains(out.All()[out.Len()-1], "未识别") {
+		t.Fatalf("unknown model warning = %v", out.All())
 	}
 	// 家族变体（带日期后缀）不警告。
 	Run(env, "/model glm-5.2-air-20261101")
-	if last := (*out)[len(*out)-1]; strings.Contains(last, "未识别") {
+	if last := out.All()[out.Len()-1]; strings.Contains(last, "未识别") {
 		t.Fatalf("family variant warned: %q", last)
 	}
 	// 目录模型不警告。
 	Run(env, "/model glm-5.2")
-	if strings.Contains((*out)[len(*out)-1], "未识别") {
+	if strings.Contains(out.All()[out.Len()-1], "未识别") {
 		t.Fatal("catalog model warned")
 	}
 }
