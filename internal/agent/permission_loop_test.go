@@ -565,7 +565,8 @@ func TestSteeringClearedOnRunEnd(t *testing.T) {
 // overlapSlowTool blocks until it sees the fast tool has run — only
 // possible when the batch overlaps (timeout keeps serial runs moving).
 type overlapSlowTool struct {
-	fastStarted chan struct{}
+	fastStarted chan struct{} // 串行测试用：fast 的启动信号（串行下永不触发→超时路径）
+	fastEnded   chan struct{} // 并行测试用：fast 完成事件的闭合计（emit 侧 close——完成序 happens-before 钉死）
 	name        string
 	runs        int
 }
@@ -580,12 +581,15 @@ func (t *overlapSlowTool) Execute(context.Context, json.RawMessage) ToolResult {
 	select {
 	case <-t.fastStarted:
 		return ToolResult{Content: "slow done after overlap"}
+	case <-t.fastEnded:
+		return ToolResult{Content: "slow done after overlap"}
 	case <-time.After(2 * time.Second):
 		return ToolResult{IsError: true, Content: "no overlap observed"}
 	}
 }
 
-// overlapFastTool signals its start and returns immediately.
+// overlapFastTool signals its start (serial tests observe it; nil skips) and
+// returns immediately.
 type overlapFastTool struct {
 	started chan struct{}
 	runs    int
@@ -598,7 +602,9 @@ func (t *overlapFastTool) Parameters() map[string]any {
 }
 func (t *overlapFastTool) Execute(context.Context, json.RawMessage) ToolResult {
 	t.runs++
-	close(t.started)
+	if t.started != nil {
+		close(t.started)
+	}
 	return ToolResult{Content: "fast done"}
 }
 
@@ -606,8 +612,12 @@ func (t *overlapFastTool) Execute(context.Context, json.RawMessage) ToolResult {
 // (the slow tool only finishes after the fast one started) and assembles
 // results in source order.
 func TestParallelToolsOverlap(t *testing.T) {
-	fast := &overlapFastTool{started: make(chan struct{})}
-	slow := &overlapSlowTool{fastStarted: fast.started, name: "slow"}
+	// fast 的完成经 emit 侧闭合计 fastEnded：slow 等它再收尾——完成序
+	// 由 channel happens-before 钉死（-race 慢化下曾观测 slow 抢先完成：
+	// 等"开始"信号时两方的 emit 都在信号后自由竞速）。
+	fast := &overlapFastTool{}
+	fastEnded := make(chan struct{})
+	slow := &overlapSlowTool{fastEnded: fastEnded, name: "slow"}
 	provider := &fakeProvider{turns: []fakeTurn{
 		fakeTurn{events: []ai.StreamEvent{
 			{Kind: ai.EvMessageStart},
@@ -633,6 +643,9 @@ func TestParallelToolsOverlap(t *testing.T) {
 			endMu.Lock()
 			endOrder = append(endOrder, ev.ToolCallID)
 			endMu.Unlock()
+			if ev.ToolCallID == "fast" {
+				close(fastEnded) // slow 的完成严格晚于 fast 的完成事件
+			}
 		}
 	})
 	loop.Run(context.Background(), c.append)
