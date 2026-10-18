@@ -16,11 +16,14 @@ import (
 )
 
 // waitIdle waits for the run Send started to end; the tester serializes
-// frames, so this only works without a window attached.
+// frames, so this only works without a window attached——状态经 a.locked
+// 读（Send goroutine 在 update 里写，裸读与之竞态，-race 逮过）。
 func waitIdle(t *testing.T, a *App) {
 	t.Helper()
 	for range 500 {
-		if !a.sending && !a.chat.running {
+		idle := false
+		a.locked(func() { idle = !a.sending && !a.chat.running })
+		if idle {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

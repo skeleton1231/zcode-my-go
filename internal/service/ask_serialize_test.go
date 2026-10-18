@@ -96,7 +96,12 @@ func TestRefreshOAuthSingleFlight(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			toks[i] = svc.refreshOAuth(svc.settings.OAuth)
+			// 裸读 svc.settings.OAuth 会与 refreshOAuth→persistOAuth 的
+			// 持锁写竞态（-race 在 CI 上逮过）——快照也要持锁。
+			svc.mu.Lock()
+			tok := svc.settings.OAuth
+			svc.mu.Unlock()
+			toks[i] = svc.refreshOAuth(tok)
 		}(i)
 	}
 	time.Sleep(50 * time.Millisecond)

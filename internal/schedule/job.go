@@ -175,7 +175,8 @@ func (st *Store) SetEnabled(id string, on bool) (bool, error) {
 type Scheduler struct {
 	store  *Store
 	runner Runner
-	now    func() time.Time // 注入时钟
+	now    func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
+	clockMu sync.Mutex
 
 	mu      sync.Mutex
 	running map[string]bool
@@ -222,7 +223,20 @@ func (s *Scheduler) Start() {
 }
 
 // SetClock injects the time source（测试注入固定时钟）.
-func (s *Scheduler) SetClock(now func() time.Time) { s.now = now }
+// SetClock injects the time source（测试注入固定时钟）。Start 的循环
+// goroutine 与本调用并发读写 s.now——互斥保护（-race 在 CI 上逮过）。
+func (s *Scheduler) SetClock(now func() time.Time) {
+	s.clockMu.Lock()
+	s.now = now
+	s.clockMu.Unlock()
+}
+
+// clock 读取当前时钟（持锁——与 SetClock 互斥）。
+func (s *Scheduler) clock() time.Time {
+	s.clockMu.Lock()
+	defer s.clockMu.Unlock()
+	return s.now()
+}
 
 // FireDue runs one minute-tick synchronously（e2e：不真实等一分钟）.
 func (s *Scheduler) FireDue(ctx context.Context) { s.tick(ctx) }
@@ -244,7 +258,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 	if err != nil {
 		return // 文件损坏时保守跳过本轮，下一分钟重试
 	}
-	now := s.now().Truncate(time.Minute)
+	now := s.clock().Truncate(time.Minute)
 	for _, job := range jobs {
 		if !job.Enabled {
 			continue
@@ -277,7 +291,7 @@ func (s *Scheduler) fire(ctx context.Context, job Job) {
 	s.running[job.ID] = true
 	s.mu.Unlock()
 
-	started := s.now()
+	started := s.clock()
 	s.inflight.Add(1)
 	go func() {
 		defer s.inflight.Done()
@@ -304,7 +318,7 @@ func (s *Scheduler) RunNow(ctx context.Context, job Job) (string, error) {
 	if err != nil {
 		status = "error: " + err.Error()
 	}
-	s.recordWithTime(job.ID, status, summary, s.now())
+	s.recordWithTime(job.ID, status, summary, s.clock())
 	return summary, err
 }
 
