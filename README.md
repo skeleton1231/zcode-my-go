@@ -103,6 +103,7 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   工作），agent_output 收割、agent_stop 停止、agent_send 带全部历史续
   跑；/agents 与 TUI/桌面状态条实时可见。遇到只有用户能答的问题时经会话
   提问通道升级（带代理 ID 前缀），答案回转录继续。
+
 - **技能（skills）**：SKILL.md + frontmatter 的可复用指令包（工作区
   .zgo/skills 覆盖全局 ~/.zgo/skills，SSH 同构）；系统提示注入可用清
   单（超预算降级仅名列），skill 工具按名加载正文。
@@ -118,6 +119,7 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   重发（致命错误透传不兜底）；cron 任务可指定自己的模型。
 - **read 读 PDF 与图片**：PDF 文本层抽取（可读率闸门，乱码宁报错）；
   工作区图片以图片块进模型上下文（三协议适配）。
+<<<<<<< HEAD
 - **场景评测 + 安全回归网**：`zgo eval` 用 JSON 场景钉回归（种文件/
   脚本回合/断言，失败退出码 1）——CI 门禁步骤常驻运行，信任门有
   双向场景守卫（门回归即红）；/find 会话内搜索（TUI 标记跳转）。
@@ -125,6 +127,13 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   ——免手编 settings.json，写盘热重载。
 - **问题报告**：`zgo bugreport` 生成脱敏自包含报告（可直接附 issue）。
 
+=======
+- **场景评测**：`zgo eval` 用 JSON 场景钉回归（种文件/脚本回合/断言，
+  失败退出码 1）；/find 会话内搜索（TUI 标记跳转）。
+- **MCP 配置命令**：`/mcp add <名> -- <命令> [参数…]` / `/mcp remove`
+  ——免手编 settings.json，写盘热重载。
+- **问题报告**：`zgo bugreport` 生成脱敏自包含报告（可直接附 issue）。
+>>>>>>> a1cc3b9 (chore: v0.8.0 — changelog, README refresh, capability breadth)
 - **会话导出即分享**：HTML / Markdown 自包含导出（无上传服务——个人 agent
   的分享物就是导出文件本身）。
 
