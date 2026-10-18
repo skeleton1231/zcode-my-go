@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/skeleton1231/zcode-my-go/internal/winpath"
 )
 
 func TestSystemIncludesEnvironment(t *testing.T) {
@@ -69,7 +71,10 @@ func hermeticContext(t *testing.T) string {
 	orig := globalHome
 	globalHome = func() string { return stubHome }
 	t.Cleanup(func() { globalHome = orig })
-	t.Setenv("GIT_CEILING_DIRECTORIES", os.TempDir())
+	// ceiling 必须长形态：runner 的 os.TempDir() 带 RUNNER~1 短名而 git
+	// 按长形态走——短名条目不匹配会被静默忽略，发现 climbs 出 Temp
+	//（TestSystemNoGitSingleLayer 曾因此意外撞见上层仓库）。
+	t.Setenv("GIT_CEILING_DIRECTORIES", winpath.Long(os.TempDir()))
 	return stubHome
 }
 

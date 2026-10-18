@@ -1,3 +1,5 @@
+//go:build windows
+
 package winpath
 
 import (
@@ -50,8 +52,10 @@ func TestLongExpandsShortName(t *testing.T) {
 		t.Fatal("short form equals long form?")
 	}
 	got := Long(short)
-	if !strings.EqualFold(got, dir) {
-		t.Fatalf("Long(%q) = %q, want %q", short, got, dir)
+	// 期望值同样过 Long：同一目录的两种拼法必须归一到同一形态（dir 自
+	// 身在 runner 上也带短名组件，比对原始串会把正确的展开误判成错）。
+	if want := Long(dir); !strings.EqualFold(got, want) {
+		t.Fatalf("Long(%q) = %q, want %q", short, got, want)
 	}
 }
 

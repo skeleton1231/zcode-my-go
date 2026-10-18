@@ -124,6 +124,10 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 // 每层第一个命中的上下文文件，浅→深拼接（一般→具体）；总量封顶
 // contextCapBytes，超限截断并说明。read 非 nil（远程）只读根层。
 func projectContext(workspace string, read func(name string) ([]byte, error)) string {
+	// 归一长形态：dirChain 内部同样归一，但标签比较用的是这里的
+	// workspace——两侧必须同形态（CI runner 的 TMP 带 RUNNER~1 短名，
+	// 否则 workspace 层永远标成 parent）。
+	workspace = winpath.Long(workspace)
 	var parts []string
 	if g := globalContext(); g != "" {
 		parts = append(parts, "--- user (~/.zgo/ZGO.md) ---\n"+g)
