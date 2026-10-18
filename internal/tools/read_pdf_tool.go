@@ -1,6 +1,6 @@
 package tools
 
-// read 工具的 PDF 支持（spec 规则 52）：internal/pdftext 抽取文本层
+// read 工具的 PDF 支持（spec 规则 53）：internal/pdftext 抽取文本层
 //（有界：流 16MB、文本 256KB、可读率闸门——宁报错不产 CID 乱码垃圾）。
 
 import (

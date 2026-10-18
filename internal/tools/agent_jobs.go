@@ -46,7 +46,7 @@ type AgentJob struct {
 
 // AgentRunFunc 是子代理运行器：prior 为空即全新任务，非空即续跑（历史
 // 由注册表提供）；id 是注册表分配的代理标识（升级提问的上下文前缀，
-// spec 规则 62）；返回终态历史供再次续跑。
+// spec 规则 63）；返回终态历史供再次续跑。
 type AgentRunFunc func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error)
 
 // AgentJobView 是注册项的只读快照（UI/工具输出用）。

@@ -20,7 +20,7 @@ func (r scheduleRunner) Run(ctx context.Context, job schedule.Job) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("session: %w", err)
 	}
-	// 任务级模型（spec 规则 60）：cron add --model 的执行面——便宜模
+	// 任务级模型（spec 规则 61）：cron add --model 的执行面——便宜模
 	// 型跑例行任务，全局设置不动。
 	if job.Model != "" {
 		r.s.SetSessionModel(info.ID, job.Model)
