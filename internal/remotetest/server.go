@@ -175,6 +175,10 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 					ssh.Marshal(struct{ Status uint32 }{uint32(127)}))
 				return
 			}
+			// 整树进 kill-on-close 的 Job Object（Windows）：关句柄即
+			// 全树同步死亡——cmd.Wait 只等直接子进程，孙进程的死亡
+			// 时序不能靠 taskkill 的异步宽限（负载下真实竞态过）。
+			tree, _ := attachTreeJob(cmd)
 			done := make(chan error, 1)
 			go func() { done <- cmd.Wait() }()
 			disconnected := make(chan struct{})
@@ -185,6 +189,9 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 			}()
 			select {
 			case err := <-done:
+				if tree != nil {
+					tree.kill() // 命令已退：收拾漏网的孙进程
+				}
 				code := 0
 				if err != nil {
 					code = exitCodeOf(err)
@@ -193,7 +200,11 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 					ssh.Marshal(struct{ Status uint32 }{uint32(code)}))
 				return
 			case <-disconnected:
-				killProcessTree(cmd.Process)
+				if tree != nil {
+					tree.kill()
+				} else {
+					killProcessTree(cmd.Process)
+				}
 				<-done
 				return
 			}

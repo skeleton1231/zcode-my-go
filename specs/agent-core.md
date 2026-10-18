@@ -103,6 +103,14 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    话）；preCompact 在压缩前同步触发，非零退出阻止压缩并把 stderr 原
    因回给用户。payload 含 sessionId/workspace/title（压缩另含 messages/
    trigger）。
+20. 层级项目上下文（ZCode context-hierarchy）：系统提示注入用户全局
+   （~/.zgo/ZGO.md）+ 自工作区向上到 git 顶（含）每层第一个命中的上下
+   文件（ZGO.md/AGENTS.md/CLAUDE.md，逐层择一），浅→深拼接（一般→具
+   体）带层级标注；总量 8KB 封顶（rune 边界截断）并附说明。git 顶必须
+   是工作区真祖先（HOME 即仓库的机器上不回溯，issue #98 教训）；非 git
+   工作区只读根层。远程工作区经 RemoteFS 根相对读取根层（此前读本地
+   路径必然落空——远程会话静默丢失项目上下文）；上下文进稳定块（跨
+   轮缓存前缀的一部分）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
