@@ -2,6 +2,7 @@ package uiapp
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -44,14 +45,16 @@ func TestAskModalShowsPreviewDiff(t *testing.T) {
 	}
 }
 
-// waitFrame pumps frames until the text appears（asker 异步置位）.
+// waitFrame pumps frames until the text appears（asker 异步置位——CI 的
+// 慢 runner 上 goroutine 调度可能滞后于帧泵，逐帧让出）.
 func waitFrame(t *testing.T, tt *ui.Tester, text string) {
 	t.Helper()
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 100; i++ {
 		tt.Frame()
 		if tt.HasText(text) {
 			return
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("%q never appeared", text)
 }
