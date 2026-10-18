@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -317,10 +318,7 @@ func (s *tuiState) pushTurn(line string) {
 	s.lines = append(s.lines, wrap(ansi(ansiCyan, "你 > ")+line, s.width))
 	s.turns = append(s.turns, len(s.lines)-1)
 	s.turnCur = -1
-	// 输入历史：连续重复折叠（spec 规则 30）。
-	if n := len(s.history); n == 0 || s.history[n-1] != line {
-		s.history = append(s.history, line)
-	}
+	s.pushHistory(line)
 	s.histCur, s.histDraft = -1, nil
 	s.mu.Unlock()
 	s.requestRedraw()
@@ -556,6 +554,37 @@ func replayHistory(s *tuiState, msgs []ai.Message) int {
 		}
 	}
 	return turns
+}
+
+// histMax 封顶输入历史条数（issue #192：仓库"一切缓冲有界"的教义——
+// 粘贴场景单行可数十 KB，无界历史让长会话缓慢累积；超限丢最旧 FIFO）。
+const histMax = 500
+
+// pasteCapRunes 粘贴封顶（issue #195：对齐 stdin 管道 60K 口径——数 MB
+// 剪贴板直入上下文与 JSONL 行是 8MB 家族的交互形态）。
+const pasteCapRunes = 60 << 10
+
+// capPasted 把输入区压到 pasteCapRunes rune 内并留尾注（粘贴结束时调）。
+func capPasted(s *tuiState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.input) <= pasteCapRunes {
+		return
+	}
+	total := len(s.input)
+	note := []rune("\n…（粘贴超长已截断，原 " + strconv.Itoa(total) + " 字符）")
+	s.input = append(append([]rune(nil), s.input[:pasteCapRunes]...), note...)
+}
+
+// pushHistory 记一条历史（调用方持 mu）：连续重复折叠（spec 规则 30），
+// 超过 histMax 丢最旧。
+func (s *tuiState) pushHistory(line string) {
+	if n := len(s.history); n == 0 || s.history[n-1] != line {
+		s.history = append(s.history, line)
+	}
+	if over := len(s.history) - histMax; over > 0 {
+		s.history = append([]string(nil), s.history[over:]...)
+	}
 }
 
 // historyMove 在输入历史中召回（spec 规则 30）：↑ 向旧、↓ 向新；首

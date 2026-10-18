@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 	"testing"
 	"time"
 
@@ -224,5 +225,25 @@ func TestMCPResources(t *testing.T) {
 	}
 	if _, err := svc.MCPReadResource("nope", "config://app"); err == nil {
 		t.Fatal("unknown server accepted")
+	}
+}
+
+// TestCapResourceText 验证 MCP 资源文本封顶（issue #194：60K rune 对
+// 齐 @提及口径；超限截断 + 原长标注，rune 边界安全）。
+func TestCapResourceText(t *testing.T) {
+	small := strings.Repeat("字", 100)
+	if got := capResourceText(small); got != small {
+		t.Fatalf("under-cap changed: %d runes", len([]rune(got)))
+	}
+	big := strings.Repeat("字", mcpResourceCapRunes+5)
+	got := capResourceText(big)
+	if n := len([]rune(got)); n > mcpResourceCapRunes+30 {
+		t.Fatalf("over-cap uncapped: %d runes", n)
+	}
+	if !strings.Contains(got, "已截断") || !strings.Contains(got, "原 ") {
+		t.Fatal("cap annotation missing")
+	}
+	if !utf8.ValidString(got) {
+		t.Fatal("truncation split a rune")
 	}
 }

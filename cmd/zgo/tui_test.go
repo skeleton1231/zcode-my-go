@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"bytes"
 	"fmt"
 	"os"
@@ -309,5 +310,36 @@ func TestKeyStreamHistoryKeys(t *testing.T) {
 	k.feed(s, []byte("x")) // 编辑召回文本：作用在输入区
 	if string(s.input) != "历史项x" {
 		t.Fatalf("edit recalled = %q", string(s.input))
+	}
+}
+
+// TestTuiHistoryCapped 验证输入历史封顶（issue #192：一切缓冲有界
+// 的教义——超 histMax 丢最旧 FIFO，连续重复仍折叠）。
+func TestTuiHistoryCapped(t *testing.T) {
+	s := &tuiState{width: 60, topIdx: -1, turnCur: -1}
+	for i := 0; i < histMax+5; i++ {
+		s.pushTurn("msg" + strconv.Itoa(i))
+	}
+	if len(s.history) != histMax {
+		t.Fatalf("history len = %d, want %d", len(s.history), histMax)
+	}
+	if s.history[0] != "msg"+strconv.Itoa(5) {
+		t.Fatalf("oldest kept = %q, want msg5（最旧被丢）", s.history[0])
+	}
+}
+
+// TestKeyStreamPasteCapped 验证 TUI 括号粘贴封顶（issue #195）：超限
+// rune 截断并留尾注，粘贴态退出后正常提交。
+func TestKeyStreamPasteCapped(t *testing.T) {
+	s := &tuiState{width: 200, topIdx: -1, turnCur: -1}
+	k := &keyStream{}
+	big := strings.Repeat("x", pasteCapRunes+10)
+	k.feedWith(s, []byte("[200~"+big+"[201~"), func(string) {})
+	got := string(s.input)
+	if n := len([]rune(got)); n > pasteCapRunes+40 { // 封顶 + 尾注余量
+		t.Fatalf("paste uncapped: %d runes", n)
+	}
+	if !strings.Contains(got, "已截断") {
+		t.Fatalf("cap note missing: %q…", got[:min(80, len(got))])
 	}
 }
