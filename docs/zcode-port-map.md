@@ -82,6 +82,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    `/attach`，同限校验、随下一条消息发送）；对齐 ZCode attachment-ux 的输入侧。@ 引用：消息内
    @路径 在服务层展开（文本围栏化/图片成块、path jail、60KB/5MB 上限，
    桌面/TUI/print 三端同享），桌面 composer 附文件提示与点选补全。
+   贴图（issue #216，spec desktop-shell 规则 8）：composer Ctrl/Cmd+V
+   探剪贴板位图（internal/clipimg——PNG 注册格式直取优先，CF_DIBV5/
+   CF_DIB 解码 PNG 化），命中走 📎 同一条通道（同一单张/总量上限与
+   notice）；无图放行普通文本粘贴。
 
 **工具 diff 预览**：internal/textdiff（行级 LCS 统一 diff，上下文 3 行，
    输出与规模双上限）+ ToolResult.Diff/Event.Diff 透传 + 桌面工具块与终端
