@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
@@ -112,9 +113,9 @@ func applyEdit(content, old, new string, replaceAll bool) (string, int, string) 
 	count := strings.Count(content, old)
 	switch {
 	case count == 0:
-		return "", 0, "old_string not found; read the file and copy the text exactly"
+		return "", 0, "old_string not found; read the file and copy the text exactly" + editMissHint(content, old)
 	case count > 1 && !replaceAll:
-		return "", count, "old_string appears multiple times; add surrounding lines to make it unique or set replace_all"
+		return "", count, "old_string appears multiple times; add surrounding lines to make it unique or set replace_all" + editMissHint(content, old)
 	}
 	if replaceAll {
 		return strings.ReplaceAll(content, old, new), count, ""
@@ -191,4 +192,103 @@ func (e *Edit) PathKey(args string) (string, bool) {
 		return "", false
 	}
 	return a.Path, true
+}
+
+
+// editHint 扫描/摘录的封顶（错误消息不膨胀——超长行、超大窗口一律截
+// 断，输出上限教义）。
+const (
+	editHintMaxLines = 20000 // 超大文件的 nearest 扫描熔断
+	editHintMaxWin   = 200   // old 超过此行数不做窗口比对
+	editHintLines    = 4     // 摘录行数
+	editHintLineCap  = 120   // 摘录单行字节
+	editHintHits     = 8     // 多处命中列出的位置数
+)
+
+// editMissHint 为未命中/非唯一构造自纠线索（issue #218：错误消息即自
+// 纠燃料——最近匹配行号 + 摘录；多处命中列行号；仅空白差异点名）。
+func editMissHint(content, old string) string {
+	if strings.Contains(content, old) {
+		at := editMatchLines(content, old, editHintHits)
+		parts := make([]string, len(at))
+		for i, l := range at {
+			parts[i] = "L" + strconv.Itoa(l)
+		}
+		return "；命中位置：" + strings.Join(parts, ", ")
+	}
+	s, e, ex, tr, exc := editNearest(content, old)
+	if e == 0 {
+		return ""
+	}
+	hint := fmt.Sprintf("；最近匹配 L%d-%d：%s", s, e, exc)
+	if tr > 0 && ex == 0 {
+		hint += "（仅空白/缩进不同——old_string 的空白与文件不一致）"
+	}
+	return hint
+}
+
+// editMatchLines 报告 old 各命中的 1 基行号（封顶 cap）。
+func editMatchLines(content, old string, cap int) []int {
+	var out []int
+	off := 0
+	for len(out) < cap {
+		i := strings.Index(content[off:], old)
+		if i < 0 {
+			break
+		}
+		abs := off + i
+		out = append(out, 1+strings.Count(content[:abs], "\n"))
+		off = abs + len(old)
+	}
+	return out
+}
+
+// editNearest 找与 old 最相似的连续行窗口：返回起止行、逐行精确/去空
+// 白命中数与摘录。文件或 old 过大直接放弃（e=0）。
+func editNearest(content, old string) (start, end, exact, trimmed int, excerpt string) {
+	lines := strings.Split(content, "\n")
+	oldLines := strings.Split(old, "\n")
+	n := len(oldLines)
+	if n == 0 || len(lines) == 0 || n > editHintMaxWin || len(lines) > editHintMaxLines {
+		return 0, 0, 0, 0, ""
+	}
+	best, bestEx, bestTr := -1, -1, -1
+	for i := 0; i+n <= len(lines); i++ {
+		ex, tr := 0, 0
+		for j := 0; j < n; j++ {
+			if oldLines[j] == "" {
+				continue // 空行平凡匹配：不进信号（否则遮蔽"仅空白不同"）
+			}
+			if lines[i+j] == oldLines[j] {
+				ex++
+			}
+			if strings.TrimSpace(lines[i+j]) == strings.TrimSpace(oldLines[j]) {
+				tr++
+			}
+		}
+		if ex > bestEx || (ex == bestEx && tr > bestTr) {
+			best, bestEx, bestTr = i, ex, tr
+		}
+	}
+	if best < 0 {
+		return 0, 0, 0, 0, ""
+	}
+	lo, hi := best, best+n
+	if lo > 0 {
+		lo--
+	}
+	if hi < len(lines) {
+		hi++
+	}
+	if hi-lo > editHintLines+2 {
+		hi = lo + editHintLines + 2
+	}
+	var parts []string
+	for _, l := range lines[lo:hi] {
+		if len(l) > editHintLineCap {
+			l = l[:editHintLineCap] + "…"
+		}
+		parts = append(parts, l)
+	}
+	return lo + 1, hi, bestEx, bestTr, "「" + strings.Join(parts, "⏎") + "」"
 }
