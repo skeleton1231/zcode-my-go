@@ -574,7 +574,7 @@ func TestSlashMCPAddRemove(t *testing.T) {
 
 }
 
-// TestSlashAgents /agents 清单命令（spec 规则 58）：空态说明用法；有代
+// TestSlashAgents /agents 清单命令（spec 规则 59）：空态说明用法；有代
 // 理时经 FormatAgents 渲染（状态标记/折叠）。
 func TestSlashAgents(t *testing.T) {
 	env, _ := newEnv(t)
