@@ -395,6 +395,28 @@ func (s *Session) Rename(title string) error {
 	return nil
 }
 
+// AutoTitleContext reports the inputs for auto-titling and eligibility:
+// 仅当标题仍是首条用户消息的截断默认值时成立（等值即守卫——用户或模
+// 型改过即失去资格，无需持久化标志；titleFrom 截断规则见上）。
+func (s *Session) AutoTitleContext() (firstUser, firstAssistant string, eligible bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range s.messages {
+		switch m.Role {
+		case ai.RoleUser:
+			if firstUser == "" {
+				firstUser = m.Text()
+			}
+		case ai.RoleAssistant:
+			if firstAssistant == "" {
+				firstAssistant = m.Text()
+			}
+		}
+	}
+	eligible = firstUser != "" && s.info.Title == titleFrom(firstUser)
+	return firstUser, firstAssistant, eligible
+}
+
 // UsageTotal returns the session's cumulative token usage.
 func (s *Session) UsageTotal() ai.Usage {
 	s.mu.Lock()
