@@ -253,3 +253,61 @@ func TestReplayHistory(t *testing.T) {
 		t.Fatalf("turnCur = %d, want 1", s.turnCur)
 	}
 }
+
+// TestTuiInputHistory 验证输入历史召回（spec 规则 30）：提交入历史（连
+// 续重复折叠）、↑ 向旧逐条、↓ 回新恢复草稿、边界不动、空历史无操作。
+func TestTuiInputHistory(t *testing.T) {
+	s := &tuiState{width: 60, topIdx: -1, turnCur: -1}
+
+	// 空历史：↑/↓ 无操作。
+	s.historyMove(-1)
+	if len(s.input) != 0 {
+		t.Fatal("empty history moved")
+	}
+
+	s.pushTurn("第一条")
+	s.pushTurn("第一条") // 连续重复折叠
+	s.pushTurn("第二条")
+	if len(s.history) != 2 {
+		t.Fatalf("history = %v（重复未折叠）", s.history)
+	}
+
+	// 草稿保留：输入一半后 ↑ 召回，↓ 回到最新时草稿恢复。
+	s.input = []rune("没打完的草")
+	s.historyMove(-1) // → 第二条
+	if string(s.input) != "第二条" {
+		t.Fatalf("recall = %q", string(s.input))
+	}
+	s.historyMove(-1) // → 第一条
+	if string(s.input) != "第一条" {
+		t.Fatalf("recall older = %q", string(s.input))
+	}
+	s.historyMove(-1) // 边界：不动
+	if string(s.input) != "第一条" {
+		t.Fatalf("boundary moved: %q", string(s.input))
+	}
+	s.historyMove(1) // → 第二条
+	s.historyMove(1) // → 最新：恢复草稿
+	if string(s.input) != "没打完的草" {
+		t.Fatalf("draft not restored: %q", string(s.input))
+	}
+	s.historyMove(1) // 已在最新：↓ 无操作
+	if string(s.input) != "没打完的草" {
+		t.Fatalf("down at live moved: %q", string(s.input))
+	}
+}
+
+// TestKeyStreamHistoryKeys 验证裸 ↑/↓ 序列驱动召回且不进输入区。
+func TestKeyStreamHistoryKeys(t *testing.T) {
+	s := &tuiState{width: 60, topIdx: -1, turnCur: -1}
+	s.pushTurn("历史项")
+	k := &keyStream{}
+	k.feed(s, []byte("\x1b[A"))
+	if string(s.input) != "历史项" {
+		t.Fatalf("up recall = %q", string(s.input))
+	}
+	k.feed(s, []byte("x")) // 编辑召回文本：作用在输入区
+	if string(s.input) != "历史项x" {
+		t.Fatalf("edit recalled = %q", string(s.input))
+	}
+}
