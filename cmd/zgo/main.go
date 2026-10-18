@@ -375,15 +375,40 @@ func repl(workspace string, cont bool, resume string) int {
 		fmt.Fprintf(os.Stderr, "zgo 交互模式 · 工作区 %s\n", workspace)
 	}
 	fmt.Fprintln(os.Stderr, "命令：/exit 退出 · /compact 压缩 · /plan 切换计划模式 · /new 新会话")
+	// 交互终端走行编辑器（raw 模式 + 历史，spec 规则 32）；管道/
+	// 重定向退回 Scanner（行为不变）。
+	var ed *editorState
+	if e := newEditor(); e != nil {
+		ed = e
+		defer ed.Close()
+	}
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for {
+	readNext := func() (string, bool) {
+		if ed != nil {
+			line, _, quit := ed.readLine("zgo> ")
+			if quit {
+				return "", false
+			}
+			return line, true
+		}
 		fmt.Fprint(os.Stderr, "zgo> ")
 		if !sc.Scan() {
-			// 超过 1MB 的行曾与 EOF 同路径静默退出 REPL（issue #39）：
-			// 丢弃该行并重建 scanner 继续读（ErrTooLong 后 scanner 不可
-			// 恢复；重建后继续消费该行剩余部分直到换行）。
+			return "", false
+		}
+		return sc.Text(), true
+	}
+	for {
+		text, alive := readNext()
+		if !alive {
+			if ed != nil {
+				fmt.Fprintln(os.Stderr)
+				return 0
+			}
 			if e := sc.Err(); e != nil {
+				// 超过 1MB 的行曾与 EOF 同路径静默退出 REPL（issue #39）：
+				// 丢弃该行并重建 scanner 继续读（ErrTooLong 后 scanner 不可
+				// 恢复；重建后继续消费该行剩余部分直到换行）。
 				fmt.Fprintln(os.Stderr, "\n[输入] 行超过 1MB，已丢弃；请分段粘贴")
 				sc = bufio.NewScanner(os.Stdin)
 				sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -392,7 +417,7 @@ func repl(workspace string, cont bool, resume string) int {
 			fmt.Fprintln(os.Stderr)
 			return 0
 		}
-		line := strings.TrimSpace(sc.Text())
+		line := strings.TrimSpace(text)
 		handled, quit := runSlashCommand(&commandEnv{
 			svc: svc, info: &info, workspace: workspace,
 			out:    func(msg string) { fmt.Fprintln(os.Stderr, msg) },

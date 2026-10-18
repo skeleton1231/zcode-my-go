@@ -208,6 +208,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    文件恢复，检查点同恢复）；TUI rerunChat 与 REPL 闭包装，事件流照常
    渲染；回滚三面（⟲/RewindTo//rewind）+ 重做三面（桌面编辑重发/终端
    retry+resend）至此对齐。
+**REPL 行编辑器**（终端一等公民，spec 规则 32）：交互终端下 REPL
+   输入进 raw 模式行编辑——插入/退格（整 rune）、←/→/Home/End、↑/↓
+   历史召回（与 TUI 同语义：折叠/草稿恢复/边界不动）、Ctrl+C 空行退
+   出有内容清行；管道 stdin 退回 Scanner 行为不变； 重绘、rune 宽
+   安全。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
