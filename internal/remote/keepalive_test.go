@@ -41,7 +41,7 @@ func TestKeepaliveDetectsDeadConnection(t *testing.T) {
 }
 
 // TestReconnectAfterDeath: 死连接的下一次调用自动重连——对上层透明
-//（issue #220：此后每一个工具调用失败到会话结束是稳定性短板）。
+// （issue #220：此后每一个工具调用失败到会话结束是稳定性短板）。
 func TestReconnectAfterDeath(t *testing.T) {
 	srv := remotetest.Start(t)
 	host, port, _ := splitHostPort(srv.Address)

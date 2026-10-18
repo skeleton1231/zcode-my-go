@@ -34,7 +34,7 @@ func TestE2ECustomAgentPersona(t *testing.T) {
 	h := New(t,
 		Turn{ToolCalls: []ToolCall{{Name: "task", Args: `{"prompt":"审查这次改动","agent":"reviewer"}`}}},
 		Turn{Text: "审查结论：无阻塞问题。"}, // 子代理的回答回合
-		Turn{Text: "收到"},                 // 主对话收尾
+		Turn{Text: "收到"}, // 主对话收尾
 	)
 	plantAgentDef(t, h.Workspace, "reviewer.md", reviewerMD)
 

@@ -8,16 +8,12 @@ package tools
 
 import (
 	"context"
-<<<<<<< HEAD
 	"fmt"
-=======
->>>>>>> origin/main
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
-<<<<<<< HEAD
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 )
 
@@ -26,10 +22,6 @@ func fmtErrUnknownAgent(id string) error {
 	return fmt.Errorf("未知的子代理 %s", id)
 }
 
-=======
-)
-
->>>>>>> origin/main
 // 后台子代理的状态。
 const (
 	AgentRunning = "running"
@@ -45,7 +37,6 @@ type AgentJob struct {
 	started time.Time
 	cancel  context.CancelFunc
 
-<<<<<<< HEAD
 	mu      sync.Mutex
 	state   string
 	text    string // 结论（终态）
@@ -57,14 +48,6 @@ type AgentJob struct {
 // 由注册表提供）；返回终态历史供再次续跑。
 type AgentRunFunc func(ctx context.Context, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error)
 
-=======
-	mu    sync.Mutex
-	state string
-	text  string // 结论（终态）
-	err   string
-}
-
->>>>>>> origin/main
 // AgentJobView 是注册项的只读快照（UI/工具输出用）。
 type AgentJobView struct {
 	ID       string
@@ -101,11 +84,7 @@ func NewAgentJobs() *AgentJobs {
 
 // Spawn 启动一个后台子代理并立即返回注册项：run 在独立 goroutine 执
 // 行，ctx 派生自注册表根（Close 全停），不随调用方取消。
-<<<<<<< HEAD
 func (a *AgentJobs) Spawn(run AgentRunFunc, prompt string) *AgentJob {
-=======
-func (a *AgentJobs) Spawn(run func(ctx context.Context, prompt string) (agent.SubtaskResult, error), prompt string) *AgentJob {
->>>>>>> origin/main
 	a.mu.Lock()
 	a.seq++
 	id := "ag-" + strconv.Itoa(a.seq)
@@ -114,7 +93,6 @@ func (a *AgentJobs) Spawn(run func(ctx context.Context, prompt string) (agent.Su
 	a.jobs[id] = j
 	a.mu.Unlock()
 
-<<<<<<< HEAD
 	go a.runJob(ctx, j, run, prompt, nil)
 	return j
 }
@@ -164,24 +142,6 @@ func (a *AgentJobs) runJob(ctx context.Context, j *AgentJob, run AgentRunFunc, p
 	}
 }
 
-=======
-	go func() {
-		res, err := run(ctx, prompt)
-		j.mu.Lock()
-		defer j.mu.Unlock()
-		switch {
-		case err != nil && ctx.Err() != nil:
-			j.state = AgentStopped
-		case err != nil:
-			j.state, j.err = AgentFailed, err.Error()
-		default:
-			j.state, j.text = AgentDone, res.Text
-		}
-	}()
-	return j
-}
-
->>>>>>> origin/main
 // Get 查注册项。
 func (a *AgentJobs) Get(id string) (*AgentJob, bool) {
 	a.mu.Lock()
@@ -211,7 +171,6 @@ func (a *AgentJobs) Stop(id string) bool {
 	return true
 }
 
-<<<<<<< HEAD
 // Snapshots 全量只读快照（e2e 等待终态、后续 UI 面同源）。
 func (a *AgentJobs) Snapshots() []AgentJobView {
 	a.mu.Lock()
@@ -223,7 +182,5 @@ func (a *AgentJobs) Snapshots() []AgentJobView {
 	return out
 }
 
-=======
->>>>>>> origin/main
 // CloseAll 全停（会话删除/服务关闭）；注册项保留可读（收割已完成的）。
 func (a *AgentJobs) CloseAll() { a.end() }

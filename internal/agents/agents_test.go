@@ -13,7 +13,7 @@ type memFS struct {
 	join  func(parts ...string) string
 }
 
-func (m memFS) Join(parts ...string) string  { return m.join(parts...) }
+func (m memFS) Join(parts ...string) string { return m.join(parts...) }
 func (m memFS) ReadFile(n string) ([]byte, error) {
 	if c, ok := m.files[n]; ok {
 		return []byte(c), nil
@@ -119,7 +119,7 @@ func TestDiscoverProjectOverridesUserOnDupName(t *testing.T) {
 
 func TestDiscoverSkipsNonMarkdownAndDirs(t *testing.T) {
 	root := local(t, map[string]string{
-		"ok.md":    "---\ndescription: d\n---\nBody.\n",
+		"ok.md":     "---\ndescription: d\n---\nBody.\n",
 		"notmd.txt": "ignore me",
 	})
 	out := Discover([]Root{root})
