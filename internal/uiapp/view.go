@@ -394,6 +394,12 @@ func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 		area := ui.TextArea(c, &a.input).Placeholder("描述任务…（Shift+Enter 换行）").Grow(1).Lines(1, 8)
 		area.OnTextKey(func(k ui.TextKey) bool {
 			switch {
+			case k.Key == ui.KeyV && k.Mods&(ui.Ctrl|ui.Super) != 0:
+				// 贴图（issue #216）：剪贴板有位图则入附件并吞掉按键；
+				// 无图返回 false 放行普通文本粘贴——不报错不吞文本。
+				if a.PasteImage() {
+					return true
+				}
 			case k.Key == ui.KeyEnter && k.Mods == 0:
 				if a.activeID != "" && !a.chat.running {
 					a.Send()

@@ -36,7 +36,7 @@ type Env struct {
 	// Send submits a message as if the user typed it（/mcp 展开后直接
 	// 发送；不填即该表面不支持直接发送）.
 	Send func(text string)
-	// Find searches the current session transcript（spec 规则 56：TUI
+	// Find searches the current session transcript（spec 规则 57：TUI
 	// 返回跳转状态并进入标记模式，REPL 返回命中清单；不填即不支持）.
 	Find func(q string) string
 
@@ -654,7 +654,7 @@ func wrapResource(uri, text string) string {
 	return "资源 " + uri + "：\n" + fence + "\n" + text + "\n" + fence
 }
 
-// mcpAdd 配置一个 MCP 服务器（spec 规则 57）：/mcp add <名> -- <命令> [参数…]。
+// mcpAdd 配置一个 MCP 服务器（spec 规则 58）：/mcp add <名> -- <命令> [参数…]。
 // `--` 后按空白切分（无引号语义——复杂命令进 settings.json）。
 func mcpAdd(env *Env, args string) string {
 	rest := args
@@ -685,7 +685,7 @@ func mcpAdd(env *Env, args string) string {
 	return "[MCP] 已配置 " + fields[0] + "：" + summary + "（热重载；/mcp 查看，握手失败见诊断）"
 }
 
-// mcpRemove 移除一个 MCP 服务器（spec 规则 57）。
+// mcpRemove 移除一个 MCP 服务器（spec 规则 58）。
 func mcpRemove(env *Env, name string) string {
 	if name == "" {
 		return "[MCP] 用法：/mcp remove <名>"

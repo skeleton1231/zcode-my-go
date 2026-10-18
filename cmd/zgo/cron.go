@@ -116,7 +116,7 @@ func cronAdd(store *schedule.Store, args []string) int {
 		fmt.Fprintln(os.Stderr, "需要 --schedule --prompt --workspace")
 		return 2
 	}
-	if _, _, err := schedule.ParseWindow(*window); err != nil { // add 即校验（spec 规则 63）
+	if _, _, err := schedule.ParseWindow(*window); err != nil { // add 即校验（spec 规则 64）
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		return 1
 	}

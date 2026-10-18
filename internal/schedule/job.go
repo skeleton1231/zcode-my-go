@@ -246,10 +246,13 @@ func (s *Scheduler) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 		<-s.stopped
-		// 排空在飞的 fire（issue #134）：record 落盘完成后才返回，调用
-		// 方（应用退出、测试清理）随即关 store/删 TempDir 不再竞争。
-		s.inflight.Wait()
 	}
+	// 排空在飞的 fire（issue #134）：record 落盘完成后才返回，调用方
+	// （应用退出、测试清理）随即关 store/删 TempDir 不再竞争。未 Start
+	// 只 tick 的用法同样排空——CI 上 TestSchedulerHotReloads 的 TempDir
+	// 清理与晚到的 record 写入竞态（unlinkat directory not empty）即
+	// 此路径。
+	s.inflight.Wait()
 }
 
 // tick re-reads the store（热重载）and fires everything due.
@@ -275,7 +278,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 		if next.IsZero() || next.After(now) {
 			continue
 		}
-		// 时间窗（spec 规则 63，pi off-peak 的形态）：窗口外不 fire 也
+		// 时间窗（spec 规则 64，pi off-peak 的形态）：窗口外不 fire 也
 		// 不动 LastRun——任务保持到期，窗口一开的下一个 tick 即补跑。
 		if !job.InWindow(now) {
 			continue
