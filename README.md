@@ -42,8 +42,9 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
 - **任务清单与提问**：todo 工具跟踪计划（会话级状态，桌面任务面板与
   TUI 顶部计划块同步刷新）；ask 工具把只有用户能答的问题送达界面。
 - **终端三形态**：`zgo -p "任务"` print 模式、行式 REPL（/compact /plan
-  /new /rewind /export /attach）、`zgo -t` 全屏 TUI（ANSI 备用屏 + 流式刷新
-  + 任务面板 + Ctrl+↑/↓ 回合导航）。
+  /new /rewind /resume /export /attach /usage）、`zgo -t` 全屏 TUI（ANSI
+  备用屏 + 流式刷新 + 任务面板 + Ctrl+↑/↓ 回合导航）；`-c/--continue`、
+  `-r/--resume <前缀>` 跨进程恢复会话，运行中可插话（下一回合注入）。
 - **多文件补丁**：apply_patch 工具（Add/Update/Delete，上下文唯一匹配）。
 - **长期记忆**：workspace 级记忆跨会话存活，自动注入系统提示。
 - **子代理与工作流**：task 工具派发只读研究；workflow 工具编排多步计划，
@@ -77,7 +78,15 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   命中按缓存计价。
 - **CLI 运维家族**：`zgo cron`（定时任务）、`zgo doctor`（环境诊断）、
   `zgo sessions`（列表/导出/删除/搜索）、`zgo memory`（工作区记忆）、
-  `zgo models`（模型目录与校验）。
+  `zgo models`（模型目录与校验）、`zgo usage`（会话 token 用量与缓存
+  命中率）。
+- **脚本化输出**：`--output-format json` 逐事件 JSONL（稳定字段名，args
+  原始内嵌）；stdin 管道并入提示词——`git diff | zgo -p "review"
+  `--output-format json` 全链自动化。
+- **会话生命周期钩子**：settings 配 sessionStart/sessionEnd（观察者）
+  与 preCompact（非零退出阻止压缩），外部命令同机制。
+- **层级项目上下文**：~/.zgo/ZGO.md 用户全局 + 自工作区向上到 git 顶
+  逐层择一（ZGO/AGENTS/CLAUDE.md，浅→深、8KB 封顶）；远程工作区同享。
 - **会话导出即分享**：HTML / Markdown 自包含导出（无上传服务——个人 agent
   的分享物就是导出文件本身）。
 

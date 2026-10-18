@@ -64,7 +64,28 @@ settings file).
 
 MIT © 2026 skeleton1231
 
+## v0.6.0 highlights
+
+- Background shell over SSH: bash {background:true} runs a non-waiting
+  exec channel on ssh:// workspaces (KillTree closes the channel).
+- Terminal session resume: -c/--continue (latest in workspace) and
+  -r/--resume <prefix>; /resume switches in place with transcript
+  replay and nav anchors.
+- Terminal steering: messages submitted mid-run queue into the next
+  turn (Steer) — parity with the desktop.
+- Print automation: --output-format json (one JSONL line per event,
+  stable field names) and stdin piping (`git diff | zgo -p "review"`).
+- Hierarchical project context: ~/.zgo/ZGO.md user global + one
+  context file per level up to the git top (remote workspaces read
+  their root over the wire).
+- Session auto-title (small completion, equality-guarded; manual
+  renames always win), session lifecycle hooks (sessionStart /
+  sessionEnd observers, preCompact blocking), usage visibility
+  (/usage and `zgo usage` with cache hit rate), exports embed image
+  attachments as data URIs, and an e2e suite for ssh:// sessions.
+
 ## v0.5.1 highlights
+
 
 - Rewind to any turn: RewindTo(n) drops turns n..latest (checkpoint
   restore + transcript truncation); desktop offers "⟲ rewind to here"
