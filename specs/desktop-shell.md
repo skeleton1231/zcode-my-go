@@ -18,6 +18,14 @@ webview、无 HTML/JS、无前端构建）与 `internal/service` 应用服务层
 3. 设置（baseURL / apiKey / model）经设置弹窗（`ui.Modal`）读写，落盘到
    用户数据目录；API key 只存本地文件，不进日志、不进会话持久化、不在
    界面回显。
+   剖面（issue #215）：settings 增 `profiles`（名 → {api, baseUrl,
+   apiKey, model, thinking}）与 `active`；旧版单剖面设置首启自动迁移
+   进 `default` 剖面（扁平字段语义不变——活动剖面物化进扁平字段，
+   resolve/env 覆盖与 providerFor 路径零改动）。`/provider` 三形态：
+   无参列剖面（当前带 → 标记）；`/provider <名>` 切换——下回合走新剖
+   面，回执带名称/模型/端点；`/provider add <名>` 把当前配置注册为剖
+   面。剖面 key 与扁平 key 同一条脱敏边界（SettingsView/日志/JSONL
+   全链路不回显）；OAuth（订阅登录）与剖面正交，保持全局。
 4. 会话侧栏支持：新建（系统目录选择对话框）、列出（含标题与运行状态）、
    切换、删除（菜单触发）。
 5. 消息区：流式 assistant 文本用 `markdown.Stream`，完成后 `markdown.View`；
