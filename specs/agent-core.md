@@ -202,6 +202,12 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    （usage-YYYYMMDD.json，跨会话共享、进程外持久；进程内检测日期翻滚——跨零点清零计数、切换新文件、重置阈值标志，issue #199：桌面连跑数天是常态）；用量面（/usage
    与 zgo usage）展示「今日」行；跨过阈值 80% 与 100% 各发一次通知
    事件（EvTurnRetry 同级的用户可见提示，不阻断运行——软预算）。
+
+36. 通知与权限可见性：EvBudgetNotice 等用户可见通知事件在四表面
+   （TUI/REPL/print/桌面）渲染为提示行（黄显、不进转录）；/perms 列
+   出本会话累计的「总是允许」权限规则（工具与路径模式）——会话结束
+   随之消散，列表为空时说明用法（终端按 y/a 回答 ask 时 a 会积累规
+   则）。68d2967 (feat: notice rendering and session permission visibility)
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

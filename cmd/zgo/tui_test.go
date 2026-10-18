@@ -343,3 +343,15 @@ func TestKeyStreamPasteCapped(t *testing.T) {
 		t.Fatalf("cap note missing: %q…", got[:min(80, len(got))])
 	}
 }
+
+// TestTuiBudgetNoticeRender 验证预算通知的 TUI 渲染（spec 规则 36）。
+func TestTuiBudgetNoticeRender(t *testing.T) {
+	defer func(enabled bool) { colorEnabled = enabled }(colorEnabled)
+	colorEnabled = false
+	s := &tuiState{width: 80}
+	s.applyEvent(agent.Event{Kind: agent.EvBudgetNotice, Text: "今日已用 900 token（预算的 80%+）"}, new(string))
+	joined := strings.Join(s.lines, "\n")
+	if !strings.Contains(joined, "[预算] 今日已用 900") {
+		t.Fatalf("notice not rendered: %q", joined)
+	}
+}

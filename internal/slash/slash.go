@@ -171,6 +171,26 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/perms", usage: "/perms",
+		help: "本会话累计的「总是允许」权限规则（随会话结束消散）",
+		run: func(env *Env, _ string) string {
+			rules := env.Svc.SessionPermissionRules(env.SessionID())
+			if len(rules) == 0 {
+				return "[权限] 本会话还没有「总是允许」规则——权限询问时回答 a（总是允许）会按工具/路径积累，随会话结束消散"
+			}
+			var b strings.Builder
+			b.WriteString("[权限] 本会话的总是允许规则：\n")
+			for _, r := range rules {
+				line := "  " + r.Tool
+				if r.Args != "" {
+					line += " " + r.Args
+				}
+				b.WriteString(line + "\n")
+			}
+			return strings.TrimRight(b.String(), "\n")
+		},
+	},
+	{
 		name: "/usage", usage: "/usage",
 		help: "本会话的 token 用量（输入/输出/缓存）",
 		run: func(env *Env, _ string) string {
