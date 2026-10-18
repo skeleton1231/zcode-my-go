@@ -43,6 +43,12 @@ func (s sshClient) ReadLink(name string) (string, bool, error) { return s.c.Read
 
 func (s sshClient) Glob(pattern string) ([]string, error) { return s.c.Glob(pattern) }
 
+// StartBackground 委托远端后台命令（后台 shell 的远程形态，spec 规则
+// 19）：remote.BgProcess 结构化实现 tools.BgProcess，无需适配。
+func (s sshClient) StartBackground(command string) (tools.BgProcess, error) {
+	return s.c.StartBackground(command)
+}
+
 // openWorkspace builds the session's tools.Workspace: local paths stay
 // local; ssh:// targets dial once (credentials from env: ZGO_SSH_KEY as
 // a PEM, ZGO_SSH_PASSWORD) and delegate.

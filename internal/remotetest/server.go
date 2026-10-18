@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -163,15 +165,38 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 			line := stripCdPrefix(payload.Command)
 			cmd := shellCommand(line)
 			cmd.Dir = root
-			out, runErr := cmd.CombinedOutput()
-			channel.Write(out)
-			code := 0
-			if runErr != nil {
-				code = exitCodeOf(runErr)
+			// 流式直写通道而非攒齐再写（后台任务的输出要边跑边读）；
+			// 客户端断开即杀——对齐真 SSH 服务器的会话语义，后台
+			// KillTree（关通道）依赖它。
+			cmd.Stdout = channel
+			cmd.Stderr = channel
+			if err := cmd.Start(); err != nil {
+				channel.SendRequest("exit-status", false,
+					ssh.Marshal(struct{ Status uint32 }{uint32(127)}))
+				return
 			}
-			channel.SendRequest("exit-status", false,
-				ssh.Marshal(struct{ Status uint32 }{uint32(code)}))
-			return
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			disconnected := make(chan struct{})
+			go func() {
+				for range requests { // 通道关闭（requests 收尾）即感知断开
+				}
+				close(disconnected)
+			}()
+			select {
+			case err := <-done:
+				code := 0
+				if err != nil {
+					code = exitCodeOf(err)
+				}
+				channel.SendRequest("exit-status", false,
+					ssh.Marshal(struct{ Status uint32 }{uint32(code)}))
+				return
+			case <-disconnected:
+				killProcessTree(cmd.Process)
+				<-done
+				return
+			}
 		case "pty-req":
 			// 无真 PTY：记录接受即可（测试服务器按行回环）。
 			req.Reply(true, nil)
@@ -226,6 +251,18 @@ func shellCommand(line string) *exec.Cmd {
 		return exec.Command("cmd", "/c", line)
 	}
 	return exec.Command("sh", "-c", line)
+}
+
+// killProcessTree terminates a command's whole tree on disconnect: cmd
+// wraps the line in cmd.exe / sh, whose children (ping、sleep…) would
+// otherwise outlive the channel close and pin the server's temp dir
+// (真 SSH 服务器同样杀整组——OpenSSH 对会话进程组发 SIGHUP）.
+func killProcessTree(p *os.Process) {
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(p.Pid)).Run()
+		return
+	}
+	_ = p.Kill()
 }
 
 // exitCodeOf extracts an ExitError's code.
