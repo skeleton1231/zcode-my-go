@@ -76,6 +76,7 @@ type AgentService struct {
 	askMu            sync.Mutex                 // asker 单槽串行化（issue #79）
 	refreshMu        sync.Mutex                 // OAuth 刷新 single-flight（issue #136）
 	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
+	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 }
 
@@ -179,6 +180,14 @@ func (s *AgentService) startMCP() { s.syncMCP() }
 
 // Close shuts down MCP servers and every session's background jobs.
 func (s *AgentService) Close() {
+	// sessionStart 钩子由 Close 收束（spec 规则 24）：外部命令可达 10s
+	// 超时，退出前等它跑完，避免钩子进程活过服务。
+	s.hookWG.Wait()
+	// sessionEnd 钩子对全部存活会话同步跑一次（观察者；退出前唯一机
+	// 会），随后才拆工作区连接。
+	for _, info := range s.mgr.List() {
+		s.fireSessionEnd(info.ID, info.Workspace, "close")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, server := range s.mcp {
@@ -569,7 +578,20 @@ func (s *AgentService) NewSession(workspace string) (agent.SessionInfo, error) {
 	if err != nil {
 		return agent.SessionInfo{}, err
 	}
-	return sess.Info(), nil
+	info := sess.Info()
+	// sessionStart 钩子异步跑（观察者，spec 规则 24）：外部命令可达
+	// 10s 超时，不能拖住会话打开；hookWG 让 Close 收束它。
+	if hooks := s.hooksSnapshot().SessionStart; len(hooks) > 0 {
+		s.hookWG.Add(1)
+		go func() {
+			defer s.hookWG.Done()
+			agent.SessionStartHooks(hooks, map[string]any{
+				"sessionId": info.ID, "workspace": info.Workspace,
+				"title": info.Title,
+			})
+		}()
+	}
+	return info, nil
 }
 
 // HasSession reports whether the id (or its unique prefix) names a
@@ -625,6 +647,10 @@ func (s *AgentService) ListSessions() []agent.SessionInfo {
 
 // DeleteSession removes a session (its background jobs stop first).
 func (s *AgentService) DeleteSession(id string) error {
+	var ws string
+	if sess, ok := s.mgr.Get(id); ok {
+		ws = sess.Info().Workspace
+	}
 	s.mu.Lock()
 	if state, ok := s.states[id]; ok {
 		state.Jobs.KillAll()
@@ -636,7 +662,29 @@ func (s *AgentService) DeleteSession(id string) error {
 	}
 	delete(s.wsCache, id)
 	s.mu.Unlock()
-	return s.mgr.Delete(id)
+	if err := s.mgr.Delete(id); err != nil {
+		return err
+	}
+	s.fireSessionEnd(id, ws, "delete")
+	return nil
+}
+
+// fireSessionEnd runs sessionEnd hooks（观察者，spec 规则 24）.
+func (s *AgentService) fireSessionEnd(id, workspace, reason string) {
+	hooks := s.hooksSnapshot().SessionEnd
+	if len(hooks) == 0 {
+		return
+	}
+	agent.SessionEndHooks(hooks, map[string]any{
+		"sessionId": id, "workspace": workspace, "reason": reason,
+	})
+}
+
+// hooksSnapshot reads the configured command hooks under lock.
+func (s *AgentService) hooksSnapshot() agent.CommandHooks {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings.Hooks
 }
 
 // SessionWorkspace returns the session's workspace path ("" when the
@@ -791,10 +839,22 @@ func (s *AgentService) SessionRunning(id string) bool {
 }
 
 // CompactSession summarizes a session's old history (the 压缩会话 menu).
+// preCompact 钩子先跑（spec 规则 24）：非零退出阻止压缩并回带原因。
 func (s *AgentService) CompactSession(id string) error {
 	sess, ok := s.mgr.Get(id)
 	if !ok {
 		return fmt.Errorf("no session %s", id)
+	}
+	if hooks := s.hooksSnapshot().PreCompact; len(hooks) > 0 {
+		if blocked, reason := agent.PreCompactHooks(hooks, map[string]any{
+			"sessionId": id, "workspace": sess.Info().Workspace,
+			"messages": len(sess.Messages()), "trigger": "manual",
+		}); blocked {
+			if reason == "" {
+				reason = "钩子未说明原因"
+			}
+			return fmt.Errorf("压缩被钩子阻止：%s", reason)
+		}
 	}
 	return sess.Compact(context.Background())
 }

@@ -165,6 +165,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    换后表面重置视图并回放目标会话转录（TUI 登记导航锚点，/new 空会话
    天然 no-op），todo/任务注册表随会话隔离；未知名/无历史/重复切换各
    有明确提示。
+**会话生命周期钩子**（ZCode/CC SessionStart/SessionEnd/PreCompact，
+   spec 规则 24）：settings.hooks 增 sessionStart/sessionEnd/preCompact
+   （外部命令同机制：JSON 上 stdin、10s 超时、cmd /c 原样退出码）；开
+   幕异步/收幕同步皆观察者（失败记日志绝不影响会话），preCompact 非
+   零退出阻止压缩并回带 stderr 原因；hookWG 收束开场钩子，Close 对全
+   部存活会话触发收场（reason=close/delete）。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
