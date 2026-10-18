@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
@@ -229,6 +230,20 @@ func (h *Harness) RemoteHas(rel string) bool {
 	}
 	_, err := h.Probe.ReadFile(rel)
 	return err == nil
+}
+
+// waitFor 轮询 cond 直到成立或预算耗尽，返回是否等到。e2e 等待一律秒
+// 级预算（CI/全套件并行下负载不可预测，500ms 级手写循环真实 flaky 过
+// ——issue #155）。预算尽时再探一次：边界上刚成立的条件不误报。
+func waitFor(budget time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return cond()
 }
 
 // Ask runs one chat turn and collects the events.

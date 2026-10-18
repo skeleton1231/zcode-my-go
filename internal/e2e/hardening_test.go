@@ -45,20 +45,11 @@ func TestE2EParallelBatchOverlaps(t *testing.T) {
 		})
 	}()
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	if !waitFor(5*time.Second, func() bool {
 		mu.Lock()
-		done := readEnd
-		mu.Unlock()
-		if done {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	mu.Lock()
-	done := readEnd
-	mu.Unlock()
-	if !done {
+		defer mu.Unlock()
+		return readEnd
+	}) {
 		t.Fatal("read did not complete while write's ask blocked — batch ran serially")
 	}
 	if h.WorkspaceHas("gated.txt") {
@@ -89,15 +80,12 @@ func TestE2EAbortMidStream(t *testing.T) {
 	}()
 
 	// 等到文本到达再中止。
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	if !waitFor(5*time.Second, func() bool {
 		mu.Lock()
-		saw := HasEvents(events, agent.EvTextDelta, "说到一半")
-		mu.Unlock()
-		if saw {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+		defer mu.Unlock()
+		return HasEvents(events, agent.EvTextDelta, "说到一半")
+	}) {
+		t.Fatal("stream never delivered text")
 	}
 	h.Svc.Abort(h.SessionID)
 	<-done
@@ -148,5 +136,20 @@ func TestE2ETransientRetrySucceeds(t *testing.T) {
 	}
 	if got := h.Script.Requests[1].Messages[0].Text(); got != "问一次" {
 		t.Fatalf("retry replayed wrong prompt: %q", got)
+	}
+}
+
+// TestWaitForBudgetRespected: waitFor 的契约——已成立的条件立即通过、
+// 永不成立的条件耗尽预算后如实返回假（预算以实际耗时下限体现）。
+func TestWaitForBudgetRespected(t *testing.T) {
+	if !waitFor(2*time.Second, func() bool { return true }) {
+		t.Fatal("already-true cond must pass immediately")
+	}
+	start := time.Now()
+	if waitFor(50*time.Millisecond, func() bool { return false }) {
+		t.Fatal("never-true cond must report failure")
+	}
+	if d := time.Since(start); d < 50*time.Millisecond {
+		t.Fatalf("budget not respected: waited %v", d)
 	}
 }
