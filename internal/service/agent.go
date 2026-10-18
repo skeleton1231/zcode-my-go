@@ -1494,6 +1494,10 @@ type CustomCommand struct {
 // customCommandsDir 是命令目录名（工作区内）.
 const customCommandsDir = ".zgo/commands"
 
+// commandCapRunes 封顶命令文件文本（rune 计，60K 对齐 stdin/粘贴/
+// 资源口径——issue #195 家族清单：用户可控文本入口全部有界）。
+const commandCapRunes = 60 << 10
+
 // CustomCommands 列出工作区与全局的自定义命令（同名工作区覆盖全局，
 // spec 规则 39）。SSH 工作区经 path jail 读取，同享。
 func (s *AgentService) CustomCommands(workspace string) []CustomCommand {
@@ -1546,7 +1550,11 @@ func loadCommandsDir(out map[string]string, rel string, ws *tools.Workspace) {
 		if len(data) == 0 {
 			continue
 		}
-		out[name] = string(data)
+		text := string(data)
+		if r := []rune(text); len(r) > commandCapRunes {
+			text = string(r[:commandCapRunes]) + "…（命令文件超长，已截断）"
+		}
+		out[name] = text
 	}
 }
 
