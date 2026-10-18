@@ -168,8 +168,14 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 			os.Exit(0)
 		}
 		if handled {
-			if info.ID != prevID { // /new 换了会话：旧回合锚点与计划作废
+			if info.ID != prevID { // /new 或 /resume 换了会话：旧回合锚点与计划作废
 				s.resetSessionView()
+				// /resume 切到既有会话：回放目标转录（/new 的空会话为
+				// 天然 no-op），回合照常登记导航锚点。
+				if msgs, err := svc.Messages(info.ID); err == nil && len(msgs) > 0 {
+					s.push(ansi(ansiCyan, fmt.Sprintf("— 已切换到会话 %s · %s —", shortID(info.ID), info.Title)))
+					replayHistory(s, msgs)
+				}
 			}
 			s.requestRedraw()
 		}

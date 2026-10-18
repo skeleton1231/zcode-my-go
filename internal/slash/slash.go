@@ -102,6 +102,48 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/resume", usage: "/resume [前缀]",
+		help: "切换会话（无参 = 当前工作区最近；前缀指定，见 zgo sessions list）",
+		run: func(env *Env, args string) string {
+			prefix := strings.TrimSpace(args)
+			var info agent.SessionInfo
+			if prefix != "" {
+				id, ok := env.Svc.ResolveSession(prefix)
+				if !ok {
+					return "[恢复失败] 没有会话 " + strconv.Quote(prefix) +
+						"（完整 ID 见 zgo sessions list；支持唯一前缀）"
+				}
+				for _, si := range env.Svc.ListSessions() {
+					if si.ID == id {
+						info = si
+						break
+					}
+				}
+			} else {
+				ws := ""
+				if env.Workspace != nil {
+					ws = env.Workspace()
+				}
+				var ok bool
+				info, ok = env.Svc.ContinueSession(ws)
+				if !ok {
+					return "[恢复失败] 当前工作区没有历史会话（zgo sessions list 查看；或 /resume <前缀>）"
+				}
+			}
+			if info.ID == env.SessionID() {
+				return "[恢复] 已在该会话"
+			}
+			if env.SetSession != nil {
+				env.SetSession(info)
+			}
+			short := info.ID
+			if len(short) > 8 {
+				short = short[:8]
+			}
+			return "[恢复] 已切换到会话 " + short + " · " + info.Title
+		},
+	},
+	{
 		name: "/compact", usage: "/compact",
 		help: "压缩会话（摘要 + 保留最近对话）",
 		run: func(env *Env, _ string) string {
