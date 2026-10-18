@@ -187,6 +187,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    UsageSummaryOf（累计输入/输出/缓存读写 + 用户回合数，取自会话持久化
    记账）+ 共享 FormatUsage（含前缀缓存命中率）+ /usage 终端命令与
    `zgo usage [前缀]`（无参=最近会话）；零用量明确展示零值。
+**终端插话**（steering 的终端面，spec 规则 26）：REPL/TUI 运行中提交
+   的消息经共享 maybeSteer 入队（Steer 既有语义：下一回合注入、abort
+   清空）——TUI 登记导航锚点并显示「已入队」提示、REPL 打 stderr 提示
+   ；空闲会话仍走常规发送。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

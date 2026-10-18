@@ -184,6 +184,13 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 		return
 	}
 
+	// 运行中插话（spec 规则 26）：入队下一回合生效，不打断当前流。
+	if steered, notice := maybeSteer(svc, info.ID, line); steered {
+		s.pushTurn(line) // 转录可见 + 导航锚点
+		s.push(ansi(ansiBlue, notice))
+		return
+	}
+
 	s.setStatus("运行中…", true)
 	go func() {
 		var last string
