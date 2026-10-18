@@ -71,9 +71,9 @@ func TestFilterToolsByNameVocab(t *testing.T) {
 // fakeTool 是按名自述的最小工具实现。
 type fakeTool string
 
-func (f fakeTool) Name() string                                        { return string(f) }
-func (f fakeTool) Description() string                                 { return "" }
-func (f fakeTool) Parameters() map[string]any                          { return nil }
+func (f fakeTool) Name() string               { return string(f) }
+func (f fakeTool) Description() string        { return "" }
+func (f fakeTool) Parameters() map[string]any { return nil }
 func (f fakeTool) Execute(context.Context, json.RawMessage) agent.ToolResult {
 	return agent.ToolResult{}
 }
