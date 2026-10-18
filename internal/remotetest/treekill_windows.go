@@ -10,6 +10,7 @@ package remotetest
 import (
 	"fmt"
 	"os/exec"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -59,5 +60,45 @@ func attachTreeJob(cmd *exec.Cmd) (*treeJob, error) {
 	return &treeJob{handle: job}, nil
 }
 
-// kill 关闭 Job 句柄——kill-on-close 使整棵树同步终止。
-func (j *treeJob) kill() { windows.CloseHandle(j.handle) }
+// kill 显式终止整棵 Job 进程树，等成员清空（终止进程的句柄释放是异
+// 步的——TempDir 清理撞文件占用的竞态在这里关死）再关句柄。
+func (j *treeJob) kill() {
+	_ = windows.TerminateJobObject(j.handle, 1)
+	j.waitEmpty()
+	windows.CloseHandle(j.handle)
+}
+
+// jobProcessList 查询 Job 当前成员 PID（JOBOBJECT_BASIC_PROCESS_ID_LIST）。
+func jobProcessList(job windows.Handle) ([]uint32, error) {
+	const maxPIDs = 64
+	size := uint32(8 + 8 + maxPIDs*4)
+	buf := make([]byte, size)
+	var ret uint32
+	if err := windows.QueryInformationJobObject(job,
+		windows.JobObjectBasicProcessIdList,
+		uintptr(unsafe.Pointer(&buf[0])), size, &ret); err != nil {
+		return nil, err
+	}
+	count := *(*uint32)(unsafe.Pointer(&buf[4])) // 第二个字段：在列 PID 数
+	pids := make([]uint32, 0, count)
+	for i := uint32(0); i < count && i < maxPIDs; i++ {
+		pid := *(*uint32)(unsafe.Pointer(&buf[8+i*4]))
+		if pid != 0 {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
+// waitEmpty 轮询直到 Job 成员清空（终止进程的句柄释放是异步的——
+// TempDir 清理撞文件占用的最后一格竞态在这里关死）。
+func (j *treeJob) waitEmpty() {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		pids, err := jobProcessList(j.handle)
+		if err == nil && len(pids) == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
