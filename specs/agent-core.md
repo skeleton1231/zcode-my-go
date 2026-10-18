@@ -378,7 +378,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
    / no_tool_errors / event_count）。运行面与 e2e 同构：临时 dataDir +
    临时工作区（种文件即授信——场景是用户自己写的）+ 脚本 provider +
    自动放行 asker；关自动命名。目录默认 ./evals 不存在则 ~/.zgo/
-   evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。
+   evals；--filter 按名/描述筛；任一失败退出码 1（可进 CI）。场景 Trusted 显式 false
+   模拟未授信工作区（工作区层不加载）——**安全回归网**：trust-gate
+   场景断言未授信的技能层不可读（信任门回归即红）、trust-granted 断
+   言授信后可读（正向）。CI 以 `go run ./cmd/zgo eval evals` 为门禁
+   步骤——任一场景失败即红。
 
 55. 模型兜底链（spec 规则 54 场景评测之后）：settings.fallbackModels
    （逗号列表，空即关闭）——rewire 的 Provider 把主模型与兜底序包成

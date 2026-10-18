@@ -36,6 +36,10 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -count=1 -timeout 900s ./...
+      - name: Eval scenarios
+        # 场景评测门禁（spec 规则 54）：zgo eval 驱动真实回放——安全
+        # 回归网（trust-gate）与核心回环任一失败即红；退出码即门禁。
+        run: go run ./cmd/zgo eval evals
       - name: Test (race)
         # ubuntu 上 CGO 可用，-race 免费逮数据竞态（issue #184：#78/#117/
         # #136 一族都是它能提前拦的类型）。Windows 腿保持无 race（本机

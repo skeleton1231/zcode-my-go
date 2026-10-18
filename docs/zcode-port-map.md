@@ -430,3 +430,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **cron 时间窗**（pi off-peak 的 Zgo 形态，spec 规则 63）：Job.Window
    （HH:MM-HH:MM 可跨午夜）——窗口外到期不 fire 不动 LastRun，窗口
    一开补跑（推迟而非错过）；cron add --window 即校验，list 附 ⏰。
+
+**eval 深化：安全回归网 + CI 门禁**：场景 Trusted:false 模拟未授信工
+   作区——trust-gate/trust-granted 双向断言信任门（回归即红）；
+   edit-roundtrip、glob-find 场景；CI 增 `zgo eval evals` 门禁步骤。
