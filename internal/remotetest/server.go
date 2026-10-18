@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -191,7 +193,7 @@ func serveSession(srv *Server, channel ssh.Channel, requests <-chan *ssh.Request
 					ssh.Marshal(struct{ Status uint32 }{uint32(code)}))
 				return
 			case <-disconnected:
-				_ = cmd.Process.Kill()
+				killProcessTree(cmd.Process)
 				<-done
 				return
 			}
@@ -249,6 +251,18 @@ func shellCommand(line string) *exec.Cmd {
 		return exec.Command("cmd", "/c", line)
 	}
 	return exec.Command("sh", "-c", line)
+}
+
+// killProcessTree terminates a command's whole tree on disconnect: cmd
+// wraps the line in cmd.exe / sh, whose children (ping、sleep…) would
+// otherwise outlive the channel close and pin the server's temp dir
+// (真 SSH 服务器同样杀整组——OpenSSH 对会话进程组发 SIGHUP）.
+func killProcessTree(p *os.Process) {
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(p.Pid)).Run()
+		return
+	}
+	_ = p.Kill()
 }
 
 // exitCodeOf extracts an ExitError's code.

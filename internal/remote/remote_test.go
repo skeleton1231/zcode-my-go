@@ -150,3 +150,25 @@ func TestWriteLandsInRoot(t *testing.T) {
 		t.Fatalf("file not in root: %v", err)
 	}
 }
+
+// TestParseTargetDriveRoot 验证 Windows 盘符根的还原：URL 解析出的
+// "/C:/…" 必须剥掉前导斜杠（服务层 ssh:// 目标即经此路；"C:/…" 才是
+// 任何一侧 fs 都认得的形态）。
+func TestParseTargetDriveRoot(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"ssh://u@h:22/C:/Users/x/ws", "C:/Users/x/ws"},
+		{"ssh://u@h/C:/ws", "C:/ws"},
+		{"ssh://u@h/D:/a b/c", "D:/a b/c"},
+		{"ssh://u@h//home/u/ws", "/home/u/ws"}, // POSIX 根不受影响
+		{"ssh://u@h/CD/not-drive", "/CD/not-drive"}, // 第三字节非冒号
+	}
+	for _, c := range cases {
+		cfg, err := ParseTarget(c.in)
+		if err != nil {
+			t.Fatalf("%s: %v", c.in, err)
+		}
+		if cfg.Root != c.want {
+			t.Errorf("%s: root = %q, want %q", c.in, cfg.Root, c.want)
+		}
+	}
+}
