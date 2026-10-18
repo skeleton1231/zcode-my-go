@@ -354,3 +354,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    50 条）；workflow 工具 {steps[, saveAs]}/{run: 名}/{resume: 运行
    ID} 三形态——续跑注入既往结果跳过已完成步骤（定义漂移防护）；
    zgo workflow list/show/runs 运维面。
+
+**模型兜底链**（spec 规则 55）：settings.fallbackModels——主模型可重
+   试失败（429/过载）时 ai.NewFailover 按序换模型重发同一请求；非可
+   重试错误透传（换模型无用）；耗尽透传末次错误保持可重试；e2e 注入
+   不经兜底；zgo config get/set fallbackModels。

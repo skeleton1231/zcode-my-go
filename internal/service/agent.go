@@ -54,6 +54,9 @@ type settings struct {
 	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)
 	// BudgetDailyTokens 是每日软预算（0=不限，spec 规则 35）。
 	BudgetDailyTokens int `json:"budgetDailyTokens"`
+	// FallbackModels 是模型兜底链（spec 规则 55）：主模型可重试失败
+	// （429/过载）时按序降级重发。
+	FallbackModels []string `json:"fallbackModels"`
 }
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
@@ -226,9 +229,9 @@ func (s *AgentService) rewire() {
 	s.mgr.Wire(agent.Wiring{
 		Provider: func() ai.Provider {
 			if s.providerOverride != nil {
-				return s.providerOverride()
+				return s.providerOverride() // e2e 注入不套兜底——脚本按模型无关回放
 			}
-			return s.providerFor(cfg)
+			return s.providerWithFailover(cfg, s.providerFor(cfg))
 		},
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
@@ -373,6 +376,16 @@ func (s *AgentService) providerSnapshot() func() ai.Provider {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.providerOverride
+}
+
+// providerWithFailover 按设置把 provider 包成模型兜底链（spec 规则
+// 55）；无 fallback 即原 provider。
+func (s *AgentService) providerWithFailover(cfg settings, p ai.Provider) ai.Provider {
+	if len(cfg.FallbackModels) == 0 {
+		return p
+	}
+	models := append([]string{cfg.Model}, cfg.FallbackModels...)
+	return ai.NewFailover(p, models)
 }
 
 func (s *AgentService) providerFor(cfg settings) ai.Provider {
@@ -1658,6 +1671,37 @@ func (s *AgentService) DailyUsage() (used, budget int) {
 // rules（/perms 的数据面，spec 规则 36）.
 func (s *AgentService) SessionPermissionRules(sessionID string) []permission.Rule {
 	return s.mgr.SessionPermissions(sessionID).SessionRules()
+}
+
+// SetFallbackModels 更新模型兜底链（spec 规则 55；空即关闭）。模型名
+// 去重且首项不得与自身重复；写盘热生效（rewire 同既有路径）。
+func (s *AgentService) SetFallbackModels(models []string) error {
+	seen := map[string]bool{}
+	var clean []string
+	for _, m := range models {
+		m = strings.TrimSpace(m)
+		if m == "" || seen[m] {
+			continue
+		}
+		seen[m] = true
+		clean = append(clean, m)
+	}
+	s.mu.Lock()
+	s.settings.FallbackModels = clean
+	view, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.rewire()
+		_ = view
+	}
+	return err
+}
+
+// FallbackModels 返回当前兜底链（copy）。
+func (s *AgentService) FallbackModels() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.settings.FallbackModels...)
 }
 
 // SetBudgetDailyTokens updates the daily budget（0=不限，spec 规则 37
