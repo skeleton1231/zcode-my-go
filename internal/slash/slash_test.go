@@ -365,6 +365,8 @@ func TestWrapResourceFenceSurvivesMarkdown(t *testing.T) {
 // 则时列出工具与参数模式。
 func TestSlashPerms(t *testing.T) {
 	env, _ := newEnv(t)
+	// 脚本 provider：关自动命名（其补全请求会吃掉脚本回合/竞态清理）。
+	env.Svc.DisableAutoTitleForTesting()
 
 	out := captureOutSlash(t, env, "/perms")
 	if !strings.Contains(out, "还没有") {

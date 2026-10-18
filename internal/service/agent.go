@@ -769,9 +769,14 @@ func (s *AgentService) autoTitle(sessionID string) {
 		return
 	}
 	cfg := s.resolve()
+	// providerOverride 持锁快照：命名 goroutine 活得比 Chat 调用久，
+	// 裸读会与 UseProviderForTesting 的持锁写竞态（-race 在 CI 上逮过）。
+	s.mu.Lock()
+	override := s.providerOverride
+	s.mu.Unlock()
 	p := func() ai.Provider {
-		if s.providerOverride != nil {
-			return s.providerOverride() // e2e 注入
+		if override != nil {
+			return override() // e2e 注入（快照时点的注入者）
 		}
 		return s.providerFor(cfg)
 	}
