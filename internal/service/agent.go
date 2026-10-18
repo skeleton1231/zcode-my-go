@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 
@@ -76,18 +77,21 @@ type AgentService struct {
 	askMu            sync.Mutex                 // asker 单槽串行化（issue #79）
 	refreshMu        sync.Mutex                 // OAuth 刷新 single-flight（issue #136）
 	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
+	autoTitleOn      bool                       // 首回合后自动命名（默认开）
+	titleWG          sync.WaitGroup             // 命名 goroutine 的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
 func New(dataDir string) (*AgentService, error) {
 	s := &AgentService{
-		path:     filepath.Join(dataDir, "settings.json"),
-		states:   map[string]*tools.States{},
-		memories: map[string]*tools.Memory{},
-		memRoot:  filepath.Join(dataDir, "memory"),
-		wsCache:  map[string]tools.Workspace{},
-		wsClose:  map[string]func(){},
+		path:        filepath.Join(dataDir, "settings.json"),
+		states:      map[string]*tools.States{},
+		memories:    map[string]*tools.Memory{},
+		memRoot:     filepath.Join(dataDir, "memory"),
+		wsCache:     map[string]tools.Workspace{},
+		wsClose:     map[string]func(){},
+		autoTitleOn: true,
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -179,6 +183,9 @@ func (s *AgentService) startMCP() { s.syncMCP() }
 
 // Close shuts down MCP servers and every session's background jobs.
 func (s *AgentService) Close() {
+	// 命名 goroutine 可能在写会话 meta——先等它落地（最长一次 15s 补
+	// 全超时），否则退出竞态会让 TempDir 清理/退出路径看到半写状态。
+	s.titleWG.Wait()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, server := range s.mcp {
@@ -658,7 +665,96 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	//（现有用户消息数），回滚按序号定位。
 	s.captureCheckpoint(sess, userTurnCount(sess.Messages()))
 	text, media = s.expandMentions(sessionID, text, media)
-	return sess.ChatMedia(text, media, emit)
+	err := sess.ChatMedia(text, media, emit)
+	if err == nil {
+		// 首个回合成功结束后尝试自动命名（规则 21）：等值守卫在内部，
+		// 改过名的会话这里直接空手而归；WaitGroup 让 Close 收束它。
+		s.titleWG.Add(1)
+		go func() {
+			defer s.titleWG.Done()
+			s.autoTitle(sessionID)
+		}()
+	}
+	return err
+}
+
+// autoTitle generates a short session title after the first exchange
+// (ZCode's auto-title): one small completion through the session's
+// provider, persisted via the existing Rename path. Failures log and
+// keep the default title——标题是化妆性的，绝不影响会话本身。
+func (s *AgentService) autoTitle(sessionID string) {
+	if !s.autoTitleOn {
+		return
+	}
+	sess, ok := s.mgr.Get(sessionID)
+	if !ok {
+		return
+	}
+	userText, assistantText, eligible := sess.AutoTitleContext()
+	if !eligible {
+		return
+	}
+	cfg := s.resolve()
+	p := func() ai.Provider {
+		if s.providerOverride != nil {
+			return s.providerOverride() // e2e 注入
+		}
+		return s.providerFor(cfg)
+	}
+	title := generateTitle(cfg, p(), userText, assistantText)
+	if title == "" {
+		return
+	}
+	if err := sess.Rename(title); err != nil {
+		log.Printf("auto-title %s: %v", sessionID, err)
+	}
+}
+
+// titleMaxRunes bounds a generated title（titleFrom 的默认截断同为 40）。
+const titleMaxRunes = 40
+
+// generateTitle runs the small completion and sanitizes its reply: single
+// line, no wrapping quotes, ≤40 runes. Empty on any failure.
+func generateTitle(cfg settings, p ai.Provider, userText, assistantText string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	sys := "You title coding-agent sessions. Reply with ONLY the title: a " +
+		"single line of at most 24 characters, no quotes, in the user's " +
+		"language, describing the task."
+	prompt := "User: " + excerptRunes(userText, 400)
+	if assistantText != "" {
+		prompt += "\nAssistant: " + excerptRunes(assistantText, 400)
+	}
+	prompt += "\nTitle:"
+	req := ai.Request{
+		Model:     cfg.Model,
+		System:    sys,
+		Messages:  []ai.Message{{Role: ai.RoleUser, Blocks: []ai.Block{{Kind: ai.BlockText, Text: prompt}}}},
+		MaxTokens: 48,
+	}
+	var title string
+	for ev := range p.Stream(ctx, req) {
+		if ev.Kind == ai.EvTextDelta {
+			title += ev.TextDelta
+		}
+		if ev.Kind == ai.EvMessageEnd && ev.StopReason == ai.StopError {
+			return ""
+		}
+	}
+	title = strings.TrimSpace(strings.Split(title, "\n")[0])
+	title = strings.Trim(title, "\"'“”‘’「」『』")
+	if r := []rune(title); len(r) > titleMaxRunes {
+		title = string(r[:titleMaxRunes])
+	}
+	return title
+}
+
+// excerptRunes takes at most n runes of s.
+func excerptRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n]) + "…"
 }
 
 // captureCheckpoint snapshots the workspace before a turn. Non-repo and
@@ -1051,6 +1147,15 @@ func (s *AgentService) UseProviderForTesting(fn func() ai.Provider) {
 	s.providerOverride = fn
 	s.mu.Unlock()
 	s.rewire()
+}
+
+// DisableAutoTitleForTesting turns off auto-titling（e2e 脚本 provider 按
+// 请求序号回放，额外的命名请求会吃掉脚本回合、破坏计数断言；自动命
+// 名自身有专测）。
+func (s *AgentService) DisableAutoTitleForTesting() {
+	s.mu.Lock()
+	s.autoTitleOn = false
+	s.mu.Unlock()
 }
 
 // Abort cancels a session's running loop.

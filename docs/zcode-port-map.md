@@ -143,6 +143,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    搜索子系统三面齐备（桌面弹窗、服务 API、终端命令）。
 **任务导航**（ZCode task-navigation）：Ctrl+↑/↓ 用户回合间跳转（居中、
    停跟随、边界不动、随搜索过滤行走）。
+**会话自动命名**（ZCode auto-title）：首个回合成功后若标题仍是首条
+   用户消息的截断默认值（等值守卫，无需持久化标志——用户/模型改过即失
+   资格），后台经一次小额补全（同 provider、MaxTokens 48、15s 超时）生成
+   ≤40 字符单行标题（用户语言、去引号），走既有 Rename 持久化；失败记
+   日志保留默认。WaitGroup 收束命名 goroutine（Close 等待）；e2e 经
+   DisableAutoTitleForTesting 关闭（脚本 provider 按序号回放）。
 **层级项目上下文**（ZCode context-hierarchy）：~/.zgo/ZGO.md 用户全局
    + 自工作区向上到 git 顶（真祖先才回溯——HOME 即仓库的机器上退单层）
    每层第一个命中的上下文文件（ZGO/AGENTS/CLAUDE），浅→深拼接、8KB
