@@ -48,6 +48,10 @@ type keepAliveState struct {
 	mu       sync.Mutex
 	closed   bool // Close 后不再重连
 	attempts int  // 连续重连失败计数（风暴防护）
+
+	// probeFn 是探测缝（测试注入：CI 上真实杀连接的时序不可复现——
+	// #233 同族教训，判定走确定性注入而非挂钟）。
+	probeFn func(deadline time.Duration) error
 }
 
 // SetKeepAliveInterval 覆盖探测间隔（测试注入；须在 StartKeepAlive 前）。
@@ -58,6 +62,7 @@ func (c *Client) SetKeepAliveInterval(d time.Duration) {
 // StartKeepAlive 启动保活循环（幂等：重复调用只生效一次）。
 func (c *Client) StartKeepAlive() {
 	c.kaOn.Do(func() {
+		c.ka.alive.Store(true) // 起循环前置位：零值 false 会被先到的 Alive() 读走
 		go c.keepAliveLoop()
 	})
 }
@@ -71,7 +76,6 @@ func (c *Client) markDead() { c.ka.alive.Store(false) }
 // keepAliveLoop 周期探测；判死后退出循环（重连交给下一次操作的
 // ensureConnected）。
 func (c *Client) keepAliveLoop() {
-	c.ka.alive.Store(true)
 	for {
 		interval := defaultKeepAliveInterval
 		if v, ok := c.ka.interval.Load().(time.Duration); ok && v > 0 {
@@ -86,7 +90,11 @@ func (c *Client) keepAliveLoop() {
 		if deadline < 250*time.Millisecond {
 			deadline = 250 * time.Millisecond
 		}
-		if err := c.probe(deadline); err == nil {
+		probe := c.ka.probeFn
+		if probe == nil {
+			probe = c.probe
+		}
+		if err := probe(deadline); err == nil {
 			c.ka.failures.Store(0)
 			continue
 		} else if n := c.ka.failures.Add(1); n >= keepAliveMaxFailures {
