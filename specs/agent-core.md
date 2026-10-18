@@ -421,7 +421,7 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    每次重画经 AgentJobStates 取快照——事件驱动的重画自然带最新状
    态。桌面面板为后续跟进（AgentJobStates 访问器已备）。
 
-59. 问题报告（`zgo bugreport [路径]`，pi bug-report 的落地）：生成自包
+60. 问题报告（`zgo bugreport [路径]`，pi bug-report 的落地）：生成自包
    含 Markdown——版本/平台/数据目录、provider 配置（**脱敏**：key 只
    报已配置/未配置，值与 Hint 都不落盘）、模型与兜底链、每日预算、思
    考档位、授信计数、MCP 诊断（真探测）、会话概况（**计数 + 最近 5

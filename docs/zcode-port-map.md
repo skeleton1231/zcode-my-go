@@ -423,6 +423,6 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 任务摘要/折叠）+ TUI 固定块（计划块同款，重画即取快照）——agent 四
 件套此前在终端完全不可见。
 
-**问题报告 zgo bugreport**（pi bug-report 的落地，spec 规则 59）：自
+**问题报告 zgo bugreport**（pi bug-report 的落地，spec 规则 60）：自
    包含 Markdown（版本/平台/脱敏配置/兜底链/MCP 诊断/会话概况元数
    据/工具链）；密钥与转录正文绝不落盘。
