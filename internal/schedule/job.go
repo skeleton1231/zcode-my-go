@@ -201,7 +201,7 @@ func (s *Scheduler) Start() {
 	go func() {
 		defer close(s.stopped)
 		// 对齐全分钟边界再开始每分钟滴答。
-		now := s.now()
+		now := s.clock()
 		until := now.Truncate(time.Minute).Add(time.Minute).Sub(now)
 		select {
 		case <-time.After(until):
@@ -222,7 +222,6 @@ func (s *Scheduler) Start() {
 	}()
 }
 
-// SetClock injects the time source（测试注入固定时钟）.
 // SetClock injects the time source（测试注入固定时钟）。Start 的循环
 // goroutine 与本调用并发读写 s.now——互斥保护（-race 在 CI 上逮过）。
 func (s *Scheduler) SetClock(now func() time.Time) {

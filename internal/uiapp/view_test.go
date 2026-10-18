@@ -55,7 +55,7 @@ func TestViewSmoke(t *testing.T) {
 		t.Fatalf("empty-state text missing: %q", tt.Texts())
 	}
 
-	a.input = "hello"
+	a.locked(func() { a.input = "hello" })
 	tt.Frame()
 	if err := tt.Click("发送"); err != nil {
 		t.Fatalf("clicking send: %v", err)
@@ -454,7 +454,7 @@ func TestComposerSlashCommands(t *testing.T) {
 	a.Init()
 	info, _ := svc.NewSession(t.TempDir())
 	a.OpenSession(info.ID)
-	a.input = "/status"
+	a.locked(func() { a.input = "/status" })
 	a.Send()
 	tt.Frame()
 	// Send 里命令反馈即时入 notice。
@@ -487,19 +487,19 @@ func TestSlashHintsPanel(t *testing.T) {
 	tt.Frame()
 
 	// 普通输入不弹。
-	a.input = "普通问题"
+	a.locked(func() { a.input = "普通问题" })
 	tt.Frame()
 	if tt.HasText("列出全部命令") {
 		t.Fatal("hints on plain input")
 	}
 
 	// "/" 弹出全部；"/mo" 过滤到 /model。
-	a.input = "/"
+	a.locked(func() { a.input = "/" })
 	tt.Frame()
 	if !tt.HasText("/help") || !tt.HasText("/compact") {
 		t.Fatalf("full hints = %q", tt.Texts())
 	}
-	a.input = "/mo"
+	a.locked(func() { a.input = "/mo" })
 	tt.Frame()
 	if !tt.HasText("/model") {
 		t.Fatalf("filtered hints missing /model: %q", tt.Texts())
