@@ -29,6 +29,9 @@ type Turn struct {
 	Text           string
 	ErrorOnce      string
 	BlockAfterText bool
+	// Usage 是该回合 EvMessageEnd 携带的用量（默认零值——用量类断言的
+	// 测试显式设置）。
+	Usage ai.Usage
 }
 
 // ToolCall is one scripted call in a turn.
@@ -116,7 +119,7 @@ func (s *Script) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEve
 			stop = ai.StopToolUse
 		}
 		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: stop,
-			Usage: ai.Usage{InputTokens: 10, OutputTokens: 5}}
+			Usage: turn.Usage}
 	}()
 	return out
 }
