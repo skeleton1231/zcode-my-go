@@ -117,16 +117,29 @@ func TestBuildStdinPrompt(t *testing.T) {
 		t.Errorf("fence not closed:\n%s", got)
 	}
 
-	// 超限：中文 rune 安全截断 + 注明.
-	big := strings.NewReader(strings.Repeat("字", 40000))
+	// 超限：rune 计数截断（与 @ 引用同口径）+ 注明——ASCII 管道（git
+	// diff 是主场景）保满 60K 字符，中文同样 rune 安全。
+	big := strings.NewReader(strings.Repeat("字", 70000))
 	got = buildStdinPrompt("p", big)
 	if !strings.Contains(got, "已截断") {
 		t.Error("cap note missing")
 	}
-	if strings.Count(got, "字") > 20480 { // 60KB/3 粗界 = 20480 字
-		t.Errorf("not rune-safe capped: %d 字", strings.Count(got, "字"))
+	if n := strings.Count(got, "字"); n > stdinCapRunes {
+		t.Errorf("not rune-safe capped: %d 字", n)
 	}
 	if !utf8.ValidString(got) {
 		t.Error("truncation split a rune")
+	}
+
+	// ASCII 60K 字符内不截断：字节界粗砍到 1/3 的旧形态不应复发。
+	ascii := strings.NewReader(strings.Repeat("x", stdinCapRunes))
+	if got := buildStdinPrompt("p", ascii); strings.Contains(got, "已截断") {
+		t.Error("under-cap ASCII truncated")
+	}
+	// ASCII 超限同样按 rune 计数截到上限。
+	over := strings.NewReader(strings.Repeat("x", stdinCapRunes+5))
+	if got := buildStdinPrompt("p", over); !strings.Contains(got, "已截断") ||
+		strings.Count(got, "x") != stdinCapRunes {
+		t.Errorf("ascii over-cap = %d x", strings.Count(got, "x"))
 	}
 }
