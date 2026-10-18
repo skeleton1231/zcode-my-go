@@ -489,6 +489,20 @@ dc907a4 (feat: glob and grep honor .gitignore)
    组（模型可见面稳定；doctor 引导安装）。edit/write 成功回执尾部追
    加该文件即时诊断（gopls check，仅在有错时追加，10s 上限，缺 gopls
    静默跳过）。工具执行超时 30s、输出照家族截断。
+
+68. gopls 常驻 daemon（LSP 路线 A v2）：每个本地工作区根一个常驻
+   gopls 进程走 LSP JSON-RPC（base protocol 分帧）——initialize 只付
+   一次，definition/references 的冷启开销（每次 spawn 1-2s 起）摊平。
+   生命周期：按需拉起；空闲 10 分钟回收；进程死亡/连接断同根透明重
+   启（重试一次，再失败该次调用退回 v1 CLI 子进程路径——可用性优先
+   于性能）；服务 Close 全量收割（不留孤儿进程）。位置编码：协商
+   utf-8（与 CLI 字节列同口径）；老 gopls（v0.16.2 等未实现 3.17 协
+   商）缺省 utf-16——查询与渲染两侧按行内容换算列单位（BMP 外字符
+   按 2 unit），模型可见口径与 v1 完全一致。诊断：单文件 check 走
+   拉取（textDocument/diagnostic）；编辑回灌先发 didChangeWatched
+   Files 显式失效再拉（不依赖服务端文件监视器，磁盘改动即刻可见）；
+   全工作区 check（无 LSP 等价）与未知子命令留 CLI 路径。服务端主
+   动请求（workspace/configuration 等）必须回应——否则握手挂起。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

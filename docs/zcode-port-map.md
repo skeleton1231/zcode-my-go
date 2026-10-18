@@ -461,3 +461,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    断）；edit/write 成功回执回灌该文件即时诊断（10s 上限）。gopls 在
    PATH 且工作区本地才声明工具组（ssh:// 文件不在本地盘、wasm 无子进
    程）；缺位由 doctor 引导安装。
+
+**gopls 常驻 daemon**（LSP 路线 A v2，spec 规则 68）：internal/lsp——
+   每个工作区根一个常驻 gopls 进程走 LSP JSON-RPC（initialize 只付一
+   次，冷启摊平）；空闲 10 分钟回收、崩溃透明重启、失败退 CLI 子进程
+   （可用性优先）；服务 Close 全量收割。位置编码协商 utf-8、老 gopls
+   缺省 utf-16 时按行内容双向换算列单位（模型可见口径与 v1 一致）；
+   编辑回灌显式 didChangeWatchedFiles 再拉诊断（磁盘改动即刻可见）；
+   单文件诊断走拉取，全工作区 check 留 CLI。

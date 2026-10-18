@@ -62,7 +62,7 @@ func runDoctor() int {
 		fmt.Println("⚠ ssh 不在 PATH：ssh:// 工作区不可用")
 	}
 	if lsp.Available() {
-		fmt.Println("✓ gopls 可用（definition/references/diagnostics 工具）")
+		fmt.Println("✓ gopls 可用（definition/references/diagnostics 工具，常驻 daemon 加速）")
 	} else {
 		fmt.Println("⚠ gopls 不在 PATH：符号工具不声明、编辑无诊断回灌（go install golang.org/x/tools/gopls@latest）")
 	}

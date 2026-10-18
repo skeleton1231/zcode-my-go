@@ -107,3 +107,49 @@ func TestE2EGoplsDiagnosticsAndEditBackflow(t *testing.T) {
 		t.Fatal("edit result lacks the [gopls] diagnostics tail")
 	}
 }
+
+// TestE2EGoplsDaemonReuseAndHarvest：references 工具经服务面走常驻
+// daemon（spec 规则 68）——查询后 daemon 在驻（一次 initialize 复用），
+// 服务 Close 全量收割（不留孤儿 gopls 进程）。
+func TestE2EGoplsDaemonReuseAndHarvest(t *testing.T) {
+	goplsHere(t)
+	before := lsp.RunningDaemons()
+	h := New(t,
+		Turn{ToolCalls: []ToolCall{{Name: "references", Args: `{"file":"main.go","line":9,"column":11}`}}},
+		Turn{Text: "done"},
+	)
+	seed := map[string]string{
+		"go.mod":       "module mini\n\ngo 1.22\n",
+		"util/util.go": "package util\n\n// Call is documented here, not a reference.\nfunc Call() int { return 1 }\n",
+		// 与 miniModule 同形——调用在第 9 行第 11 列（工具参数锚那里）。
+		"main.go": "package main\n\nimport \"mini/util\"\n\n// See Call in the docs.\nconst note = \"Call me maybe\"\n\nfunc main() {\n\t_ = util.Call()\n}\n",
+	}
+	for rel, content := range seed {
+		p := filepath.Join(h.Workspace, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events := h.Ask("找引用")
+	found := false
+	for _, ev := range events {
+		if ev.Kind == agent.EvToolExecutionEnd && ev.ToolName == "references" && !ev.IsError {
+			if strings.Contains(ev.ResultContent, "main.go:9") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("references result lacks the call site")
+	}
+	if n := lsp.RunningDaemons(); n <= before {
+		t.Fatalf("daemon not resident after query: %d (before %d)", n, before)
+	}
+	h.Svc.Close()
+	if n := lsp.RunningDaemons(); n != 0 {
+		t.Fatalf("daemons survived service Close: %d", n)
+	}
+}

@@ -29,8 +29,8 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
 	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
-	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
+	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
@@ -79,13 +79,13 @@ type profile struct {
 
 // SettingsView is what the UI sees: the key never crosses to it in full.
 type SettingsView struct {
-	BaseURL   string `json:"baseUrl"`
-	Model     string `json:"model"`
-	API       string `json:"api"`
-	Thinking  string `json:"thinking"`
-	HasAPIKey bool   `json:"hasApiKey"`
-	KeyHint   string `json:"keyHint"`  // e.g. "sk-…abcd", for display only
-	Profile   string `json:"profile"` // 当前活动剖面名（展示/状态栏）
+	BaseURL   string   `json:"baseUrl"`
+	Model     string   `json:"model"`
+	API       string   `json:"api"`
+	Thinking  string   `json:"thinking"`
+	HasAPIKey bool     `json:"hasApiKey"`
+	KeyHint   string   `json:"keyHint"`  // e.g. "sk-…abcd", for display only
+	Profile   string   `json:"profile"`  // 当前活动剖面名（展示/状态栏）
 	Profiles  []string `json:"profiles"` // 可用剖面（下拉/列表）
 }
 
@@ -133,10 +133,11 @@ func New(dataDir string) (*AgentService, error) {
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
-	// edit/write 诊断回灌（spec 规则 67）：gopls 在位即接线，缺位静默
+	// edit/write 诊断回灌（spec 规则 67/68）：gopls 在位即接线（daemon
+	// 版——编辑后显式失效再拉取，busy/缺位退 CLI 子进程），缺位静默
 	// 跳过（回执无尾部，行为与既往一致）。
 	if lsp.Available() {
-		tools.ProbeDiagnostics = lsp.Probe
+		tools.ProbeDiagnostics = lsp.DaemonProbe
 	}
 	s.day = usage.Load(dataDir)
 	mgr, err := agent.NewManager(filepath.Join(dataDir, "sessions"))
@@ -323,6 +324,9 @@ func (s *AgentService) Close() {
 		close()
 	}
 	s.wsClose = map[string]func(){}
+	// gopls daemon 全量收割（spec 规则 68）——不留孤儿进程过服务生命
+	// 周期；下次查询按需重新拉起。
+	lsp.Default.CloseAll()
 }
 
 // rewire installs the current settings into the manager. Callers hold s.mu.
@@ -479,13 +483,14 @@ func (s *AgentService) rewire() {
 			for _, server := range s.mcpServers() {
 				all = append(all, mcp.AgentTools(server)...)
 			}
-			// gopls 三工具（spec 规则 67）：仅本地工作区 + PATH 有 gopls
-			// 时声明（ssh:// 文件不在本地盘，wasm 无子进程）——模型可
-			// 见面随环境稳定收窄，doctor 引导安装。
+			// gopls 三工具（spec 规则 67/68）：仅本地工作区 + PATH 有
+			// gopls 时声明（ssh:// 文件不在本地盘，wasm 无子进程）——
+			// 模型可见面随环境稳定收窄，doctor 引导安装。查询走常驻
+			// daemon（每根一进程、崩溃透明重启、失败退 CLI）。
 			if !ws.IsRemote() && lsp.Available() {
 				all = append(all, tools.NewGoplsTools(ws,
 					func(ctx context.Context, dir string, args ...string) (string, error) {
-						return lsp.Run(ctx, dir, lsp.QueryTimeout, args...)
+						return lsp.DaemonRun(ctx, dir, lsp.QueryTimeout, args...)
 					})...)
 			}
 			return all
