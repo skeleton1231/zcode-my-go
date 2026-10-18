@@ -259,6 +259,20 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    生效）。
 dc907a4 (feat: glob and grep honor .gitignore)
 
+44. 技能（ZCode skills 子系统）：SKILL.md + frontmatter（平铺 YAML
+   子集：name/description 必填、when_to_use 可选、引号值去引号；无
+   frontmatter 按目录名收录；描述超 1024 字符拒绝）；两层根——工作
+   区 `.zgo/skills`（ssh:// 经网线，根相对形态）与全局
+   `~/.zgo/skills`（本地），同名工作区覆盖全局（与自定义命令同约
+   定）；根自身 SKILL.md 即单技能根，另扫一层子目录。系统提示尾部注
+   入可用清单（`- 名: 描述 — 何时用 (file: 路径)`，描述展示截断 250
+   字符；20KB 预算超限降级为仅名列——渐进披露）。`skill` 工具按名加
+   载正文：去 frontmatter、100KB 截断并标注、附技能基目录（技能内相
+   对文件的解析基），not-found 附可用名清单自纠；只读能力自动放行。
+   坏技能（缺 name/description、名字含分隔符或空白、描述超限）记诊
+   断跳过，不拖垮整层；读失败（非不存在）同样记诊断不静默。/skills
+   终端命令列出技能与诊断。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |
