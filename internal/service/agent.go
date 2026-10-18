@@ -1344,3 +1344,40 @@ func (s *AgentService) LastUserText(sessionID string) (string, error) {
 	}
 	return "", nil
 }
+
+// MCPResourceEntry is one listed server resource（/mcp 的资源项）.
+type MCPResourceEntry struct {
+	Server   string
+	Resource mcp.ResourceDef
+}
+
+// MCPResources lists every running server's resources（spec 规则 31）.
+func (s *AgentService) MCPResources() []MCPResourceEntry {
+	var out []MCPResourceEntry
+	for _, srv := range s.mcpServers() {
+		for _, r := range srv.Resources() {
+			out = append(out, MCPResourceEntry{Server: srv.Name, Resource: r})
+		}
+	}
+	return out
+}
+
+// MCPReadResource reads one resource's text（resources/read）.
+func (s *AgentService) MCPReadResource(server, uri string) (string, error) {
+	for _, srv := range s.mcpServers() {
+		if srv.Name != server {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		res, err := srv.ReadResource(ctx, uri)
+		if err != nil {
+			return "", err
+		}
+		if res.Text == "" {
+			return "", fmt.Errorf("资源 %s 无文本内容（mimeType %s，blob 类资源暂不支持）", uri, res.MimeType)
+		}
+		return res.Text, nil
+	}
+	return "", fmt.Errorf("没有 MCP 服务器 %q", server)
+}

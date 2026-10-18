@@ -34,6 +34,18 @@ func TestMCPHelperProcess(t *testing.T) {
 		case "tools/list":
 			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
 				"tools": []map[string]any{{"name": "ping"}}}})
+		case "resources/list":
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
+				"resources": []map[string]any{{
+					"uri": "config://app", "name": "应用配置",
+					"description": "服务器暴露的配置", "mimeType": "text/plain",
+				}}}})
+		case "resources/read":
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
+				"contents": []map[string]any{{
+					"uri": "config://app", "mimeType": "text/plain",
+					"text": "debug=false" + "\\n" + "retries=3",
+				}}}})
 		case "prompts/list":
 			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
 				"prompts": []map[string]any{{
@@ -171,6 +183,46 @@ func TestMCPPrompts(t *testing.T) {
 		}
 	}
 	if _, err := svc.MCPGetPrompt("nope", "review", nil); err == nil {
+		t.Fatal("unknown server accepted")
+	}
+}
+
+// TestMCPResources 验证 MCP 资源面（spec 规则 31）：列出（uri/描述）、
+// resources/read 读取文本、未知服务器拒绝。
+func TestMCPResources(t *testing.T) {
+	dir := t.TempDir()
+	settings := fmt.Sprintf(`{"mcpServers":{"helper":{"command":%q,`+
+		`"args":["-test.run=TestMCPHelperProcess","--"],`+
+		`"env":{"ZGO_SVC_MCP_HELPER":"1"}}}}`, os.Args[0])
+	if err := os.WriteFile(dir+"/settings.json", []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && len(svc.MCPResources()) == 0 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	entries := svc.MCPResources()
+	if len(entries) != 1 || entries[0].Server != "helper" || entries[0].Resource.URI != "config://app" {
+		t.Fatalf("resources = %+v", entries)
+	}
+	if entries[0].Resource.Description == "" {
+		t.Fatal("resource description lost")
+	}
+
+	text, err := svc.MCPReadResource("helper", "config://app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "debug=false") || !strings.Contains(text, "retries=3") {
+		t.Fatalf("resource text = %q", text)
+	}
+	if _, err := svc.MCPReadResource("nope", "config://app"); err == nil {
 		t.Fatal("unknown server accepted")
 	}
 }
