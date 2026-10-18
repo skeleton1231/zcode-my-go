@@ -14,11 +14,14 @@ import (
 // Day 记账结构（JSONL 追加，一条一次回合增量；读取时重放求和）。
 type Day struct {
 	mu   sync.Mutex
+	dir  string // dataDir：翻日时按新日期重建 path
 	path string
+	day  string // 当日 YYYYMMDD（进程内翻滚检测，issue #199）
+	now  func() time.Time // 注入时钟（测试跨零点）；nil = time.Now
 
 	Tokens int `json:"tokens"` // 今日累计（缓存读按 0.1 计价后的整数）
-	// warned80/warned100 只在内存：进程重启后阈值可能重发一次——可
-	// 接受（预算提示是化妆性信息，宁可多提醒）。
+	// warned80/warned100 只在内存：进程重启（及翻日）后阈值可能重发
+	// 一次——可接受（预算提示是化妆性信息，宁可多提醒）。
 	warned80  bool
 	warned100 bool
 }
@@ -30,7 +33,13 @@ type entry struct {
 
 // Load 重放当日记账（文件按日期命名，隔天自然从零开始）。
 func Load(dataDir string) *Day {
-	d := &Day{path: filepath.Join(dataDir, "usage-"+time.Now().Format("20060102")+".json")}
+	return load(dataDir, nil)
+}
+
+// load 是 Load 的可注入时钟形态（测试翻日）。
+func load(dataDir string, now func() time.Time) *Day {
+	d := &Day{dir: dataDir, now: now}
+	d.rollLocked() // 依当前日期初始化 day/path
 	data, err := os.ReadFile(d.path)
 	if err != nil {
 		return d
@@ -42,6 +51,28 @@ func Load(dataDir string) *Day {
 		}
 	}
 	return d
+}
+
+// clock 返回当前时间（可注入）。
+func (d *Day) clock() time.Time {
+	if d.now != nil {
+		return d.now()
+	}
+	return time.Now()
+}
+
+// rollLocked 检测日期翻滚并切换：清零计数、指向新文件、重置 warned
+// 标志（issue #199：桌面进程连跑数天是常态，Load 定死日期会让跨零点
+// 后的开销全记旧日、守卫读数失真；旧文件留在原地即历史）。调用方持锁。
+func (d *Day) rollLocked() {
+	today := d.clock().Format("20060102")
+	if today == d.day {
+		return
+	}
+	d.day = today
+	d.path = filepath.Join(d.dir, "usage-"+today+".json")
+	d.Tokens = 0
+	d.warned80, d.warned100 = false, false
 }
 
 func splitLines(data []byte) [][]byte {
@@ -65,6 +96,7 @@ func splitLines(data []byte) [][]byte {
 func (d *Day) Add(tokens int) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.rollLocked() // 跨零点：先翻到新日再记账
 	d.Tokens += tokens
 	line, err := json.Marshal(entry{Tokens: tokens})
 	if err != nil {
@@ -86,10 +118,11 @@ func Priced(in, out, cacheRead, cacheWrite int) int {
 }
 
 // Total 报告今日累计（持锁——Add 会从多会话的回合收尾 goroutine 并发
-// 到达，裸读 Tokens 与之竞态）。
+// 到达，裸读 Tokens 与之竞态；翻日在锁内一并检测）。
 func (d *Day) Total() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.rollLocked()
 	return d.Tokens
 }
 
@@ -101,6 +134,7 @@ func (d *Day) CheckBudget(budget int) string {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.rollLocked()
 	switch {
 	case d.Tokens >= budget && !d.warned100:
 		d.warned100 = true
