@@ -27,7 +27,8 @@ func (r *Read) Name() string { return "read" }
 func (r *Read) Description() string {
 	return "Read a file from the workspace, with 1-based line numbers. " +
 		"Defaults to the first 2000 lines; use offset and limit for large files. " +
-		"Image files (png/jpeg/gif/webp) are returned as images you can see."
+		"Image files (png/jpeg/gif/webp) are returned as images you can see. " +
+		"PDF text layers are extracted to text."
 }
 
 // Parameters implements agent.Tool.
@@ -52,6 +53,20 @@ func (r *Read) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	abs, err := r.ws.Resolve(a.Path)
 	if err != nil {
 		return errResult("%v", err)
+	}
+	if strings.HasSuffix(strings.ToLower(a.Path), ".pdf") {
+		if r.ws.IsRemote() {
+			data, err := r.ws.Remote.ReadFile(remoteRel(r.ws, abs))
+			if err != nil {
+				return errResult("cannot read %s: %v", a.Path, err)
+			}
+			return pdfResult(a.Path, data)
+		}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return errResult("cannot read %s: %v", a.Path, err)
+		}
+		return pdfResult(a.Path, data)
 	}
 	if mime, ok := isImagePath(a.Path); ok {
 		if r.ws.IsRemote() {

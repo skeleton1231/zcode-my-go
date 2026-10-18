@@ -48,6 +48,10 @@ type keepAliveState struct {
 	mu       sync.Mutex
 	closed   bool // Close 后不再重连
 	attempts int  // 连续重连失败计数（风暴防护）
+
+	// probeFn 是探测缝（测试注入：CI 上真实杀连接的时序不可复现——
+	// #233 同族教训，判定走确定性注入而非挂钟）。
+	probeFn func(deadline time.Duration) error
 }
 
 // SetKeepAliveInterval 覆盖探测间隔（测试注入；须在 StartKeepAlive 前）。
@@ -58,6 +62,7 @@ func (c *Client) SetKeepAliveInterval(d time.Duration) {
 // StartKeepAlive 启动保活循环（幂等：重复调用只生效一次）。
 func (c *Client) StartKeepAlive() {
 	c.kaOn.Do(func() {
+		c.ka.alive.Store(true) // 起循环前置位：零值 false 会被先到的 Alive() 读走
 		go c.keepAliveLoop()
 	})
 }
@@ -71,22 +76,47 @@ func (c *Client) markDead() { c.ka.alive.Store(false) }
 // keepAliveLoop 周期探测；判死后退出循环（重连交给下一次操作的
 // ensureConnected）。
 func (c *Client) keepAliveLoop() {
-	c.ka.alive.Store(true)
 	for {
 		interval := defaultKeepAliveInterval
 		if v, ok := c.ka.interval.Load().(time.Duration); ok && v > 0 {
 			interval = v // 每轮重读：SetKeepAliveInterval 迟到也生效
 		}
 		time.Sleep(interval)
-		_, _, err := c.conn.SendRequest("keepalive@openssh.com", true, nil)
-		if err == nil {
+		// 探测带看门狗：SendRequest 无超时——半开连接上写入成功沉入
+		// 死 TCP、回应永不到达，失败计数永远凑不齐（Windows CI 上
+		// TestKeepaliveDetectsDeadConnection 5s 超时的根因）。回应
+		// 等待 2×间隔（下限 250ms）即计一次失败。
+		deadline := 2 * interval
+		if deadline < 250*time.Millisecond {
+			deadline = 250 * time.Millisecond
+		}
+		probe := c.ka.probeFn
+		if probe == nil {
+			probe = c.probe
+		}
+		if err := probe(deadline); err == nil {
 			c.ka.failures.Store(0)
 			continue
-		}
-		if n := c.ka.failures.Add(1); n >= keepAliveMaxFailures {
+		} else if n := c.ka.failures.Add(1); n >= keepAliveMaxFailures {
 			c.ka.alive.Store(false)
 			return
 		}
+	}
+}
+
+// probe 发一次 keepalive 请求并限时等回应（超时视为失败）。
+func (c *Client) probe(deadline time.Duration) error {
+	type outcome struct{ err error }
+	done := make(chan outcome, 1)
+	go func() {
+		_, _, err := c.conn.SendRequest("keepalive@openssh.com", true, nil)
+		done <- outcome{err}
+	}()
+	select {
+	case r := <-done:
+		return r.err
+	case <-time.After(deadline):
+		return errors.New("keepalive probe timed out")
 	}
 }
 
