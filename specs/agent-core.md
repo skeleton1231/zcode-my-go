@@ -83,6 +83,17 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    口贴底），Ctrl+↑/↓ 在用户回合行间跳转（跳离末尾停尾随、越过最新恢复
    尾随），PageUp/PageDown 半屏滚动，窗口越界夹紧；/new 切会话清空计划
    与回合锚点。
+19. 后台 shell 本地与远程同构：bash {background:true} 启动不等待完成的
+   命令（cd 工作区根、stdout/stderr 合并）并立即返回 job id；输出流入
+   256KB 保留缓冲；bash_output 按调用增量排空（首行 job/命令/运行或退
+   出状态，之后新输出按截断上限）；bash_kill 终止整棵进程树——本地走
+   平台整树击杀（Windows Job Object，daemon 化也逃不掉），远端关闭
+   SSH 会话通道（SIGHUP 覆盖会话进程组）并尽力确证（issue #166：POSIX
+   远端经首行标记捕获 pid——标记行吞掉不进输出缓冲——补杀进程组 +
+   组长 + 直系子进程；cmd 远端与未捕获 pid 时仅通道关闭，残留可能记
+   日志可见；双 fork daemon 挂到 init 名下仍不可达，SSH 没有 Job
+   Object，目标是确证 + 可见而非完美对等）；会话结束 KillAll 收尾。
+   远程后台与本地后台语义一致（同一 Jobs 注册表与工具面）。
 20. 层级项目上下文（ZCode context-hierarchy）：系统提示注入用户全局
    （~/.zgo/ZGO.md）+ 自工作区向上到 git 顶（含）每层第一个命中的上下
    文件（ZGO.md/AGENTS.md/CLAUDE.md，逐层择一），浅→深拼接（一般→具

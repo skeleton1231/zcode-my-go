@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -97,6 +98,11 @@ type Client struct {
 	conn   *ssh.Client
 	sftp   *sftp.Client
 	closer io.Closer
+
+	// 远端 shell 形态一次性探测（后台 pid 包装与确证击杀的前提，
+	// issue #166）：cmd/PowerShell 不包装（exec 非内建、$$ 不展开）。
+	posixOnce sync.Once
+	posix     bool
 }
 
 // Dial connects and opens the SFTP subsystem.

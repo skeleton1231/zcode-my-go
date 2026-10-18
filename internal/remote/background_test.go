@@ -37,6 +37,19 @@ func TestStartBackgroundStreamAndKill(t *testing.T) {
 		if !strings.Contains(s, "bg-started") {
 			t.Fatalf("streamed output = %q", s)
 		}
+		// POSIX 远端的首行是 pid 标记——必须被吞掉（模型不见噪音），
+		// 且 pid 入册供 KillTree 确证（issue #166）。
+		if strings.Contains(s, pidMarker) {
+			t.Fatalf("pid marker leaked into output: %q", s)
+		}
+		if runtime.GOOS != "windows" {
+			p.mu.Lock()
+			pid := p.pid
+			p.mu.Unlock()
+			if pid == 0 {
+				t.Fatal("pid not captured on POSIX remote")
+			}
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("no streamed output within 10s")
 	}
