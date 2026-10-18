@@ -107,6 +107,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "sessions" {
 		os.Exit(runSessions(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		os.Exit(runConfig(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "usage" {
 		os.Exit(runUsage(os.Args[2:]))
 	}

@@ -1453,3 +1453,34 @@ func (s *AgentService) DailyUsage() (used, budget int) {
 func (s *AgentService) SessionPermissionRules(sessionID string) []permission.Rule {
 	return s.mgr.SessionPermissions(sessionID).SessionRules()
 }
+
+// SetBudgetDailyTokens updates the daily budget（0=不限，spec 规则 37
+// 的 config set 数据面——热生效同 SaveSettings 路径）.
+func (s *AgentService) SetBudgetDailyTokens(v int) error {
+	s.mu.Lock()
+	cfg := s.settings
+	cfg.BudgetDailyTokens = v
+	_, err := s.saveSettingsLocked(cfg)
+	s.mu.Unlock()
+	return err
+}
+
+// SetAPIKey updates the key alone（config set apiKey 的数据面）——不
+// 经 SaveSettings：它对 model 是无条件覆盖，空串会把已配置的模型抹
+// 掉（config set 的组合写测试实测抓到）。
+func (s *AgentService) SetAPIKey(key string) (SettingsView, error) {
+	s.mu.Lock()
+	cfg := s.settings
+	if key != "" {
+		cfg.APIKey = key
+	}
+	view, err := s.saveSettingsLocked(cfg)
+	s.mu.Unlock()
+	return view, err
+}
+
+// DailyUsageBudget reports the configured daily budget（0=不限）.
+func (s *AgentService) DailyUsageBudget() int {
+	return s.resolve().BudgetDailyTokens
+
+}
