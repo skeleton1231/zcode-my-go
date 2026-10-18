@@ -162,7 +162,7 @@ func dirChain(workspace string, read func(name string) ([]byte, error)) []string
 	var deep []string
 	for dir := workspace; len(deep) < contextMaxDepth; dir = filepath.Dir(dir) {
 		deep = append(deep, dir)
-		if filepath.Clean(dir) == filepath.Clean(top) {
+		if equalFoldPath(filepath.Clean(dir), filepath.Clean(top)) {
 			break
 		}
 	}
@@ -182,18 +182,37 @@ func gitToplevel(workspace string) string {
 	return strings.TrimSpace(out)
 }
 
-// isAncestor reports whether base is dir itself or an ancestor of it.
+// equalFoldPath compares paths under the platform's case rules：Windows 卷
+// 大小写不敏感（c:/repo 与 C:/repo 是同一目录），折叠后比较；其余平台
+// 区分大小写保持原样（issue #167：git show-toplevel 返回规范化形态、工
+// 作区按用户给定形态存储——不折大小写会让层级静默降级单层）。路径仅
+// 用于判祖先与相等，折叠无损。
+func equalFoldPath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// isAncestor reports whether base is dir itself or an ancestor of it
+//（大小写按平台规则折，前缀落在段边界）.
 func isAncestor(base, dir string) bool {
 	base = filepath.Clean(base)
 	dir = filepath.Clean(dir)
-	if base == dir {
+	if equalFoldPath(base, dir) {
 		return true
+	}
+	if runtime.GOOS == "windows" {
+		// 段边界手判：EqualFold 无前缀语义，且 base 长于 dir 时切片越界。
+		return len(dir) > len(base) &&
+			strings.EqualFold(dir[:len(base)], base) &&
+			dir[len(base)] == filepath.Separator
 	}
 	return strings.HasPrefix(dir, base+string(filepath.Separator))
 }
 
 func dirLabel(workspace, dir string) string {
-	if filepath.Clean(dir) == filepath.Clean(workspace) {
+	if equalFoldPath(filepath.Clean(dir), filepath.Clean(workspace)) {
 		return "workspace"
 	}
 	return "parent: " + filepath.Base(dir)

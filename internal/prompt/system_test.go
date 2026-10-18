@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -166,5 +167,57 @@ func TestSystemHierarchyCap(t *testing.T) {
 	}
 	if strings.Count(got, "字") > 2800 {
 		t.Fatalf("context not capped: %d 字", strings.Count(got, "字"))
+	}
+}
+
+// TestIsAncestorFoldsCaseOnWindows: Windows 卷大小写不敏感——同一目录
+// 的不同大小写形态（c:\repo vs C:\Repo）即真祖先；前缀必须落在段边界
+// （issue #167：git 返回大写盘符、工作区按用户给定形态存储，大小写不
+// 折会让层级静默降级单层）。
+func TestIsAncestorFoldsCaseOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("case-insensitive comparison is a Windows-volume behavior")
+	}
+	if !isAncestor(`C:\Repo`, `c:\repo\sub`) {
+		t.Fatal("same dir, different case must be an ancestor")
+	}
+	if !isAncestor(`c:/repo`, `C:/Repo/sub`) {
+		t.Fatal("mixed separators must still fold (Clean 自愈 + 大小写折叠)")
+	}
+	if isAncestor(`c:\repo`, `c:\repository`) {
+		t.Fatal("prefix match must stop at segment boundary")
+	}
+}
+
+// TestSystemHierarchyCaseFoldedWorkspace: 小写化的工作区路径（Windows
+// 同一目录的另一形态）不得让层级降级为单层——repo 级上下文照常注入。
+func TestSystemHierarchyCaseFoldedWorkspace(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("case-insensitive paths are a Windows-volume behavior")
+	}
+	hermeticContext(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	sub := filepath.Join(root, "a")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s", out)
+	}
+	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("repo-level rules"), 0o644)
+	os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("nested specifics"), 0o644)
+
+	// git show-toplevel 返回规范化形态（大写盘符），工作区整路径小写
+	// 化——两个真实形态，此前在 isAncestor 处撞车。
+	ws := strings.ToLower(sub)
+	got := System(ws)
+	if !strings.Contains(got, "repo-level rules") {
+		t.Fatalf("lowercased workspace lost repo-level layer:\n%s", got)
+	}
+	if !strings.Contains(got, "nested specifics") {
+		t.Fatalf("workspace layer missing:\n%s", got)
 	}
 }
