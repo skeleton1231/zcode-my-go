@@ -26,8 +26,8 @@ type editorState struct {
 	histDraft []rune
 }
 
-// newEditor 把 stdin 切 raw 模式；stdin 非终端时返回 nil（调用方退回
-// Scanner）。
+// newEditor 把 stdin 切 raw 模式并启用括号粘贴（spec 规则 33）；stdin
+// 非终端时返回 nil（调用方退回 Scanner）。
 func newEditor() *editorState {
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
@@ -37,15 +37,20 @@ func newEditor() *editorState {
 	if err != nil {
 		return nil
 	}
-	return &editorState{
+	e := &editorState{
 		in:      bufio.NewReader(os.Stdin),
 		out:     os.Stderr,
 		restore: func() { term.Restore(fd, old) },
 	}
+	e.out.Write([]byte("\x1b[?2004h")) // 括号粘贴开
+	return e
 }
 
-// Close 恢复终端。
-func (e *editorState) Close() { e.restore() }
+// Close 恢复终端（先关括号粘贴）。
+func (e *editorState) Close() {
+	e.out.Write([]byte("\x1b[?2004l"))
+	e.restore()
+}
 
 // readLine 编辑一行：返回提交的文本；EOF/io 结束返回 ok=false。
 // Ctrl+C：行非空先清行（再按才退出——quit 返回 true 让调用方收尾）。
@@ -88,13 +93,29 @@ func (e *editorState) readLine(prompt string) (line string, ok, quit bool) {
 			if r >= 0x20 { // 可打印（含多字节 rune）
 				buf = append(buf[:cur], append([]rune{r}, buf[cur:]...)...)
 				cur++
-			} else if r == 27 { // ESC 序列：方向键/Home/End
+			} else if r == 27 { // ESC 序列：方向键/Home/End/粘贴
 				seq, _, err := e.in.ReadRune()
 				if err != nil || seq != '[' {
 					continue
 				}
 				final, _, err := e.in.ReadRune()
 				if err != nil {
+					continue
+				}
+				if final == '2' { // 200~/201~ 粘贴标记（spec 规则 33）
+					d1, _, err := e.in.ReadRune()
+					if err != nil {
+						continue
+					}
+					if d1 == '0' { // 开始标记 200~：再吞 0 与 ~ 后进入粘贴消费
+						if d2, _, err := e.in.ReadRune(); err == nil && d2 == '0' {
+							e.in.ReadRune() // ~
+							text := e.readPasted()
+							runes := []rune(text)
+							buf = append(buf[:cur], append(runes, buf[cur:]...)...)
+							cur += len(runes)
+						}
+					}
 					continue
 				}
 				switch final {
@@ -169,4 +190,66 @@ func itoaEd(n int) string {
 		n /= 10
 	}
 	return s
+}
+
+// readPasted 消费到粘贴结束标记（ESC[201~），CR/CRLF 归一为换行——
+// 粘贴内的回车不触发提交（spec 规则 33）。疑似结束标记的 ESC 序列
+// 先入待定缓冲，不是结束标记则原样吐回内容。
+func (e *editorState) readPasted() string {
+	var b strings.Builder
+	var pending []rune
+	for {
+		r, _, err := e.in.ReadRune()
+		if err != nil {
+			flushPending(&b, pending)
+			return b.String()
+		}
+		if len(pending) > 0 {
+			pending = append(pending, r)
+			want := []rune{27, '[', '2', '0', '1', '~'}
+			if runesEqualPrefix(pending, want) {
+				if len(pending) == len(want) {
+					return b.String()
+				}
+				continue
+			}
+			flushPending(&b, pending[:len(pending)-1])
+			pending = pending[:0]
+		} else if r == 27 {
+			pending = append(pending, r)
+			continue
+		}
+		switch r {
+		case '\r':
+			next, _, err := e.in.ReadRune()
+			if err == nil && next != '\n' {
+				e.in.UnreadRune()
+			}
+			b.WriteRune('\n')
+		case '\n':
+			b.WriteRune('\n')
+		default:
+			b.WriteRune(r)
+		}
+	}
+}
+
+func runesEqualPrefix(got, want []rune) bool {
+	for i, r := range got {
+		if r != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func flushPending(b *strings.Builder, pending []rune) {
+	for _, r := range pending {
+		switch r {
+		case '\r', '\n':
+			b.WriteRune('\n')
+		default:
+			b.WriteRune(r)
+		}
+	}
 }

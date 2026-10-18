@@ -637,6 +637,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    历史召回（与 TUI 同语义：折叠/草稿恢复/边界不动）、Ctrl+C 空行退
    出有内容清行；管道 stdin 退回 Scanner 行为不变； 重绘、rune 宽
    安全。
+**括号粘贴**（bracketed paste，REPL 与 TUI，spec 规则 33）：raw 模式
+   进出启停 2004h/l；粘贴序列内 CR/LF 不触发提交——REPL 编辑器归一为
+   换行保留在消息里（可多行），TUI 输入行折叠为空格（单行渲染）后整
+   体入输入区；疑似结束标记的 ESC 序列原样吐回保真。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。

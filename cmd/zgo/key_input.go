@@ -30,6 +30,8 @@ const (
 // keyStream 持有跨 Read 的未完成序列。
 type keyStream struct {
 	buf []byte
+	// 括号粘贴（spec 规则 33）：200~/201~ 之间置位，CR/LF 折叠空格。
+	pasting bool
 }
 
 // feed 消费一段读入的字节，返回控制信号；提交的行经 onLine 交付。
@@ -48,6 +50,15 @@ func (k *keyStream) feedWith(s *tuiState, p []byte, onLine func(string)) int {
 			return int(b)
 		case b == '\r' || b == '\n':
 			k.buf = k.buf[1:]
+			if k.pasting { // 粘贴内的换行：CRLF 折叠为一个空格（单行输入区）
+				if b == '\r' && len(k.buf) > 0 && k.buf[0] == '\n' {
+					k.buf = k.buf[1:]
+				}
+				s.mu.Lock()
+				s.input = append(s.input, ' ')
+				s.mu.Unlock()
+				continue
+			}
 			s.mu.Lock()
 			line := strings.TrimSpace(string(s.input))
 			s.input = s.input[:0]
@@ -60,12 +71,25 @@ func (k *keyStream) feedWith(s *tuiState, p []byte, onLine func(string)) int {
 				s.input = s.input[:n-1]
 			}
 			s.mu.Unlock()
-		case b == 0x1b: // 转义序列：导航键派发，其余整段吞掉；不完整等下段
+		case b == 0x1b: // 转义序列：粘贴标记优先，导航键派发，其余吞掉
 			n := escLen(k.buf)
 			if n == 0 {
 				return keyNone
 			}
-			k.dispatchNav(s, string(k.buf[:n]))
+			seq := string(k.buf[:n])
+			if k.handlePasteMarker(seq) {
+				k.buf = k.buf[n:]
+				continue
+			}
+			if k.pasting {
+				// 粘贴内的其他转义序列：原样入输入区（保真优先）。
+				s.mu.Lock()
+				s.input = append(s.input, []rune(seq)...)
+				s.mu.Unlock()
+				k.buf = k.buf[n:]
+				continue
+			}
+			k.dispatchNav(s, seq)
 			k.buf = k.buf[n:]
 		case b < 0x80:
 			k.buf = k.buf[1:]
@@ -132,4 +156,19 @@ func escLen(buf []byte) int {
 		}
 		return 1 // 裸 ESC
 	}
+}
+
+// handlePasteMarker 识别 200~/201~ 并切换粘贴态（spec 规则 33）。
+func (k *keyStream) handlePasteMarker(seq string) bool {
+	const start = "\x1b[200~"
+	const end = "\x1b[201~"
+	switch seq {
+	case start:
+		k.pasting = true
+		return true
+	case end:
+		k.pasting = false
+		return true
+	}
+	return false
 }

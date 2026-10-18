@@ -123,3 +123,28 @@ func TestKeyStreamNavigationKeys(t *testing.T) {
 		t.Fatalf("nav keys leaked into input: %q", got)
 	}
 }
+
+// TestKeyStreamBracketedPaste 验证 TUI 括号粘贴（spec 规则 33）：粘贴
+// 内 CR/LF 折叠为空格、不触发 onLine；结束标记后的回车才提交。
+func TestKeyStreamBracketedPaste(t *testing.T) {
+	s := &tuiState{}
+	k := &keyStream{}
+	var lines []string
+	k.feedWith(s, []byte("\x1b[200~hello\r\nworld\x1b[201~"), func(l string) { lines = append(lines, l) })
+	if len(lines) != 0 {
+		t.Fatalf("paste submitted lines: %v", lines)
+	}
+	if got := string(s.input); got != "hello world" {
+		t.Fatalf("input = %q, want %q", got, "hello world")
+	}
+	k.feedWith(s, []byte("\r"), func(l string) { lines = append(lines, l) })
+	if len(lines) != 1 || lines[0] != "hello world" {
+		t.Fatalf("submit = %v", lines)
+	}
+	// 粘贴态已退出：普通回车恢复逐行提交语义。
+	s.input = []rune("after")
+	k.feedWith(s, []byte("\r"), func(l string) { lines = append(lines, l) })
+	if len(lines) != 2 || lines[1] != "after" {
+		t.Fatalf("post-paste submit = %v", lines)
+	}
+}

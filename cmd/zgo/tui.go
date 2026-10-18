@@ -86,7 +86,11 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 		fmt.Fprintln(os.Stderr, "TUI 需要交互式终端（-p 走 print 模式）：", err)
 		return 2
 	}
-	defer term.Restore(fd, original)
+	defer func() {
+		os.Stdout.WriteString("\x1b[?2004l") // 关括号粘贴（spec 规则 33）
+		term.Restore(fd, original)
+	}()
+	os.Stdout.WriteString("\x1b[?2004h") // 开括号粘贴
 
 	s := &tuiState{status: "就绪", redraw: make(chan struct{}, 1), topIdx: -1, turnCur: -1}
 	s.resize()
