@@ -258,7 +258,6 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    静态 skipDirs 取并集（无 .gitignore 行为不变）；命中目录整枝剪
    除，命中文件逐个跳过；会话级加载一次（.gitignore 变更下轮会话
    生效）。
-dc907a4 (feat: glob and grep honor .gitignore)
 
 45. 技能（ZCode skills 子系统）：SKILL.md + frontmatter（平铺 YAML
    子集：name/description 必填、when_to_use 可选、引号值去引号；无
@@ -307,7 +306,6 @@ dc907a4 (feat: glob and grep honor .gitignore)
    inlineData part 同住 functionResponse 的 user content；OpenAI 的
    tool 消息只收文本——降级为文本说明（N 张图片未上送），模型至少看
    到摘要。SSH 工作区经网线读字节，同构。
-1d468ec (feat: read tool returns images — multimodal tool results)
 
 48. 工作流持久化与复用（ZCode saved-workflows / workflow-runs 的落
    地）：internal/workflow——定义存 dataDir/workflows/<名>.json（名限
@@ -330,8 +328,6 @@ dc907a4 (feat: glob and grep honor .gitignore)
    干净失败，重试交模型自纠）；连续重连失败 5 次放弃（防风暴，切会
    话重建是唯一出路）。
 
-   （规则 50/51 由 pending 的后台子代理 PR 预留。）
-
 50. 后台子代理（ZCode runtime-task registry / Agent 工具的落地）：
    `agent` 工具启动只读研究子代理并立即返回 ID——父会话不阻塞，继续回
    合；`agent_output {id}` 收割（running 报进度与耗时，done 返结论文
@@ -344,7 +340,21 @@ dc907a4 (feat: glob and grep honor .gitignore)
    agent 一律经拨号后的 Remote 工作区（ReadOnlyW——此前字符串重建本
    地工具面，远程嵌套循环读的是本地磁盘）。
 
-51. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
+51. 自定义子代理定义（issue #225）：子代理 persona 用户可编程。定义
+   层 internal/agents——两层平铺 markdown：工作区 `.zgo/agents/*.md` +
+   用户家 `~/.zgo/agents/*.md`（同名工作区优先，与技能/命令同约定）；
+   frontmatter：`name`（缺省取文件名主干）、`description`（路由依据，
+   必填、≤1K 字符）、`tools`（逗号分隔白名单，取自子代理工具词表
+   read/grep/glob/ls/edit/write/patch/todo；空即只读族，对齐现状
+   SubtaskSystem）；正文即该子代理的系统提示（persona）。`task`/
+   `dispatch` 增可选 `agent` 参数：命中则以定义 persona 替换
+   SubtaskSystem、工具面按白名单从会话工具集选取（edit 族仍过主权限
+   门——白名单只收窄不放宽，未列出的名字忽略）；未知名报错列出可用
+   项自纠。主系统提示注入可用 agents 清单（name + description 一行
+   式，对齐技能注入）。发现读上限 64KB、persona 载入上限 100KB（超限
+   截断并标注），描述校验 1K——与注入家族同一套约束。
+
+52. 子代理续话（ZCode SendMessage 的落地）：`agent_send {id, message}`
    对终态子代理追加用户消息、带全部既有历史（调查、工具结果、结论）
    后台重跑——同 ID 复用，收割面（agent_output）不变；运行中的任务拒
    绝续话（等收割或先停止，未命中列既有 ID 自纠）。运行器统一形态
@@ -352,7 +362,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    注册表在终态保存子代理转录，续跑翻转经持锁原子完成（并发续话只
    有一个生效）。
 
-52. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
+53. read 读 PDF（ZCode read-pdf 的落地）：.pdf 走 internal/pdftext 文
    本层抽取——词法级 stream 段收集 + FlateDecode 解压 + Tj/TJ/'/" 文
    本算子（Td/TD/T* 换行启发），字面串（转义/八进制/嵌套括号）与十六
    进制串（UTF-16BE BOM 检测）解码。有界：单流 16MB、产出 256KB rune
@@ -361,7 +371,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    产乱码；无文本层（扫描件/图片型）同样报错。SSH 工作区经网线读字
    节同构。
 
-53. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
+54. 工作区信任门（pi project-trust / CC 信任提示的落地）：未授信的
    本地工作区不加载其 `.zgorules.json`（allow 规则即提权面——克隆来
    的恶意仓库不能靠自带规则文件给自己放权）、不加载其 `.zgo` 命令与
    技能层（提示注入面）；全局层不受影响。授信表 dataDir/trusted.json
