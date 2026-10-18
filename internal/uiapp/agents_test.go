@@ -11,7 +11,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
-// TestAgentsViewRendersStates 状态条渲染（spec 规则 61）：四态标记、
+// TestAgentsViewRendersStates 状态条渲染（spec 规则 62）：四态标记、
 // 运行计数、耗时、摘要、折叠；空不占位。
 func TestAgentsViewRendersStates(t *testing.T) {
 	svc, err := service.New(t.TempDir())
