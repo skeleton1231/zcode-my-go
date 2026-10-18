@@ -402,6 +402,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    RemoveMCPServer/MCPServers：写盘 + syncMCP 热重载（握手失败降级
    不阻断——诊断面可见）。
 
+58. 后台代理可视化（spec 规则 50/51 的可见面）：`/agents` 列出本会话
+   后台子代理（总数/运行数、状态标记 ▶运行带秒级耗时 ✓完成 ✕失败带
+   错误 ■停止、任务首行 40 rune 截短、超 10 条折叠余量）；TUI 固定块
+   （计划块同款，`代理 · N 运行/M` 头 + 4 条 + 折叠，空清单不占行）
+   每次重画经 AgentJobStates 取快照——事件驱动的重画自然带最新状
+   态。桌面面板为后续跟进（AgentJobStates 访问器已备）。
+
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

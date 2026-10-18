@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/term"
 
@@ -67,10 +68,15 @@ type tuiState struct {
 	turns   []int
 	turnCur int
 
-	plan    []tools.TodoTask        // 任务面板：todo 工具落盘后刷新
-	onPlan  func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
-	onUsage func() string           // 生产读会话累计用量（spec 规则 40），测试注入桩
-	abort   func()                  // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
+	plan   []tools.TodoTask        // 任务面板：todo 工具落盘后刷新
+	onPlan func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
+
+	// 后台代理面板（spec 规则 58）：每次重画前经 onAgents 取快照——
+	// 事件触发的重画都带最新状态；空清单不占行。
+	onAgents func() []tools.AgentJobView
+	agents   []tools.AgentJobView // 最近一次快照（draw 刷新）
+	onUsage  func() string        // 生产读会话累计用量（spec 规则 40），测试注入桩
+	abort    func()               // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
 
 	// 会话内搜索（spec 规则 56）：findQ 非空即激活；findHits 是命中行
 	// 下标，findCur 是当前命中（渲染 ▶/▶▶ 标记，n/N 跳转，Esc 退出）。
@@ -129,6 +135,7 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 	}
 	// 闭包按引用捕获 info：/new 经 SetSession 换 ID 后面板读到新会话。
 	s.onPlan = func() []tools.TodoTask { return svc.TodoPlan(info.ID) }
+	s.onAgents = func() []tools.AgentJobView { return svc.AgentJobStates(info.ID) }
 	s.onUsage = func() string {
 		u, err := svc.UsageSummaryOf(info.ID)
 		if err != nil || (u.Usage.InputTokens == 0 && u.Usage.OutputTokens == 0) {
@@ -555,11 +562,15 @@ func (s *tuiState) draw(out io.Writer) {
 	}
 	var b strings.Builder
 	b.WriteString("\x1b[?1049h\x1b[2J\x1b[H") // 备用屏 + 清屏 + 回起点
+	if s.onAgents != nil {                    // 后台代理快照：重画即取（事件驱动的重画都带最新，规则 58）
+		s.agents = s.onAgents()
+	}
 	plan := planLines(s.plan, planMaxRows)
-	for _, line := range plan {
+	agents := agentPanelLines(s.agents)
+	for _, line := range append(plan, agents...) {
 		b.WriteString(line + "\x1b[K\n")
 	}
-	body := h - 2 - len(plan) // 状态行 + 输入行 + 计划块
+	body := h - 2 - len(plan) - len(agents) // 状态行 + 输入行 + 计划/代理块
 	if body < 1 {
 		body = 1
 	}
@@ -753,4 +764,59 @@ func tuiTokens(n int) string {
 		return fmt.Sprintf("%.1fk", float64(n)/1000)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// agentPanelLines 渲染后台代理固定块（spec 规则 58，slash.FormatAgents
+// 同数据源）：运行中 ▶ 带耗时；空清单不占行；超 4 条折叠 …+N。
+func agentPanelLines(views []tools.AgentJobView) []string {
+	if len(views) == 0 {
+		return nil
+	}
+	running := 0
+	for _, v := range views {
+		if v.State == tools.AgentRunning {
+			running++
+		}
+	}
+	lines := []string{ansi(ansiBlue, fmt.Sprintf("代理 · %d 运行/%d", running, len(views)))}
+	for i, v := range views {
+		if i == agentPanelMaxRows {
+			lines = append(lines, ansi(ansiGray, fmt.Sprintf("  …+%d", len(views)-agentPanelMaxRows)))
+			break
+		}
+		mark := "?"
+		switch v.State {
+		case tools.AgentRunning:
+			mark = "▶"
+		case tools.AgentDone:
+			mark = "✓"
+		case tools.AgentFailed:
+			mark = "✕"
+		case tools.AgentStopped:
+			mark = "■"
+		}
+		line := "  " + mark + " " + v.ID
+		if v.State == tools.AgentRunning {
+			line += " " + v.Duration.Round(time.Second).String()
+		}
+		if task := agentTaskBrief(v.Prompt); task != "" {
+			line += " " + task
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// agentPanelMaxRows 是代理面板最多渲染的条数。
+const agentPanelMaxRows = 4
+
+// agentTaskBrief 任务首行截短。
+func agentTaskBrief(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if r := []rune(s); len(r) > 32 {
+		return string(r[:32]) + "…"
+	}
+	return s
 }

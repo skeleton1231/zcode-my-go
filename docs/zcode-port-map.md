@@ -406,3 +406,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    /mcp remove <名>——此前唯一途径是手编 settings.json；服务面
    SetMCPServer/RemoveMCPServer（校验+上限 32）写盘并 syncMCP 热重载
    （握手失败降级，诊断面可见）。
+
+**后台代理可视化**（spec 规则 58）：/agents 清单命令（状态标记/耗时/
+任务摘要/折叠）+ TUI 固定块（计划块同款，重画即取快照）——agent 四
+件套此前在终端完全不可见。

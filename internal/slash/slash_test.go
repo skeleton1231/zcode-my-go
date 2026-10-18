@@ -14,6 +14,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 func newEnv(t *testing.T) (*Env, *snapshotLines) {
@@ -571,4 +572,30 @@ func TestSlashMCPAddRemove(t *testing.T) {
 		t.Fatalf("remove = %q", out)
 	}
 
+}
+
+// TestSlashAgents /agents 清单命令（spec 规则 58）：空态说明用法；有代
+// 理时经 FormatAgents 渲染（状态标记/折叠）。
+func TestSlashAgents(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/agents")
+	if !strings.Contains(out, "没有后台子代理") {
+		t.Fatalf("empty = %q", out)
+	}
+	got := FormatAgents([]tools.AgentJobView{
+		{ID: "ag-1", State: tools.AgentRunning, Prompt: "调查", Duration: time.Second},
+		{ID: "ag-2", State: tools.AgentDone, Prompt: "完成的事"},
+	}, 10)
+	if !strings.Contains(got, "2 个（运行 1）") || !strings.Contains(got, "▶ ag-1") ||
+		!strings.Contains(got, "✓ ag-2") || !strings.Contains(got, "完成的事") {
+		t.Fatalf("format = %q", got)
+	}
+	// 折叠：maxRows 之外计余量。
+	many := make([]tools.AgentJobView, 12)
+	for i := range many {
+		many[i] = tools.AgentJobView{ID: "ag-x", State: tools.AgentDone}
+	}
+	if got := FormatAgents(many, 10); !strings.Contains(got, "…+2") {
+		t.Fatalf("fold = %q", got)
+	}
 }

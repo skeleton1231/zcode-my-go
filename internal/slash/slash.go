@@ -14,6 +14,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 // Env carries what a command may act on and how it reports back.
@@ -252,6 +253,13 @@ var commands = []command{
 				b.WriteString("  ⚠ " + d.Path + ": " + d.Message + "\n")
 			}
 			return strings.TrimRight(b.String(), "\n")
+		},
+	},
+	{
+		name: "/agents", usage: "/agents",
+		help: "列出本会话的后台子代理（状态/耗时/任务）",
+		run: func(env *Env, _ string) string {
+			return FormatAgents(env.Svc.AgentJobStates(env.SessionID()), 10)
 		},
 	},
 	{
@@ -686,4 +694,60 @@ func mcpRemove(env *Env, name string) string {
 		return "[MCP 失败] " + err.Error()
 	}
 	return "[MCP] 已移除 " + name
+}
+
+// FormatAgents 渲染后台子代理清单（slash 与 TUI 面板同源，spec 规则
+// 58）：每行 状态标记 + ID + 运行耗时或终态；maxRows 折叠余量。
+func FormatAgents(views []tools.AgentJobView, maxRows int) string {
+	if len(views) == 0 {
+		return "[代理] 没有后台子代理（agent 工具启动）"
+	}
+	running := 0
+	for _, v := range views {
+		if v.State == tools.AgentRunning {
+			running++
+		}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "[代理] %d 个（运行 %d）：\n", len(views), running)
+	for i, v := range views {
+		if i == maxRows {
+			fmt.Fprintf(&b, "  …+%d\n", len(views)-maxRows)
+			break
+		}
+		mark := "?"
+		switch v.State {
+		case tools.AgentRunning:
+			mark = "▶"
+		case tools.AgentDone:
+			mark = "✓"
+		case tools.AgentFailed:
+			mark = "✕"
+		case tools.AgentStopped:
+			mark = "■"
+		}
+		line := "  " + mark + " " + v.ID
+		if v.State == tools.AgentRunning {
+			line += " " + v.Duration.Round(time.Second).String()
+		}
+		if task := firstLineOfAgent(v.Prompt); task != "" {
+			line += " " + task
+		}
+		if v.State == tools.AgentFailed && v.Err != "" {
+			line += "（" + v.Err + "）"
+		}
+		b.WriteString(line + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// firstLineOfAgent 取任务首行并截短（清单行宽）。
+func firstLineOfAgent(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if r := []rune(s); len(r) > 40 {
+		return string(r[:40]) + "…"
+	}
+	return s
 }
