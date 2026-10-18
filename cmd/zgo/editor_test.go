@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
-	"strconv"
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 )
