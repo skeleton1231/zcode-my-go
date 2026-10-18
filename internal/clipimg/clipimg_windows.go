@@ -10,7 +10,6 @@ package clipimg
 import (
 	"bytes"
 	"fmt"
-	"image/png"
 	"syscall"
 	"time"
 	"unsafe"
@@ -37,9 +36,6 @@ const (
 	cfDIB   = 8
 	cfDIBV5 = 17
 )
-
-// pngMagic 是 PNG 文件头（防御：注册格式的数据偶见带文件名包装）。
-var pngMagic = []byte{0x89, 'P', 'N', 'G'}
 
 // ReadImage 返回剪贴板位图的 PNG 字节；无图/不可用返回 ErrNoImage
 // 之外的错误仅限打开失败与解码失败——调用方一律按无图放行文本粘贴，
@@ -118,15 +114,4 @@ func clipboardFormat(format uintptr) ([]byte, bool) {
 	return out, true
 }
 
-// dibToPNG 解 DIB 并编码 PNG。
-func dibToPNG(dib []byte) ([]byte, error) {
-	img, err := decodeDIB(dib)
-	if err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
+// dibToPNG 解 DIB 并编码 PNG（纯函数，跨平台定义于 dib.go——测试直测）。

@@ -6,10 +6,12 @@
 package clipimg
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
+	"image/png"
 )
 
 // DIB 头部长度（BITMAPINFOHEADER=40；BITMAPV5HEADER=124，前者是后者
@@ -137,3 +139,21 @@ func decodeDIB(data []byte) (image.Image, error) {
 	}
 	return img, nil
 }
+
+// dibToPNG 解 DIB 并编码 PNG（纯函数、跨平台——Windows 读取面与测试
+// 共用）。
+func dibToPNG(dib []byte) ([]byte, error) {
+	img, err := decodeDIB(dib)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// pngMagic 是 PNG 文件头（跨平台：测试与 Windows 读取面共用；防御注
+// 册格式数据偶见带包装）。
+var pngMagic = []byte{0x89, 'P', 'N', 'G'}
