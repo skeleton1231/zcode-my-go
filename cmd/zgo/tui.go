@@ -69,6 +69,7 @@ type tuiState struct {
 
 	plan   []tools.TodoTask     // 任务面板：todo 工具落盘后刷新
 	onPlan func() []tools.TodoTask // 生产读 svc.TodoPlan，测试注入桩
+	abort  func()                   // 生产读 svc.Abort(activeID)，测试注入桩（spec 规则 38）
 
 	// 输入历史（spec 规则 30）：已提交的用户消息；histCur==-1 表示在
 	// 实时输入（离开时的草稿保存在 histDraft）。
@@ -119,6 +120,12 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 	}
 	// 闭包按引用捕获 info：/new 经 SetSession 换 ID 后面板读到新会话。
 	s.onPlan = func() []tools.TodoTask { return svc.TodoPlan(info.ID) }
+	// Esc 中止（spec 规则 38）：闭包按引用捕获 info——/resume 换会话
+	// 后中止的是当前会话的运行。
+	s.abort = func() {
+		svc.Abort(info.ID)
+		s.setStatus("中止中…", true)
+	}
 	svc.SetAsker(stdinAsker)
 	svc.SetQuestion(stdinQuestion)
 
@@ -617,5 +624,19 @@ func (s *tuiState) historyMove(dir int) {
 		s.input = []rune(s.history[at])
 	}
 	s.histCur = at
+	s.requestRedraw()
+}
+
+// abortRun 处理裸 Esc（spec 规则 38）：运行中触发 abort 钩子并提示；
+// 空闲无操作（不退出、不清输入）。
+func (s *tuiState) abortRun() {
+	s.mu.Lock()
+	running := s.running
+	s.mu.Unlock()
+	if !running || s.abort == nil {
+		return
+	}
+	s.abort()
+	s.push(ansi(ansiYellow, "[已中止] Esc 中断了当前回合"))
 	s.requestRedraw()
 }

@@ -42,6 +42,7 @@ func (k *keyStream) feed(s *tuiState, p []byte) int {
 // feedWith 同 feed，可指定行提交回调。
 func (k *keyStream) feedWith(s *tuiState, p []byte, onLine func(string)) int {
 	k.buf = append(k.buf, p...)
+loop:
 	for len(k.buf) > 0 {
 		b := k.buf[0]
 		switch {
@@ -74,7 +75,7 @@ func (k *keyStream) feedWith(s *tuiState, p []byte, onLine func(string)) int {
 		case b == 0x1b: // 转义序列：粘贴标记优先，导航键派发，其余吞掉
 			n := escLen(k.buf)
 			if n == 0 {
-				return keyNone
+				break loop // 不完整序列：等待下一段（落穿到孤立 ESC 检查）
 			}
 			seq := string(k.buf[:n])
 			if k.handlePasteMarker(seq) {
@@ -100,11 +101,18 @@ func (k *keyStream) feedWith(s *tuiState, p []byte, onLine func(string)) int {
 		default: // 多字节 UTF-8
 			r, size := utf8.DecodeRune(k.buf)
 			if r == utf8.RuneError && size == 1 && !utf8.FullRune(k.buf) {
-				return keyNone // 跨 Read 的不完整序列，等待
+				break loop // 跨 Read 的不完整序列，等待
 			}
 			k.buf = k.buf[size:]
 			k.appendInput(s, r)
 		}
+	}
+	// 孤立 ESC（chunk 结束时缓冲仅剩它）：视为 Esc 按键——中止运行
+	// （spec 规则 38）。CSI 序列在同一 read 原子到达，跨 read 拼接仍由
+	// 上方 escLen 处理；这里的消费只影响"整 chunk 只有 ESC"的形态。
+	if len(k.buf) == 1 && k.buf[0] == 0x1b {
+		k.buf = k.buf[:0]
+		s.abortRun()
 	}
 	return keyNone
 }
