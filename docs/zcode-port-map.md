@@ -299,3 +299,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 - v0.3 第一轮：permission、compact、todo/ask、环境与项目上下文、CLI print 模式；修复 tool_result 标准内容结构（真实 GLM 端到端暴露）
 - v0.3 第二轮：bash 命令级只读判定、plan-mode、microcompact、子代理 task、MCP 客户端、OpenAI 协议、CLI REPL
 - v0.3 第三轮（收尾）：apply_patch 多文件补丁、分层记忆（memory 工具 + 提示注入）、多步工作流（权限门继承）、Gemini 协议、全屏 TUI
+**通知与权限可见性**（spec 规则 36）：EvBudgetNotice 等通知事件四表
+   面渲染（TUI 黄显 [预算]、REPL/print stderr、桌面 notice 项）；/perms
+   列出本会话累计的总是允许规则（工具+参数模式，随会话消散）——
+   SessionPermissionRules 服务面。

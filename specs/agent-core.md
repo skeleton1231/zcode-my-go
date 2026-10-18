@@ -206,6 +206,12 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    触发 Abort（当前流截断、转录保留已产出部分、状态回就绪）并提示
    「已中止」；空闲时裸 Esc 无操作（不退出、不清输入）；与 Ctrl+C
    （退出应用）、括号粘贴标记、方向键序列互不冲突。
+
+36. 通知与权限可见性：EvBudgetNotice 等用户可见通知事件在四表面
+   （TUI/REPL/print/桌面）渲染为提示行（黄显、不进转录）；/perms 列
+   出本会话累计的「总是允许」权限规则（工具与路径模式）——会话结束
+   随之消散，列表为空时说明用法（终端按 y/a 回答 ask 时 a 会积累规
+   则）。68d2967 (feat: notice rendering and session permission visibility)
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

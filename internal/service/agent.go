@@ -1447,3 +1447,9 @@ func (s *AgentService) recordDailyUsage(before, after ai.Usage, emit func(agent.
 func (s *AgentService) DailyUsage() (used, budget int) {
 	return s.day.Total(), s.resolve().BudgetDailyTokens
 }
+
+// SessionPermissionRules lists the session's accumulated always-allow
+// rules（/perms 的数据面，spec 规则 36）.
+func (s *AgentService) SessionPermissionRules(sessionID string) []permission.Rule {
+	return s.mgr.SessionPermissions(sessionID).SessionRules()
+}

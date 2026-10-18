@@ -344,6 +344,7 @@ func TestKeyStreamPasteCapped(t *testing.T) {
 	}
 }
 
+
 // TestTuiAbortRunOnEsc 验证 Esc 中止（spec 规则 38）：运行中触发 abort
 // 钩子并提示；空闲无操作；粘贴内的 ESC 不触发（保真入输入区）。
 func TestTuiAbortRunOnEsc(t *testing.T) {
@@ -385,5 +386,18 @@ func TestTuiAbortRunOnEsc(t *testing.T) {
 	}
 	if !strings.Contains(string(s.input), "\x1b") {
 		t.Fatal("pasted ESC lost from input")
+	}
+}
+
+// TestTuiBudgetNoticeRender 验证预算通知的 TUI 渲染（spec 规则 36）。
+func TestTuiBudgetNoticeRender(t *testing.T) {
+	defer func(enabled bool) { colorEnabled = enabled }(colorEnabled)
+	colorEnabled = false
+	s := &tuiState{width: 80}
+	s.applyEvent(agent.Event{Kind: agent.EvBudgetNotice, Text: "今日已用 900 token（预算的 80%+）"}, new(string))
+	joined := strings.Join(s.lines, "\n")
+	if !strings.Contains(joined, "[预算] 今日已用 900") {
+		t.Fatalf("notice not rendered: %q", joined)
+
 	}
 }

@@ -360,3 +360,58 @@ func TestWrapResourceFenceSurvivesMarkdown(t *testing.T) {
 		t.Fatalf("fence not dynamic for markdown resource:\n%s", wrapped)
 	}
 }
+
+// TestSlashPerms 验证 /perms（spec 规则 36）：空会话说明用法语义；有规
+// 则时列出工具与参数模式。
+func TestSlashPerms(t *testing.T) {
+	env, _ := newEnv(t)
+
+	out := captureOutSlash(t, env, "/perms")
+	if !strings.Contains(out, "还没有") {
+		t.Fatalf("empty perms: %q", out)
+	}
+
+	// 经真实 ask 流程攒一条规则：SetAsker 回 Always。
+	env.Svc.SetAsker(func(req agent.AskRequest) agent.AskResponse {
+		return agent.AskResponse{Always: true, Note: req.Tool}
+	})
+	t.Cleanup(func() {
+		env.Svc.SetAsker(func(agent.AskRequest) agent.AskResponse { return agent.AskResponse{} })
+	})
+	// 执行一个会触发权限询问的工具回合（bash 中风险必问）。
+	out = chProviderTurn(t, env, "列一下")
+	_ = out
+	rules := env.Svc.SessionPermissionRules(env.SessionID())
+	if len(rules) == 0 {
+		t.Fatal("always-allow did not accumulate a rule")
+	}
+	out = captureOutSlash(t, env, "/perms")
+	if !strings.Contains(out, "总是允许规则") || !strings.Contains(out, rules[0].Tool) {
+		t.Fatalf("listing = %q", out)
+	}
+}
+
+// chProviderTurn 跑一个带工具调用的回合（一次性通道）。
+func chProviderTurn(t *testing.T, env *Env, prompt string) string {
+	t.Helper()
+	ch := make(chan ai.StreamEvent, 6)
+	ch <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	ch <- ai.StreamEvent{Kind: ai.EvToolCallStart, ToolCallID: "c1", ToolCallName: "bash"}
+	ch <- ai.StreamEvent{Kind: ai.EvToolCallDelta, ToolCallID: "c1", ToolCallArgs: `{"command":"del /f x.txt"}`}
+	ch <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "done"}
+	ch <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	close(ch)
+	env.Svc.UseProviderForTesting(func() ai.Provider { return chP{ch} })
+	defer env.Svc.UseProviderForTesting(nil)
+	var lines []string
+	if err := env.Svc.Chat(env.SessionID(), prompt, func(ev agent.Event) {
+		lines = append(lines, string(ev.Kind))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(lines, ",")
+}
+
+type chP struct{ ch <-chan ai.StreamEvent }
+
+func (p chP) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent { return p.ch }

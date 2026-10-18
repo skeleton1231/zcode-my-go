@@ -64,6 +64,10 @@ func (s *chatState) apply(ev agent.Event) {
 	case agent.EvCompaction:
 		s.items = append(s.items, chatItem{kind: itemNotice, text: ev.Text})
 
+	case agent.EvBudgetNotice:
+		// 用户可见通知（spec 规则 36）：黄显提示行，不进转录语义。
+		s.items = append(s.items, chatItem{kind: itemNotice, text: "预算：" + ev.Text})
+
 	case agent.EvTurnRetry:
 		// 重试：丢弃残缺的流式输出，notice 说明原因；新回合会重新开始。
 		if n := len(s.items); n > 0 && s.items[n-1].kind == itemAssistant && s.items[n-1].streaming {

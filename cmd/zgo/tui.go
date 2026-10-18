@@ -300,6 +300,9 @@ func (s *tuiState) applyEvent(ev agent.Event, last *string) {
 		}
 	case agent.EvCompaction:
 		s.lines = append(s.lines, ansi(ansiBlue, "[压缩] "+ev.Text))
+	case agent.EvBudgetNotice:
+		// 用户可见通知（spec 规则 36）：黄显提示行，不进转录语义。
+		s.lines = append(s.lines, ansi(ansiYellow, "[预算] "+ev.Text))
 	}
 	s.requestRedraw()
 }
