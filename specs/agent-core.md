@@ -225,7 +225,8 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    *.md` 与全局 `~/.zgo/commands/*.md`（同名工作区覆盖全局）；命令名即文
    件名去扩展，`/名 [参数]` 执行——内容作为提示词发送，`$ARGUMENTS` 占
    位替换为参数原文；builtin 优先，自定义不遮蔽；/help 列出自定义段；
-   不可发送的表面展示展开文本。SSH 工作区同享（经 path jail 读取）。（命令文件文本 60K rune 封顶——issue #195 家族口径。）
+   不可发送的表面展示展开文本。SSH 工作区同享（经 path jail 读取）。
+（命令文件文本 60K rune 封顶——issue #195 家族口径。）
 
 
 40. TUI 信息可见性（与桌面对齐）：思考流灰显——EvThinkingDelta 累积渲染
@@ -259,7 +260,7 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
    生效）。
 dc907a4 (feat: glob and grep honor .gitignore)
 
-44. 技能（ZCode skills 子系统）：SKILL.md + frontmatter（平铺 YAML
+45. 技能（ZCode skills 子系统）：SKILL.md + frontmatter（平铺 YAML
    子集：name/description 必填、when_to_use 可选、引号值去引号；无
    frontmatter 按目录名收录；描述超 1024 字符拒绝）；两层根——工作
    区 `.zgo/skills`（ssh:// 经网线，根相对形态）与全局
@@ -272,6 +273,27 @@ dc907a4 (feat: glob and grep honor .gitignore)
    坏技能（缺 name/description、名字含分隔符或空白、描述超限）记诊
    断跳过，不拖垮整层；读失败（非不存在）同样记诊断不静默。/skills
    终端命令列出技能与诊断。
+
+
+46. webfetch 工具（ZCode WebFetch 的移植）：`{url, prompt?}`——抓取
+   http(s) URL 并抽取可读文本。URL 归一：≤2000 字符、无凭据、http 升
+   级 https、公网主机名（localhost/.local/裸单段主机拒绝）。egress
+   守卫（SSRF）逐跳生效：字面量 IP 非公网段（RFC1918/环回/链路本地/
+   CGNAT/组播/保留/文档段；IPv6 含 ULA/6to4；IPv4-mapped 与 NAT64
+   64:ff9b::/96 先还原 IPv4 再判）一律拒绝；普通域名不做 DNS 预解析
+   （preflight 在部分网络下让公网 URL 无谓失败——ZCode 同款取舍）。
+   重定向手动逐跳：同主机（www 差异容忍、同端口）自动跟随（上限
+   10 跳，超限报错），跨主机/协议/端口停在链上报告给模型（显式发
+   起同样过门——透明而非强制）；跳转目标再过同一 egress 门（重定向
+   是绕过首跳检查的经典通道）。响应 10MB 封顶；内容类型仅文本类
+   （text/*、json/xml/js 及 +json/+xml 后缀；二进制报错）；HTML 剥
+   script/style/注释、标题链接列表保形、实体解码；给模型 100K 字符
+   封顶标注；HTTP ≥400 带状态与 4KB 错误页摘录回模型自纠。结果含
+   URL/状态/类型/大小/耗时/跳转链头。短 TTL 缓存（15 分钟、50MB、
+   最旧淘汰，按归一 URL 键控，进程级共享）。权限：预批准文档站清单
+   （官方语言/框架文档，路径前缀站点防 %2f 编码绕过）只读自动放行
+   （plan 模式可用）；其余主机中等风险询问（会话「总是允许」按 URL
+   积累）。
 
 ## 状态所有者
 

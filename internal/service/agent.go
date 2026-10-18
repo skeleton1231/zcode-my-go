@@ -257,7 +257,9 @@ func (s *AgentService) rewire() {
 				tools.NewMemoryTool(s.memoryFor(workspace)),
 				tools.NewSkillTool(func() []skills.Root {
 					return s.skillRoots(sessionID, workspace)
-				}))
+				}),
+				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
+				tools.NewWebFetchTool(tools.WebFetcher))
 			wfProvider := func() ai.Provider { return s.providerFor(cfg) }
 			wfModel := cfg.Model
 			wfPerms := permissionFor(s, sessionID)
