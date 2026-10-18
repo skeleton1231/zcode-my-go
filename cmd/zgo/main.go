@@ -9,6 +9,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -170,6 +171,12 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
+	}
+
+	// 管道输入（spec 规则 27）：stdin 非终端（管道/重定向）时并入提示
+	// 词——`git diff | zgo -p "review"` 一类自动化拼图的最后一块。
+	if stdinIsPiped() {
+		prompt = buildStdinPrompt(prompt, os.Stdin)
 	}
 
 	media, attachErrs := loadImageBlocks(images)
@@ -431,4 +438,37 @@ func resolveResume(svc *service.AgentService, workspace string, cont bool, prefi
 		}
 	}
 	return agent.SessionInfo{}, false, nil
+}
+
+// stdinCapBytes bounds piped stdin content (与 @ 引用文本同量级).
+const stdinCapBytes = 60 << 10
+
+// stdinIsPiped reports whether stdin is a pipe or redirect（非字符设
+// 备）——交互终端与 TUI/REPL 场景返回 false.
+func stdinIsPiped() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice == 0
+}
+
+// buildStdinPrompt 把管道输入并入提示词（spec 规则 27）：「标准输入：」
+// 围栏附尾（与 @ 引用同款形态）；空输入原样返回；超 60KB rune 安全截
+// 断并注明.
+func buildStdinPrompt(prompt string, r io.Reader) string {
+	data, err := io.ReadAll(io.LimitReader(r, stdinCapBytes+1))
+	if err != nil || len(bytes.TrimSpace(data)) == 0 {
+		return prompt
+	}
+	content := string(data)
+	note := ""
+	if len(data) > stdinCapBytes {
+		runes := []rune(content)
+		if len(runes) > stdinCapBytes/3 { // 宁短勿裂：按 rune 三分之一粗界
+			content = string(runes[:stdinCapBytes/3])
+		}
+		note = "\n…（管道输入超过 60KB，已截断）"
+	}
+	return prompt + "\n\n标准输入：\n```\n" + strings.TrimRight(content, "\n") + "\n```" + note
 }

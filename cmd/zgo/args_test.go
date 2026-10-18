@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 // TestParseArgsStrict 验证 issue #35 的四类静默误行为全部变为显式报错，
 // 以及别名与位置参数的合法形态。
@@ -94,5 +98,35 @@ func TestParseArgsOutputFormat(t *testing.T) {
 	}
 	if _, _, _, _, _, _, _, err := parseArgs([]string{"--output-format", "-t"}); err == nil {
 		t.Fatal("--output-format swallowing a flag accepted")
+	}
+}
+
+// TestBuildStdinPrompt 验证管道输入并入（spec 规则 27）：围栏+标签、空
+// 输入不变、超限 rune 安全截断注明.
+func TestBuildStdinPrompt(t *testing.T) {
+	if got := buildStdinPrompt("review this", strings.NewReader("  \n")); got != "review this" {
+		t.Fatalf("blank stdin changed prompt: %q", got)
+	}
+	got := buildStdinPrompt("review this", strings.NewReader("diff --git a/x\n+hello\n"))
+	for _, want := range []string{"review this", "标准输入：", "```", "diff --git a/x"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if !strings.HasSuffix(got, "\n```") {
+		t.Errorf("fence not closed:\n%s", got)
+	}
+
+	// 超限：中文 rune 安全截断 + 注明.
+	big := strings.NewReader(strings.Repeat("字", 40000))
+	got = buildStdinPrompt("p", big)
+	if !strings.Contains(got, "已截断") {
+		t.Error("cap note missing")
+	}
+	if strings.Count(got, "字") > 20480 { // 60KB/3 粗界 = 20480 字
+		t.Errorf("not rune-safe capped: %d 字", strings.Count(got, "字"))
+	}
+	if !utf8.ValidString(got) {
+		t.Error("truncation split a rune")
 	}
 }

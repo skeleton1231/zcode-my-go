@@ -191,6 +191,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    的消息经共享 maybeSteer 入队（Steer 既有语义：下一回合注入、abort
    清空）——TUI 登记导航锚点并显示「已入队」提示、REPL 打 stderr 提示
    ；空闲会话仍走常规发送。
+**print 管道输入**（Claude Code `cat x | -p` 的对应，spec 规则 27）：
+   -p/--print 且 stdin 非终端时，管道/重定向内容以「标准输入：」围栏
+   并入提示词（@ 引用同款形态）——`git diff | zgo -p "review"
+   --output-format json` 全链自动化；60KB rune 安全截断注明。
 会话分享判定收口：导出 HTML/Markdown 即分享物——个人 agent 无上传
    服务，自包含导出文件本身完成分享（ZCode share-ui 的独立工具包按需
    承接原则）。命名路线至此全部收官。
