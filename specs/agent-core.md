@@ -199,7 +199,7 @@ agent loop、工具执行与会话。桌面壳（`main.go`、`internal/service`�
 
 35. 每日 token 预算守卫：settings.budgetDailyTokens（0=不限）；
    每回合的增量用量（含缓存读 0.1 计价）累计到 dataDir 的当日记账
-   （usage-YYYYMMDD.json，跨会话共享、进程外持久）；用量面（/usage
+   （usage-YYYYMMDD.json，跨会话共享、进程外持久；进程内检测日期翻滚——跨零点清零计数、切换新文件、重置阈值标志，issue #199：桌面连跑数天是常态）；用量面（/usage
    与 zgo usage）展示「今日」行；跨过阈值 80% 与 100% 各发一次通知
    事件（EvTurnRetry 同级的用户可见提示，不阻断运行——软预算）。
 ## 状态所有者
