@@ -34,6 +34,8 @@ type CommandHooks struct {
 	SessionStart []CommandHook `json:"sessionStart"`
 	SessionEnd   []CommandHook `json:"sessionEnd"`
 	PreCompact   []CommandHook `json:"preCompact"`
+	Stop         []CommandHook `json:"stop"`         // spec 规则 68
+	Notification []CommandHook `json:"notification"` // spec 规则 68
 }
 
 // matches reports whether the hook applies to a tool.
@@ -54,7 +56,56 @@ func HooksFromCommands(cfg CommandHooks) Hooks {
 	return Hooks{
 		BeforeToolCall: beforeFromCommands(cfg.PreToolUse),
 		AfterToolCall:  afterFromCommands(cfg.PostToolUse),
+		Stop:           stopFromCommands(cfg.Stop),
 	}
+}
+
+// stopFromCommands 把 stop 命令接成 loop 的收尾询问（spec 规则 69）：
+// exit 2 阻止收尾（输出为原因，注入续跑消息）；其他退出码记日志放行
+// ——对齐 Claude Code 的 exit-2 语义。
+func stopFromCommands(hooks []CommandHook) func(StopContext) StopResult {
+	if len(hooks) == 0 {
+		return nil
+	}
+	return func(c StopContext) StopResult {
+		payload := stopPayloadJSON(c)
+		for _, h := range hooks {
+			out, code, err := runHook(h.Command, payload)
+			if err != nil {
+				log.Printf("stop hook %q: %v", h.Command, err)
+				continue
+			}
+			if code == 2 {
+				reason := strings.TrimSpace(out)
+				if reason == "" {
+					reason = "stop hook requested continuation"
+				}
+				return StopResult{Blocked: true, Reason: reason}
+			}
+			if code != 0 {
+				log.Printf("stop hook %q: exit %d: %s", h.Command, code,
+					strings.TrimSpace(out))
+			}
+		}
+		return StopResult{}
+	}
+}
+
+// stopPayloadJSON 组装 stop 事件 payload（spec 规则 68 的字段契约）。
+func stopPayloadJSON(c StopContext) []byte {
+	payload, _ := json.Marshal(map[string]any{
+		"event":     "stop",
+		"sessionId": c.SessionID,
+		"workspace": c.Workspace,
+		"lastText":  c.LastText,
+	})
+	return payload
+}
+
+// NotificationHooks runs notification hooks（观察者：退出码不影响主流
+// 程失败记日志）——权限询问即将阻塞等待用户时触发（spec 规则 69）.
+func NotificationHooks(hooks []CommandHook, payload any) {
+	runObserverHooks("notification", hooks, payload)
 }
 
 func beforeFromCommands(hooks []CommandHook) func(BeforeToolCallContext) BeforeToolCallResult {

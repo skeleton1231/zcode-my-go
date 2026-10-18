@@ -1,6 +1,6 @@
 package lsp
 
-// gopls 常驻 daemon（LSP 路线 A v2，spec 规则 68）：v1 每次查询 spawn
+// gopls 常驻 daemon（LSP 路线 A v2，spec 规则 69）：v1 每次查询 spawn
 // 一个 gopls 子进程（definition 冷启 1-3s——载包开销重复付）；v2 每个
 // 工作区根一个常驻进程走 JSON-RPC，initialize 只付一次。策略：
 //   - 位置编码协商 utf-8（与 v1 CLI 的字节列一致）；服务端不认则该

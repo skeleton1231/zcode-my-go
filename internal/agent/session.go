@@ -190,6 +190,7 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		Hooks:         s.hooks,
 		History:       s.Messages,
 		SessionID:     id,
+		Workspace:     workspace,
 		Permissions:   s.permissions,
 		Ask:           s.ask,
 		Steering:      s.drainSteering,

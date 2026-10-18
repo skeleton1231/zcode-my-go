@@ -462,7 +462,17 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    PATH 且工作区本地才声明工具组（ssh:// 文件不在本地盘、wasm 无子进
    程）；缺位由 doctor 引导安装。
 
-**gopls 常驻 daemon**（LSP 路线 A v2，spec 规则 68）：internal/lsp——
+
+**Stop / Notification 命令钩子**（spec 规则 68，issue #209）：CommandHooks
+   增 stop/notification——stop 在回合自然收尾（steering 排空后）触发，
+   exit 2 阻止收尾（输出为原因，注入「[stop 钩子]」续跑用户消息进转
+   录、模型继续；MaxTurns 兜底防死循环；其他非零记日志放行）；payload
+   {event, sessionId, workspace, lastText}。notification 在权限询问即将
+   阻塞时触发（观察者，payload {event, sessionId, workspace, tool,
+   reason}，退出码不影响主流程）——headless/TUI 接系统通知的挂点。
+
+
+**gopls 常驻 daemon**（LSP 路线 A v2，spec 规则 69）：internal/lsp——
    每个工作区根一个常驻 gopls 进程走 LSP JSON-RPC（initialize 只付一
    次，冷启摊平）；空闲 10 分钟回收、崩溃透明重启、失败退 CLI 子进程
    （可用性优先）；服务 Close 全量收割。位置编码协商 utf-8、老 gopls

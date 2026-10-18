@@ -109,7 +109,7 @@ func TestE2EGoplsDiagnosticsAndEditBackflow(t *testing.T) {
 }
 
 // TestE2EGoplsDaemonReuseAndHarvest：references 工具经服务面走常驻
-// daemon（spec 规则 68）——查询后 daemon 在驻（一次 initialize 复用），
+// daemon（spec 规则 69）——查询后 daemon 在驻（一次 initialize 复用），
 // 服务 Close 全量收割（不留孤儿 gopls 进程）。
 func TestE2EGoplsDaemonReuseAndHarvest(t *testing.T) {
 	goplsHere(t)

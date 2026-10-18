@@ -1,6 +1,6 @@
 package lsp
 
-// LSP JSON-RPC 分帧客户端（daemon 半边，spec 规则 68）：Content-Length
+// LSP JSON-RPC 分帧客户端（daemon 半边，spec 规则 69）：Content-Length
 // 头 + JSON 体的 base protocol；请求/响应按 id 关联，服务端主动请求
 // （workspace/configuration、window/workDoneProgress/create 等）必须
 // 回应——不回应会让 gopls 握手挂起。通知一律吞掉（诊断走主动拉取，

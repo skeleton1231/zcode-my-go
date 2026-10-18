@@ -133,7 +133,7 @@ func New(dataDir string) (*AgentService, error) {
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
-	// edit/write 诊断回灌（spec 规则 67/68）：gopls 在位即接线（daemon
+	// edit/write 诊断回灌（spec 规则 67/69）：gopls 在位即接线（daemon
 	// 版——编辑后显式失效再拉取，busy/缺位退 CLI 子进程），缺位静默
 	// 跳过（回执无尾部，行为与既往一致）。
 	if lsp.Available() {
@@ -324,7 +324,7 @@ func (s *AgentService) Close() {
 		close()
 	}
 	s.wsClose = map[string]func(){}
-	// gopls daemon 全量收割（spec 规则 68）——不留孤儿进程过服务生命
+	// gopls daemon 全量收割（spec 规则 69）——不留孤儿进程过服务生命
 	// 周期；下次查询按需重新拉起。
 	lsp.Default.CloseAll()
 }
@@ -483,7 +483,7 @@ func (s *AgentService) rewire() {
 			for _, server := range s.mcpServers() {
 				all = append(all, mcp.AgentTools(server)...)
 			}
-			// gopls 三工具（spec 规则 67/68）：仅本地工作区 + PATH 有
+			// gopls 三工具（spec 规则 67/69）：仅本地工作区 + PATH 有
 			// gopls 时声明（ssh:// 文件不在本地盘，wasm 无子进程）——
 			// 模型可见面随环境稳定收窄，doctor 引导安装。查询走常驻
 			// daemon（每根一进程、崩溃透明重启、失败退 CLI）。
@@ -883,6 +883,15 @@ func (s *AgentService) SetAsker(ask func(agent.AskRequest) agent.AskResponse) {
 	// 应答 channel。per-Loop 的 askMu 只覆盖单次运行，这里在 asker
 	// 装配处把串行化上移到与单槽同层级。
 	s.ask = func(req agent.AskRequest) agent.AskResponse {
+		// notification 钩子（spec 规则 68）：即将阻塞等待用户——headless/
+		// TUI 接系统通知的挂点；观察者语义，失败只记日志。
+		s.mu.Lock()
+		notify := s.settings.Hooks.Notification
+		s.mu.Unlock()
+		agent.NotificationHooks(notify, map[string]any{
+			"event": "notification", "sessionId": req.SessionID,
+			"workspace": req.Workspace, "tool": req.Tool, "reason": req.Reason,
+		})
 		s.askMu.Lock()
 		defer s.askMu.Unlock()
 		return ask(req)
