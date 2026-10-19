@@ -729,6 +729,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    TopSessions()（降序）/ SourceTotal()；`zgo usage` 附今日归因段
    （来源三数 + 按会话 Top 5）。「哪个会话烧了预算」一命令可见。
 
+90. 用量历史趋势（规则 89 的时间轴半边）：usage-*.json 翻日后留在原
+   地即历史（rollLocked 既有语义）——History(dataDir, days) 只读重放
+   近 N 日（旧到新；**缺日照列 0**——趋势连续性比稀疏诚实）；`zgo
+   usage --days=N` 打印每日总量 + 迷你条形（▮▯ 按最大日比例，20 格）。
+   窗口外文件不入；只读聚合不改 Day 状态。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

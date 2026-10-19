@@ -157,3 +157,45 @@ func TestAttribution(t *testing.T) {
 		t.Fatalf("legacy replay: total=%d unattributed=%d", d3.Total(), d3.SourceTotal(""))
 	}
 }
+
+// TestHistory（spec 规则 90）：按日重放（含缺日占位、未来日不入、
+// 归因键无所谓——历史只聚合总量）。
+func TestHistory(t *testing.T) {
+	dir := t.TempDir()
+	today := time.Now().Format("20060102")
+	yest := time.Now().AddDate(0, 0, -1).Format("20060102")
+	older := time.Now().AddDate(0, 0, -2).Format("20060102") // 3 天窗的最早日
+	for name, lines := range map[string][]string{
+		"usage-" + today + ".json": {`{"tokens":100,"session":"s1"}`, `{"tokens":50}`},
+		"usage-" + yest + ".json":  {`{"tokens":200}`},
+		"usage-" + older + ".json": {`{"tokens":400}`},
+		"usage-20200101.json":      {`{"tokens":9999}`}, // 窗口外：不入
+	} {
+		f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range lines {
+			fmt.Fprintln(f, l)
+		}
+		f.Close()
+	}
+	hist := History(dir, 3)
+	if len(hist) != 3 {
+		t.Fatalf("len = %d", len(hist))
+	}
+	if hist[0].Day != older || hist[0].Tokens != 400 {
+		t.Fatalf("oldest = %+v", hist[0])
+	}
+	if hist[1].Day != yest || hist[1].Tokens != 200 {
+		t.Fatalf("yesterday = %+v", hist[1])
+	}
+	if hist[2].Day != today || hist[2].Tokens != 150 {
+		t.Fatalf("today = %+v", hist[2])
+	}
+	// 缺日占位。
+	hist3 := History(dir, 5)
+	if len(hist3) != 5 || hist3[0].Tokens != 0 {
+		t.Fatalf("5-day = %+v", hist3)
+	}
+}
