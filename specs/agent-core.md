@@ -734,6 +734,18 @@ dc907a4 (feat: glob and grep honor .gitignore)
    近 N 日（旧到新；**缺日照列 0**——趋势连续性比稀疏诚实）；`zgo
    usage --days=N` 打印每日总量 + 迷你条形（▮▯ 按最大日比例，20 格）。
    窗口外文件不入；只读聚合不改 Day 状态。
+91. 遥测开关（ZCode telemetry 的 Zgo 化）：settings.telemetry
+   （enabled/exporter/endpoint，**默认关**——关闭即 nil tracer 零开
+   销）。开启后主循环产生 span 链——agent.turn（根：session/工作区/
+   模型/停止原因）、model.call（模型/回合/重试数/三段 token，失败带
+   脱敏错误）、tool.call（工具名与成败；**参数与输出永不进遥测**——
+   内容可能携带密钥/用户数据）、session.compact（保留尾部/摘要规模，
+   手动与自动压缩都覆盖）。导出器 file（默认，dataDir/traces/
+   trace-YYYYMMDD.jsonl 按日追加）或 otlp（OTLP/HTTP JSON POST 到
+   endpoint/v1/traces；无 endpoint 落回 file）。属性与错误文案过密
+   钥打码（规则 73 同源红线）；**导出失败只计数丢弃（Dropped），绝不
+   重试或阻塞 agent**。zgo config telemetry.enabled/exporter/endpoint
+   三键即时生效（rewire 重建 tracer）。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
