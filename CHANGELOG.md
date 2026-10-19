@@ -2,6 +2,43 @@
 
 约定式提交驱动的里程碑摘要；每一行都对应一个经完整验证与 PR 评审的变更。
 
+## v0.9.0 — 语义工具、索引加速与密钥闭环
+
+- **gopls 语义工具**（#263/#265）：definition/references/diagnostics
+  三工具（符号语义——同名方法/注释/字符串不误报，grep 给不出的精
+  度）；edit/write 成功回执回灌该文件即时诊断（错误直接带回模型自
+  纠）。常驻 daemon 走 LSP JSON-RPC（initialize 只付一次，冷启摊
+  平）；位置编码协商 utf-8、老 gopls 缺省 utf-16 按行内容双向换算；
+  崩溃透明重启、失败退 CLI 子进程。
+- **跨会话搜索索引**（#267，性能路线）：重放态文本段持久化
+  search-index.json，(size, mtime) 增量保鲜（未变会话零文件读）；
+  查询不再逐行解析全部 JSONL；超限/损坏会话退 live 扫描——两路径
+  同一抽取语义，命中与片段按构造等价。
+- **密钥打码闭环**（#269/#270）：红线「API key 不进会话 JSONL/不在
+  界面回显」全链路落地——agent loop 工具结果咽喉点统一打码（事件/
+  wire/JSONL/导出/搜索索引一处收敛）；精确密钥（活动+剖面+OAuth，
+  长者优先）+ 高置信模式族（sk-ant/sk-/gh?_/AKIA/AIza/JWT）双面；
+  `zgo sessions sanitize` 清洗历史转录（默认 dry-run，--apply 原子
+  重写，未触及行字节不动）。
+- **自定义子代理**（#259）：`.zgo/agents/*.md` 定义 persona（两层
+  平铺，同名工作区优先）；task/dispatch 增 agent 参数（命中走
+  persona、白名单收窄工具面）；可用清单注入主系统提示。
+- **内置技能层**（#268）：bundled skills 随二进制 go:embed 发行——
+  skill-creator / go-testing / debug-methodically 三个起步；三层根
+  （工作区 > 全局 > 内置，同名即覆盖）；未授信工作区同样可用。
+- **MCP Streamable HTTP**（#266）：传输矩阵补齐 2025-03 规范——
+  远端服务器不再依赖本地子进程；与 stdio 同一 mcp_ 前缀接入。
+- **MCP 启动异步**（#258，性能路线）：New 不再等握手（20s 超时曾把
+  每个 zgo 命令卡满）；显式重载仍同步；顺带修异步启动暴露的
+  mcpServers 裸读竞态（CI -race 逮到）。
+- **provider profiles**（#261）：`/provider` 切换命名 API 剖面（多
+  账号/多端点一键换），key 与主设置同一条脱敏边界。
+- **剪贴板贴图**（#260）：composer Ctrl+V 直接贴截图（DIB→PNG，
+  降级走 📎 选择器）——截图进上下文零摩擦。
+- **Stop/Notification 命令钩子**（#264）：stop 在回合自然收尾触发
+  （exit 2 阻止收尾、输出作为原因注入续跑）；notification 在权限
+  询问即将阻塞时触发（headless/TUI 接系统通知的挂点）。
+
 ## v0.8.0 — 能力广度与安全边界
 
 - **后台子代理四件套**（#237/#239/#249/#252）：agent（启动即返 ID、父
