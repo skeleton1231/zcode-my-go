@@ -4,6 +4,7 @@ package service
 // 跨天重置、cron 调度同闸（scheduleRunner 走 Chat 入口）。
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -112,4 +113,89 @@ func TestDayResetFreesFuse(t *testing.T) {
 	if fresh.Total() != 0 {
 		t.Fatal("fresh day not zero")
 	}
+}
+
+// TestSubagentUsageRecordedAndFused（spec 规则 87）：子代理用量入当日
+// 记账（此前对记账/熔断完全不可见）；熔断后子代理启动被拒。
+func TestSubagentUsageRecordedAndFused(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	svc.DisableAutoTitleForTesting()
+	svc.DisableAutoMemoryForTesting()
+	if err := svc.SetBudgetDailyTokens(100_000); err != nil {
+		t.Fatal(err)
+	}
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 脚本：回合 1 模型发 task 调用 → 子代理脚本（用量 3000）→ 文本
+	// 收尾；回合 2 文本。
+	p := &taskScriptProvider{turns: []string{"", "主回合收尾", "第二回合"}}
+	svc.UseProviderForTesting(func() ai.Provider { return p })
+
+	before, _ := svc.DailyUsage()
+	if err := svc.Chat(info.ID, "调查一下", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := svc.DailyUsage()
+	if after-before < 3000 {
+		t.Fatalf("subagent usage not recorded: %d -> %d", before, after)
+	}
+
+	// 熔断：灌满记账后子代理启动被拒。
+	if err := svc.SetHardBudgetStop(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.day.Add(100_000); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Chat(info.ID, "再调查", func(agent.Event) {}); err == nil ||
+		!strings.Contains(err.Error(), "硬预算") {
+		t.Fatalf("fused main turn should be rejected: %v", err)
+	}
+}
+
+// taskScriptProvider：第 1 请求回 task 工具调用（子代理消耗脚本回合
+// 2 的用量），子代理后主循环回文本。
+type taskScriptProvider struct {
+	mu    int
+	turns []string
+}
+
+func (p *taskScriptProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	p.mu++
+	n := p.mu
+	out := make(chan ai.StreamEvent, 4)
+	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	if n == 1 {
+		out <- ai.StreamEvent{Kind: ai.EvToolCallStart, ToolCallID: "call_task_1", ToolCallName: "task"}
+		out <- ai.StreamEvent{Kind: ai.EvToolCallDelta, ToolCallID: "call_task_1",
+			ToolCallArgs: `{"prompt":"查一下"}`}
+	} else if n == 2 {
+		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "子代理结论"}
+		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn,
+			Usage: ai.Usage{InputTokens: 2000, OutputTokens: 1000}}
+		return closeAndReturn(out)
+	} else {
+		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: p.turns[min(n-1, len(p.turns)-1)]}
+	}
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	close(out)
+	return out
+}
+
+func closeAndReturn(out chan ai.StreamEvent) chan ai.StreamEvent {
+	close(out)
+	return out
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -27,6 +27,10 @@ type SubtaskConfig struct {
 type SubtaskResult struct {
 	Text  string // final assistant message
 	Turns int
+	// Usage 是本次子任务运行的用量总计（spec 规则 87：子代理烧的钱
+	// 此前对当日记账/硬预算熔断完全不可见——回合内 nested loop 的
+	// usage 只进临时会话随运行丢弃）。resume 形态是单次运行量。
+	Usage ai.Usage
 }
 
 // RunSubtask runs a nested agent loop to completion and returns its final
@@ -65,6 +69,7 @@ func RunSubtaskSeeded(ctx context.Context, cfg SubtaskConfig, prior []ai.Message
 		maxTurns = 20
 	}
 	turns := 0
+	var runUsage ai.Usage
 	loop := NewLoop(LoopConfig{
 		Provider:    cfg.Provider,
 		Model:       cfg.Model,
@@ -79,6 +84,9 @@ func RunSubtaskSeeded(ctx context.Context, cfg SubtaskConfig, prior []ai.Message
 		if ev.Kind == EvTurnStart {
 			turns++
 		}
+		if ev.Kind == EvMessageEnd {
+			runUsage = ev.Usage // 末值即本次运行总计
+		}
 	})
 	stop := loop.Run(ctx, appendMessage)
 
@@ -87,7 +95,7 @@ func RunSubtaskSeeded(ctx context.Context, cfg SubtaskConfig, prior []ai.Message
 		if history[i].Role == ai.RoleAssistant {
 			text := strings.TrimSpace(history[i].Text())
 			if text != "" {
-				return SubtaskResult{Text: text, Turns: turns}, history, nil
+				return SubtaskResult{Text: text, Turns: turns, Usage: runUsage}, history, nil
 			}
 		}
 	}
