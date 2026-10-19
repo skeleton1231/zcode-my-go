@@ -55,9 +55,13 @@ func runAudit(argv []string) int {
 		if e.IsError {
 			mark = "ERR"
 		}
-		fmt.Printf("%s %s %-10s %5dms %s [%s]\n",
+		dec := ""
+		if e.Decision != "" {
+			dec = " <" + e.Decision + ">"
+		}
+		fmt.Printf("%s %s %-10s %5dms%s %s [%s]\n",
 			e.Time.Format("01-02 15:04:05"), shortAuditSession(e.SessionID), e.Tool,
-			e.Duration, e.Args, mark)
+			e.Duration, dec, e.Args, mark)
 	}
 	return 0
 }

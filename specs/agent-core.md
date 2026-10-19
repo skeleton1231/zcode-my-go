@@ -813,6 +813,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    维度有参数。`zgo audit` 最近 20 条（时间/工具/摘要/成败/耗时）；
    --days=N 按日汇总；--on/--off 写设置键。权限决策维度暂不记
    （gate 决策未透出——spec 如实注明，后续可扩）。
+（规则 101 = 信任前预览，见待并 #308。）
+102. 审计的权限决策维度（规则 100 注明的缺口收口）：审计条目带
+   decision 标签——rule:<id>（项目/会话规则放行）、capability（只读
+   能力升级，含 bash 命令级只读判定）、ask:granted / ask:granted-
+   always（用户确认，always 同时落会话规则）、ask:denied（用户拒
+   绝，IsError）、deny:<id>（规则拒绝）、ask:no-channel（无确认通道
+   保守拒绝）、bypass（权限系统未启用）；空 = 无权限决策路径（未知
+   工具 / hook 拦截 / token 截断）。决策经 gate → execute → executeOne
+   返回值穿线（并行批次无共享字段竞态）。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒

@@ -2489,7 +2489,7 @@ func (s *AgentService) auditHook() func(agent.AuditEvent) {
 		}
 		log.Record(audit.Entry{
 			Time: time.Now(), SessionID: ev.SessionID, Workspace: ev.Workspace,
-			Tool: ev.Tool, Args: ev.Args,
+			Tool: ev.Tool, Args: ev.Args, Decision: ev.Decision,
 			IsError: ev.IsError, Duration: ev.Duration.Milliseconds(),
 		})
 	}

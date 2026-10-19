@@ -107,8 +107,13 @@ type AuditEvent struct {
 	Workspace string
 	Tool      string
 	Args      string
-	IsError   bool
-	Duration  time.Duration
+	// Decision 是权限决策标签（spec 规则 102）：rule:<id> / capability /
+	// ask:granted / ask:granted-always / ask:denied / deny:<id> /
+	// ask:no-channel / bypass；空 = 该路径没有权限决策（如未知工具、
+	// hook 拦截、token 截断）。
+	Decision string
+	IsError  bool
+	Duration time.Duration
 }
 
 // Loop runs agent turns over a transcript sink.
@@ -329,28 +334,37 @@ func retryWait(retryAfterMS int, base time.Duration, retries int) time.Duration 
 
 // execute runs one tool call and reports its outcome through events. The
 // permission gate runs first: a denial never reaches the tool.
-func (l *Loop) execute(ctx context.Context, turn int, msg ai.Message, call ai.Block) ToolResult {
+// execute 运行一次调用并连同权限决策标签返回（决策进审计，spec 规
+// 则 102；返回值穿线避免并行批次的共享字段竞态）。
+func (l *Loop) execute(ctx context.Context, turn int, msg ai.Message, call ai.Block) (ToolResult, string) {
 	l.emit(Event{Kind: EvToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name,
 		Args: call.Arguments, TurnIndex: turn})
 
 	var result ToolResult
+	decision := ""
 	tool, ok := l.tool(call.Name)
 	if !ok {
 		result = ToolResult{IsError: true, Content: "error: unknown tool " + call.Name}
-	} else if blocked := l.gate(call, tool); blocked != nil {
-		result = *blocked
-	} else if blocked := l.beforeHook(msg, call); blocked != nil {
-		result = *blocked
 	} else {
-		args := strings.TrimSpace(call.Arguments)
-		if args == "" {
-			args = "{}"
+		// 决策标签无论放行与否都要进审计（spec 规则 102）——放行路
+		// 径（rule/capability）在 else-if 链里会丢，先取出再分支。
+		gblocked, gdec := l.gate(call, tool)
+		decision = gdec
+		if gblocked != nil {
+			result = *gblocked
+		} else if hb := l.beforeHook(msg, call); hb != nil {
+			result = *hb
+		} else {
+			args := strings.TrimSpace(call.Arguments)
+			if args == "" {
+				args = "{}"
+			}
+			result = tool.Execute(ctx, []byte(args))
+			if result.Content == "" && !result.IsError {
+				result.Content = "(no output)"
+			}
+			result = l.afterHook(msg, call, result)
 		}
-		result = tool.Execute(ctx, []byte(args))
-		if result.Content == "" && !result.IsError {
-			result.Content = "(no output)"
-		}
-		result = l.afterHook(msg, call, result)
 	}
 
 	// 密钥打码（spec 规则 73）：工具结果的唯一出咽喉点——事件、wire、
@@ -361,7 +375,7 @@ func (l *Loop) execute(ctx context.Context, turn int, msg ai.Message, call ai.Bl
 
 	l.emit(Event{Kind: EvToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name,
 		IsError: result.IsError, ResultContent: result.Content, Diff: result.Diff, TurnIndex: turn})
-	return result
+	return result, decision
 }
 
 // executeBatch runs one turn's tool calls and returns the result blocks
@@ -386,18 +400,19 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 	span := l.turnSpan.Child("tool.call").SetAttr("tool", call.Name)
 	started := time.Now()
 	var result ToolResult
+	decision := ""
 	if stop == ai.StopLength {
 		result = ToolResult{IsError: true, Content: "error: the response hit the token " +
 			"limit before the tool arguments finished; re-issue the call in full"}
 	} else {
-		result = l.execute(ctx, turn, msg, call)
+		result, decision = l.execute(ctx, turn, msg, call)
 	}
 	// 审计（spec 规则 100）：每次工具执行一条——参数摘要（bash 命令
 	// 全文/写类目标路径）+ 成败 + 耗时；打码在 audit 包内。
 	if l.cfg.Audit != nil {
 		l.cfg.Audit(AuditEvent{
 			SessionID: l.cfg.SessionID, Workspace: l.cfg.Workspace,
-			Tool: call.Name, Args: auditArgs(call),
+			Tool: call.Name, Args: auditArgs(call), Decision: decision,
 			IsError: result.IsError, Duration: time.Since(started),
 		})
 	}
@@ -573,9 +588,12 @@ func (l *Loop) afterHook(msg ai.Message, call ai.Block, result ToolResult) ToolR
 
 // gate checks the permission system for a call. A nil result means the call
 // may run; a non-nil one is the blocked outcome to report.
-func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
+// gate 检查一次调用的权限；第二返回值是决策标签（spec 规则 102：
+// 审计维度——"rule:<id>"/"capability"/"ask:granted"/"ask:granted-always"/
+// "ask:denied"/"deny:<id>"/"bypass"，空 = 该路径无权限决策）。
+func (l *Loop) gate(call ai.Block, tool Tool) (*ToolResult, string) {
 	if l.cfg.Permissions == nil {
-		return nil // 未启用权限系统：完全旁路（v0.2 行为）
+		return nil, "bypass" // 未启用权限系统：完全旁路（v0.2 行为）
 	}
 	argsLine := SummarizeArgs(nilIfEmpty(call.Arguments))
 	decision := l.cfg.Permissions.Check(
@@ -583,13 +601,16 @@ func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
 		capabilityFor(tool, string(call.Arguments)))
 	switch decision.Behavior {
 	case permission.Allow:
-		return nil
+		if decision.Escalated {
+			return nil, "capability"
+		}
+		return nil, "rule:" + decision.RuleID
 	case permission.Deny:
 		return blocked("denied by rule "+decision.RuleID+"（"+decision.Reason+"）",
-			"换一种做法，或请用户调整权限规则")
+			"换一种做法，或请用户调整权限规则"), "deny:" + decision.RuleID
 	case permission.Ask:
 		if l.cfg.Ask == nil {
-			return blocked("no approval channel", "当前没有确认通道，保守起见拒绝执行")
+			return blocked("no approval channel", "当前没有确认通道，保守起见拒绝执行"), "ask:no-channel"
 		}
 		preview := ""
 		if pd, ok := tool.(PreviewDiffer); ok {
@@ -605,16 +626,17 @@ func (l *Loop) gate(call ai.Block, tool Tool) *ToolResult {
 			if resp.Always {
 				l.cfg.Permissions.GrantSession(
 					permission.RuleForTool(call.Name, argsLine))
+				return nil, "ask:granted-always"
 			}
-			return nil
+			return nil, "ask:granted"
 		}
 		note := resp.Note
 		if note == "" {
 			note = "请换一种做法，或说明你需要这次操作的理由"
 		}
-		return blocked("用户拒绝了这次调用", note)
+		return blocked("用户拒绝了这次调用", note), "ask:denied"
 	}
-	return nil
+	return nil, ""
 }
 
 func blocked(reason, guidance string) *ToolResult {
