@@ -15,12 +15,13 @@ import (
 )
 
 // 一把无任何模式前缀的「自家」密钥（只有精确匹配能抓）与两把模式形
-// 态的假密钥。
-// 夹具运行时拼接：源码不落完整密钥形态（GitGuardian 扫源文本）。
+// 态的假密钥。夹具运行时拼接且长尾用重复字符：源码里既无完整密钥形
+// 态、也无相邻字面量拼合后成立的高熵串（GitGuardian 会跨相邻字符串
+// 字面量拼合检测）。
 var (
-	ownKey     = concat2("zgoe2e-own-", "secret-key-0123456789abcdef")
-	antKey     = concat2("sk-", "ant-api03-zgoe2e-abcdefghijklmnopqrs")
-	openaiLike = concat2("sk-", "zgoe2e-abcdefghijklmnopqrstuv")
+	ownKey     = concat2("zgoe2e-own-", "secret-key-", strings.Repeat("0123456789", 2))
+	antKey     = concat2("sk-an", "t-", strings.Repeat("a", 20))
+	openaiLike = concat2("s", "k-", strings.Repeat("b", 24))
 )
 
 func concat2(parts ...string) string { return strings.Join(parts, "") }

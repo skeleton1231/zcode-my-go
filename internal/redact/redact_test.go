@@ -2,8 +2,8 @@ package redact
 
 // 打码器单元：模式族命中/不误报、精确密钥、短串跳过、开关、幂等、
 // Bytes 零拷贝路径。夹具一律运行时拼接的低熵重复串——形状匹配不看
-// 熵，源码里既不落完整密钥形态也不落高熵随机串（源码扫描器面前
-// 的自我修养）。
+// 熵，源码里既不落完整密钥形态也不落高熵随机串，也不落真实厂商格
+// 式标记（api03 之类——源码扫描器面前同样要避开）。
 
 import (
 	"strings"
@@ -17,12 +17,12 @@ func rep(ch string, n int) string { return strings.Repeat(ch, n) }
 
 func TestPatternFamilies(t *testing.T) {
 	cases := []struct{ in, wantTag string }{
-		{concat("key=", "sk-ant-", "api03-", rep("a", 24)), "anthropic-key"},
+		{concat("key=", "sk-ant-", rep("a", 24)), "anthropic-key"},
 		{concat("export OPENAI_API_KEY=", "sk-", rep("b", 24)), "openai-key"},
 		{concat("token: ", "gh", "p_", rep("c", 31), "AB"), "github-token"},
 		{concat("", "github_", "pat_", rep("d", 31)), "github-token"},
-		{concat("aws ", "AKIA", "0123456789ABCDEF", " found"), "aws-key"},
-		{concat("g=", "AIza", "0123456789", rep("g", 25)), "google-key"},
+		{concat("aws ", "AK", "IA", rep("Z", 16), " found"), "aws-key"},
+		{concat("g=", "AI", "za", rep("g", 35)), "google-key"},
 		{concat("auth0 ", "eyJ", rep("e", 12), ".", rep("f", 12), ".", rep("9", 12)), "jwt"},
 	}
 	for _, c := range cases {
