@@ -366,6 +366,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    解耦、WaitGroup 落地）；「无持久事实」不写；settings.autoMemory
    默认开可关。
 
+**@目录 引用展开**（spec 规则 76，@引用 的目录形态）：@目录 展开
+   为有界目录树（深度 3/条目 400/单树 32KB，超限截断标注）；目录尾
+   斜杠+两层缩进；与文本引用共享总量预算；SSH 远程同构。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，

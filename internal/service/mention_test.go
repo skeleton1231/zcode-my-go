@@ -161,3 +161,82 @@ func TestMentionFenceSurvivesMarkdown(t *testing.T) {
 		t.Fatalf("fence lines %d < 2 in:\n%s", n, out)
 	}
 }
+
+// TestExpandMentionsDirTree（spec 规则 76）：@目录 展开为有界目录树
+// ——嵌套层级缩进、目录带尾斜杠、文件+目录混排、深度上限静默、超限
+// 截断标注；与文本引用共享总量预算。
+func TestExpandMentionsDirTree(t *testing.T) {
+	svc, id, ws := mentionEnv(t)
+	write := func(name string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(ws, filepath.FromSlash(name))), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(ws, filepath.FromSlash(name)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("src/a.go")
+	write("src/b/util.go")
+	write("src/b/c/deep.go")     // 第 3 层文件
+	write("src/b/c/d/deeper.go") // 第 4 层：深度上限外
+	write("top.md")
+
+	msgs := svc.expandForTest(id, "看下 @src 和 @top.md")
+	out := msgs
+	if !strings.Contains(out, "src/（目录树") || !strings.Contains(out, "a.go") ||
+		!strings.Contains(out, "b/") || !strings.Contains(out, "deep.go") {
+		t.Fatalf("dir tree missing entries:\n%s", out)
+	}
+	if strings.Contains(out, "deeper.go") {
+		t.Fatalf("depth cap leaked level 4:\n%s", out)
+	}
+	// 缩进：b/ 下的文件比 src/ 下多一层缩进。
+	if !strings.Contains(out, "\n  util.go") {
+		t.Fatalf("indent missing:\n%s", out)
+	}
+	// 文件引用照常（围栏内容）。
+	if !strings.Contains(out, "@top.md：") {
+		t.Fatalf("file mention broken:\n%s", out)
+	}
+}
+
+// TestExpandMentionsDirEntryCap：条目超限截断并标注。
+func TestExpandMentionsDirEntryCap(t *testing.T) {
+	svc, id, ws := mentionEnv(t)
+	dir := filepath.Join(ws, "many")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < mentionDirEntries+50; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%04d.txt", i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := svc.expandForTest(id, "扫 @many")
+	if !strings.Contains(out, "截断") {
+		t.Fatalf("entry cap not annotated:\n%.200s", out)
+	}
+}
+
+// TestExpandMentionsEmptyDirSkipped：空目录/不可读目录不产生展开（引
+// 用保留原样，不产出空树块）。
+func TestExpandMentionsEmptyDirSkipped(t *testing.T) {
+	svc, id, ws := mentionEnv(t)
+	if err := os.MkdirAll(filepath.Join(ws, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := svc.expandForTest(id, "看 @empty")
+	if strings.Contains(out, "目录树") {
+		t.Fatalf("empty dir expanded:\n%s", out)
+	}
+	if !strings.Contains(out, "@empty") {
+		t.Fatalf("mention token lost:\n%s", out)
+	}
+}
+
+// expandForTest 是 expandMentions 的文本半边便捷面（测试专用）。
+func (s *AgentService) expandForTest(sessionID, text string) string {
+	out, _ := s.expandMentions(sessionID, text, nil)
+	return out
+}
