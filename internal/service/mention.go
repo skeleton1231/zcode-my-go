@@ -19,6 +19,13 @@ import (
 // （spec 规则 81）：@path:lo-hi / @path:lo（单行）——只带相关段。
 var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9_./\\-]+(?::[0-9]+(?:-[0-9]+)?)?)`)
 
+// sessionMentionPattern 匹配 @session:<前缀>（spec 规则 97）：跨会话
+// 引用——前缀走 ResolveSession 的唯一前缀解析。与行范围语法不相交
+// （行范围冒号后是数字，session 前缀是字母数字下划线连字符）。
+// 字符集含点：会话 ID 是纳秒时间戳形态（20261019T185848.201967300）
+// ——漏点会把前缀截到秒级造成同秒歧义。
+var sessionMentionPattern = regexp.MustCompile(`@session:([A-Za-z0-9_.-]+)`)
+
 // Mention caps：文本引用与 read 工具同上限；图片引用与附件同上限
 // （会话持久化层另有 6MB 总量兜底，issue #105）。
 const (
@@ -35,6 +42,10 @@ const (
 	mentionDirDepth   = 3
 	mentionDirEntries = 400
 	mentionDirTextCap = 32 << 10
+	// 会话引用（spec 规则 97）的上限：最近 20 条对话、单引用 30KB
+	//（预算与文本引用共享 mentionTotalCap）。
+	mentionSessionMsgs = 20
+	mentionSessionCap  = 30 << 10
 )
 
 // expandMentions 把消息里的 @路径 引用展开（specs/agent-core 规则 11）：
@@ -55,6 +66,27 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 	var expansions []string
 	skipped, total := 0, 0
 	out := text
+	// 会话引用（spec 规则 97）先行：@session:<前缀> 展开为该会话最近
+	// 对话的有界摘录；未解析/自引用/超预算则引用原样留给模型。
+	for _, m := range sessionMentionPattern.FindAllStringSubmatch(text, -1) {
+		prefix := m[1]
+		if seen["session:"+prefix] {
+			continue
+		}
+		seen["session:"+prefix] = true
+		excerpt := s.sessionExcerpt(sessionID, prefix)
+		if excerpt == "" {
+			continue
+		}
+		if len(expansions) >= mentionMaxFiles || total+len(excerpt) > mentionTotalCap {
+			skipped++
+			continue
+		}
+		total += len(excerpt)
+		fence := exporthtml.FenceFor(excerpt)
+		expansions = append(expansions, fmt.Sprintf("@session:%s 的最近对话：\n%s\n%s\n%s",
+			prefix, fence, excerpt, fence))
+	}
 	for _, m := range mentionPattern.FindAllStringSubmatch(text, -1) {
 		rel, lo, hi := splitMentionRange(m[1])
 		dedup := rel
@@ -323,4 +355,43 @@ func atoi(s string) int {
 		}
 	}
 	return n
+}
+
+// sessionExcerpt 渲染被引用会话的最近对话（spec 规则 97）：尾部
+// mentionSessionMsgs 条、rune 截断到 mentionSessionCap；引用自身或前
+// 缀未解析返回空（调用方保留原 token 给模型）。
+func (s *AgentService) sessionExcerpt(selfID, prefix string) string {
+	id, ok := s.ResolveSession(prefix)
+	if !ok || id == selfID {
+		return ""
+	}
+	sess, ok := s.mgr.Get(id)
+	if !ok {
+		return ""
+	}
+	msgs := sess.Messages()
+	if len(msgs) > mentionSessionMsgs {
+		msgs = msgs[len(msgs)-mentionSessionMsgs:]
+	}
+	var b strings.Builder
+	for _, m := range msgs {
+		role := "user"
+		if m.Role == ai.RoleAssistant {
+			role = "assistant"
+		} else if m.Role != ai.RoleUser {
+			continue // 工具结果/系统行不进摘录
+		}
+		txt := m.Text()
+		if txt == "" {
+			continue
+		}
+		b.WriteString(role)
+		b.WriteString(": ")
+		b.WriteString(txt)
+		b.WriteString("\n")
+		if r := []rune(b.String()); len(r) > mentionSessionCap {
+			return string(r[:mentionSessionCap]) + "\n…（截断）"
+		}
+	}
+	return b.String()
 }
