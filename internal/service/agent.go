@@ -74,6 +74,9 @@ type settings struct {
 	// RedactSecrets 开关工具输出的密钥打码（spec 规则 73；nil = 默认
 	// 开——逃生口供需要原样输出的场景，如生成测试夹具）。
 	RedactSecrets *bool `json:"redactSecrets,omitempty"`
+	// AutoMemory 开关会话记忆自动化（spec 规则 74；nil = 默认开——
+	// 服务收尾为有实质回合的会话提炼一次持久事实进工作区记忆）。
+	AutoMemory *bool `json:"autoMemory,omitempty"`
 }
 
 // profile 是一个命名 API 剖面。
@@ -117,6 +120,10 @@ type AgentService struct {
 	refreshMu        sync.Mutex                 // OAuth 刷新 single-flight（issue #136）
 	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
 	autoTitleOn      bool                       // 首回合后自动命名（默认开）
+	autoMemoryOn     bool                       // 收尾自动记忆（默认开，spec 规则 74）
+	memFired         map[string]bool            // 记忆已发会话（每会话每进程一次）
+	memMu            sync.Mutex                 // memFired 的守卫
+	memWG            sync.WaitGroup             // 记忆 goroutine 的收束（Close 等待）
 	day              *usage.Day                 // 当日 token 记账（spec 规则 35）
 	titleWG          sync.WaitGroup             // 命名 goroutine 的收束（Close 等待）
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
@@ -130,21 +137,27 @@ type AgentService struct {
 // New builds the service: loads settings, loads sessions, wires the loop.
 func New(dataDir string) (*AgentService, error) {
 	s := &AgentService{
-		path:        filepath.Join(dataDir, "settings.json"),
-		states:      map[string]*tools.States{},
-		memories:    map[string]*tools.Memory{},
-		memRoot:     filepath.Join(dataDir, "memory"),
-		wsCache:     map[string]tools.Workspace{},
-		wsClose:     map[string]func(){},
-		autoTitleOn: true,
-		wfStore:     workflow.NewStore(dataDir),
-		trustStore:  trust.NewStore(dataDir),
-		searchIdx:   sessionidx.Load(filepath.Join(dataDir, "search-index.json")),
+		path:         filepath.Join(dataDir, "settings.json"),
+		states:       map[string]*tools.States{},
+		memories:     map[string]*tools.Memory{},
+		memRoot:      filepath.Join(dataDir, "memory"),
+		wsCache:      map[string]tools.Workspace{},
+		wsClose:      map[string]func(){},
+		autoTitleOn:  true,
+		autoMemoryOn: true,
+		memFired:     map[string]bool{},
+		wfStore:      workflow.NewStore(dataDir),
+		trustStore:   trust.NewStore(dataDir),
+		searchIdx:    sessionidx.Load(filepath.Join(dataDir, "search-index.json")),
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
 	s.syncRedaction(s.resolve())
+	// 会话记忆自动化开关（spec 规则 74）：nil = 默认开。
+	if off := s.resolve().AutoMemory; off != nil && !*off {
+		s.autoMemoryOn = false
+	}
 	// edit/write 诊断回灌（spec 规则 67/69）：gopls 在位即接线（daemon
 	// 版——编辑后显式失效再拉取，busy/缺位退 CLI 子进程），缺位静默
 	// 跳过（回执无尾部，行为与既往一致）。
@@ -330,6 +343,11 @@ func (s *AgentService) Close() {
 	// sessionStart 钩子由 Close 收束（spec 规则 24）：外部命令可达 10s
 	// 超时，退出前等它跑完，避免钩子进程活过服务。
 	s.hookWG.Wait()
+	// 会话记忆自动化（spec 规则 74）：收尾为有实质回合的会话提炼一
+	// 次持久事实——在 provider/MCP 拆卸前发、落地后才继续（记忆是
+	// 增益：任何失败记日志不阻塞退出）。
+	s.fireAutoMemory()
+	s.memWG.Wait()
 	// sessionEnd 钩子对全部存活会话同步跑一次（观察者；退出前唯一机
 	// 会），随后才拆工作区连接。
 	for _, info := range s.mgr.List() {
@@ -2460,3 +2478,22 @@ func (f remoteTooldefsFS) ReadDir(dir string) ([]tooldefs.DirEntry, error) {
 	}
 	return out, nil
 }
+
+// SetAutoMemory 切换会话记忆自动化并落盘（spec 规则 74；zgo config 面）。
+func (s *AgentService) SetAutoMemory(on bool) error {
+	s.mu.Lock()
+	s.settings.AutoMemory = &on
+	_, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.autoMemoryOn = on
+	}
+	return err
+}
+
+// DisableAutoMemoryForTesting 关闭收尾自动记忆（e2e 脚本 provider 按
+// 回合数断言——Close 时点的额外补全会打破计数；专测自行开启）。
+func (s *AgentService) DisableAutoMemoryForTesting() { s.autoMemoryOn = false }
+
+// AutoMemoryEnabled 报告收尾自动记忆开关（spec 规则 74；缺省 = 开）。
+func (s *AgentService) AutoMemoryEnabled() bool { return s.autoMemoryOn }

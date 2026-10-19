@@ -118,3 +118,25 @@ func TestConfigRedactSecrets(t *testing.T) {
 		t.Fatal("restore true failed")
 	}
 }
+
+// TestConfigAutoMemory（spec 规则 74）：get 默认 true / set false 生效 /
+// 非法值拒绝。
+func TestConfigAutoMemory(t *testing.T) {
+	code, out := captureConfig(t, func() int { return runConfig([]string{"get", "autoMemory"}) })
+	if code != 0 || strings.TrimSpace(out) != "true" {
+		t.Fatalf("default should be on: %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "autoMemory", "false"}) }); code != 0 {
+		t.Fatal("set false failed")
+	}
+	code, out = captureConfig(t, func() int { return runConfig([]string{"get", "autoMemory"}) })
+	if code != 0 || strings.TrimSpace(out) != "false" {
+		t.Fatalf("after set: %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "autoMemory", "maybe"}) }); code == 0 {
+		t.Fatal("non-bool accepted")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "autoMemory", "true"}) }); code != 0 {
+		t.Fatal("restore true failed")
+	}
+}

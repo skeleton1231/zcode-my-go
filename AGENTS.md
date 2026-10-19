@@ -72,12 +72,14 @@ internal/agents       自定义子代理定义（.zgo/agents/*.md 发现与 pers
 internal/tooldefs    自定义工具定义（.zgo/tools/*.md 命令模板 → 模型可调用工具，spec 规则 75）
 internal/agent/permission  权限系统（ZCode permission/ 翻译）
 internal/agent/compact    上下文压缩（ZCode compact/ 翻译）
+
 internal/tools        内置工具：read/write/edit/bash/grep/glob/ls/apply_patch/webfetch/
                       agent 四件套（后台子代理 spawn/output/stop/send 续话）
                       todo/ask/memory/task/dispatch/workflow
 internal/prompt       系统提示（环境、git、项目上下文文件）
 internal/redact      工具输出密钥打码（精确密钥+高置信模式族，loop 咽喉点统一过）
 internal/sessionidx  跨会话搜索索引（重放态文本段 + mtime/size 增量 + 超限退扫描）
+internal/service      收尾自动记忆（auto-memory：Close 时提炼持久事实进工作区记忆，spec 规则 74）
 internal/service      AgentService：UI 唯一入口（设置、会话、Chat 回调、
                       权限/提问通道、压缩入口）
 internal/uiapp        native UI：chatState 折叠 + App 视图 + 弹窗

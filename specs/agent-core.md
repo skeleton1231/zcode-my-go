@@ -575,12 +575,26 @@ dc907a4 (feat: glob and grep honor .gitignore)
    --apply 原子重写（tmp + rename）；幂等（再跑零改写）；密钥面与
    打码器同源（当前设置的精确密钥 + 模式族）。
 
-75. 自定义工具（.zgo/tools；74 为待合并的会话记忆自动化预留）：
-   commands/skills/agents 家族第四员——把固定命令流程包装成模型可
-   调用的工具。定义是 frontmatter（name/description 必填）+ 正文命
-   令模板（$ARGUMENTS 占位；无占位符时参数追加在尾部——固定命令 +
-   可选参数两形态都成立）；发现两层平铺（工作区 `.zgo/tools/*.md`
-   覆盖全局 `~/.zgo/tools/*.md`，SSH 经网线）；描述 ≤1K、模板 ≤16KB。
+74. 会话记忆自动化（Claude Code auto-memory 的形态）：服务收尾
+   （Close）时为有实质回合（首用户+助手问答都在）的会话跑一次小额
+   补全（MaxTokens 192 / 15s 超时 / 同 provider），提炼「对未来会话
+   有价值的持久事实」（用户偏好/项目约定/关键决定/重要路径），
+   ≤3 行、每行 ≤120 rune、用户语言；「无持久事实」（纯问答/一次性
+   任务）回复 none 即不写——不堆噪音。落盘走既有 workspace 记忆
+   （memoryFor.Append 带时间戳条目；注入面 4KB 尾部窗口不变）。
+   护栏：每会话每进程一次（内存 done 集）；工作区当日已有条目即跳
+   过（重启重放最多一天一条）；触发点在 Close 且与自动命名解耦
+   （两次后台补全并发会在脚本 provider 上交错不可测）——provider/
+   MCP 拆卸前发、WaitGroup 落地后继续；失败记日志静默（记忆是增益
+   不是账本）。开关 settings.autoMemory（默认开；zgo config set
+   ——token 成本敏感用户的逃生口）。
+
+75. 自定义工具（.zgo/tools）：commands/skills/agents 家族第四员
+   ——把固定命令流程包装成模型可调用的工具。定义是 frontmatter
+   （name/description 必填）+ 正文命令模板（$ARGUMENTS 占位；无占位
+   符时参数追加在尾部——固定命令 + 可选参数两形态都成立）；发现两
+   层平铺（工作区 `.zgo/tools/*.md` 覆盖全局 `~/.zgo/tools/*.md`，
+   SSH 经网线）；描述 ≤1K、模板 ≤16KB。
    执行完全复用 bash 通道（超时/输出上限/权限门/path jail/远程同构/
    cwd 哨兵）——**权限按渲染后的最终命令判定**（只读探测看到的是
    真命令不是模板）；参数面单 string（args）。内置工具名优先：撞名
