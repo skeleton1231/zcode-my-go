@@ -38,6 +38,7 @@ type SessionInfo struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	Running   bool      `json:"running"`
 	Archived  bool      `json:"archived,omitempty"` // 组织态（spec 规则 82）：归档会话默认从列表/恢复隐藏
+	Pinned    bool      `json:"pinned,omitempty"`   // 组织态（spec 规则 86）：置顶会话在列表最前（组内时间序不变）
 }
 
 // Session is a conversation: a transcript persisted as JSONL plus run state.
@@ -485,6 +486,7 @@ type metaRecord struct {
 	Workspace string    `json:"workspace"`
 	CreatedAt time.Time `json:"createdAt"`
 	Archived  bool      `json:"archived,omitempty"`
+	Pinned    bool      `json:"pinned,omitempty"`
 }
 
 type messageRecord struct {
@@ -598,7 +600,7 @@ func (s *Session) writeMetaLocked() error {
 	rec, err := json.Marshal(metaRecord{
 		Type: recordMeta, ID: s.info.ID, Title: s.info.Title,
 		Workspace: s.info.Workspace, CreatedAt: s.info.UpdatedAt,
-		Archived: s.info.Archived,
+		Archived: s.info.Archived, Pinned: s.info.Pinned,
 	})
 	if err != nil {
 		return err
@@ -667,7 +669,7 @@ func loadMetaOnly(path string) (s *Session, err error) {
 		}
 		return &Session{path: path, loaded: false,
 			info: SessionInfo{ID: rec.ID, Title: rec.Title, Workspace: rec.Workspace,
-				UpdatedAt: mtime, Archived: rec.Archived},
+				UpdatedAt: mtime, Archived: rec.Archived, Pinned: rec.Pinned},
 			metaTitle: rec.Title}, nil
 	}
 	// 首行缺失/损坏/非 meta：退回全量。
@@ -717,6 +719,7 @@ func loadSession(path string) (*Session, error) {
 						s.info.Title = rec.Title
 						s.info.Workspace = rec.Workspace
 						s.info.Archived = rec.Archived
+						s.info.Pinned = rec.Pinned
 						s.metaTitle = rec.Title
 					}
 				case recordMessage:
@@ -970,7 +973,11 @@ func (m *Manager) List() []SessionInfo {
 	for _, s := range m.sessions {
 		infos = append(infos, s.Info())
 	}
-	sort.Slice(infos, func(i, j int) bool {
+	// 置顶组最前（spec 规则 86）；组内与普通组内均按更新时间新前。
+	sort.SliceStable(infos, func(i, j int) bool {
+		if infos[i].Pinned != infos[j].Pinned {
+			return infos[i].Pinned
+		}
 		return infos[i].UpdatedAt.After(infos[j].UpdatedAt)
 	})
 	return infos
@@ -1084,4 +1091,32 @@ func (m *Manager) SetArchivedById(id string, on bool) bool {
 		return false
 	}
 	return s.SetArchived(on) == nil
+}
+
+// SetPinned 切换置顶组织态（spec 规则 86）：meta 行重写持久；置顶只
+// 影响列表次序（置顶组内仍按更新时间新前），不改变内容/搜索/恢复。
+func (s *Session) SetPinned(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.info.Pinned == on {
+		return nil
+	}
+	old := s.info.Pinned
+	s.info.Pinned = on
+	if err := s.writeMetaLocked(); err != nil {
+		s.info.Pinned = old
+		return fmt.Errorf("persisting pin flag: %w", err)
+	}
+	return nil
+}
+
+// SetPinnedById 经 Manager 切换置顶（false = 未命中）。
+func (m *Manager) SetPinnedById(id string, on bool) bool {
+	m.mu.Lock()
+	s, ok := m.sessions[id]
+	m.mu.Unlock()
+	if !ok {
+		return false
+	}
+	return s.SetPinned(on) == nil
 }
