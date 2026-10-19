@@ -575,6 +575,20 @@ dc907a4 (feat: glob and grep honor .gitignore)
    --apply 原子重写（tmp + rename）；幂等（再跑零改写）；密钥面与
    打码器同源（当前设置的精确密钥 + 模式族）。
 
+74. 会话记忆自动化（Claude Code auto-memory 的形态）：服务收尾
+   （Close）时为有实质回合（首用户+助手问答都在）的会话跑一次小额
+   补全（MaxTokens 192 / 15s 超时 / 同 provider），提炼「对未来会话
+   有价值的持久事实」（用户偏好/项目约定/关键决定/重要路径），
+   ≤3 行、每行 ≤120 rune、用户语言；「无持久事实」（纯问答/一次性
+   任务）回复 none 即不写——不堆噪音。落盘走既有 workspace 记忆
+   （memoryFor.Append 带时间戳条目；注入面 4KB 尾部窗口不变）。
+   护栏：每会话每进程一次（内存 done 集）；工作区当日已有条目即跳
+   过（重启重放最多一天一条）；触发点在 Close 且与自动命名解耦
+   （两次后台补全并发会在脚本 provider 上交错不可测）——provider/
+   MCP 拆卸前发、WaitGroup 落地后继续；失败记日志静默（记忆是增益
+   不是账本）。开关 settings.autoMemory（默认开；zgo config set
+   ——token 成本敏感用户的逃生口）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

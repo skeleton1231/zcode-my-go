@@ -144,6 +144,9 @@ type Harness struct {
 func wire(t *testing.T, svc *service.AgentService, turns []Turn) *Script {
 	t.Helper()
 	svc.DisableAutoTitleForTesting()
+	// 收尾自动记忆（spec 规则 74）同样关闭：Close 时点的额外补全会
+	// 打破脚本回合计数；行为由 service 专测覆盖。
+	svc.DisableAutoMemoryForTesting()
 	script := &Script{turns: turns}
 	svc.UseProviderForTesting(func() ai.Provider { return script })
 	t.Cleanup(func() { svc.UseProviderForTesting(nil) })
