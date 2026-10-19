@@ -387,6 +387,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    RE2 线性、原大小写（(?i) 忽略）、坏模式报错自纠；正则不走索引
    （索引面小写化——语义保真 live 扫描）；子串形态不变。
 
+**@文件 行范围**（spec 规则 81）：@path:lo-hi 只带相关段——clamp/交换/
+   单行形态/围栏头注明实际范围；预算护栏照过；同文件多窗各自展开；
+   无范围形态不变。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
