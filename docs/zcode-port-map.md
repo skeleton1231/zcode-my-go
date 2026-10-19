@@ -447,6 +447,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    日 JSONL）或 otlp（OTLP/HTTP JSON）；错误与属性过密钥打码，导出失
    败只计数丢弃不阻塞 agent。
 
+**MCP 服务端模式**（spec 规则 92）：`zgo mcp serve [--all]` 把工具面
+   暴露成 stdio JSON-RPC 服务端（internal/mcpserver）——任何 MCP 客户
+   端（ZCode、Claude Code、Cursor）可直接调用 zgo 的 path-jail 工具。
+   默认只读四件（无确认通道的安全默认），--all 开全量；结果打码；客
+   户端↔服务端 dogfood（internal/mcp 拨号自重执行进程）双向验证。
+
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘
    要），JSONL 持久化；超限缩放重编码（stdlib 双线性，20MB 输入 /

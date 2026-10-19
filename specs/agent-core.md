@@ -747,6 +747,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    重试或阻塞 agent**。zgo config telemetry.enabled/exporter/endpoint
    三键即时生效（rewire 重建 tracer）。
 
+92. MCP 服务端模式：`zgo mcp serve [--all]` 把工具面暴露成 stdio
+   JSON-RPC 2.0 服务端（initialize/tools/list/tools/call，通知不回）。
+   **默认只读四件**（read/grep/glob/ls）——服务端没有交互确认通道，
+   只读是安全默认；--all 显式开放全量内置工具面（写/执行风险自担，
+   本地进程由用户亲自起）。工作区根 = 当前目录，工具访问照过 path
+   jail。工具错误按 MCP 语义返回结果内 isError（客户端模型可自纠），
+   协议错误才用 JSON-RPC error；工具结果过密钥打码。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
