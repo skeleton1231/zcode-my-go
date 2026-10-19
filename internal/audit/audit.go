@@ -153,3 +153,53 @@ func Recent(dataDir string, n int) []Entry {
 	}
 	return out
 }
+
+// Query 是审计过滤条件（spec 规则 106）：零值字段不过滤。
+type Query struct {
+	Tool     string // 精确工具名
+	Decision string // 精确决策标签（rule:/capability/ask:*/deny:*/bypass）
+	Since    time.Duration
+	OnlyErr  bool
+	Limit    int // <=0 默认 50
+}
+
+// Search 按条件查询（新到旧；回扫天数上限与 Recent 同为 30）。
+func Search(dataDir string, q Query) []Entry {
+	if q.Limit <= 0 {
+		q.Limit = 50
+	}
+	cutoff := time.Time{}
+	if q.Since > 0 {
+		cutoff = time.Now().Add(-q.Since)
+	}
+	var out []Entry
+	today := time.Now()
+	for i := 0; i < 30 && len(out) < q.Limit; i++ {
+		day := today.AddDate(0, 0, -i).Format("20060102")
+		raw, err := os.ReadFile(filepath.Join(dataDir, "audit", "audit-"+day+".jsonl"))
+		if err != nil {
+			continue
+		}
+		lines := splitLines(raw)
+		for j := len(lines) - 1; j >= 0 && len(out) < q.Limit; j-- {
+			var e Entry
+			if json.Unmarshal(lines[j], &e) != nil {
+				continue
+			}
+			if q.Tool != "" && e.Tool != q.Tool {
+				continue
+			}
+			if q.Decision != "" && e.Decision != q.Decision {
+				continue
+			}
+			if !cutoff.IsZero() && e.Time.Before(cutoff) {
+				continue
+			}
+			if q.OnlyErr && !e.IsError {
+				continue
+			}
+			out = append(out, e)
+		}
+	}
+	return out
+}

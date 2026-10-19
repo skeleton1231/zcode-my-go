@@ -843,6 +843,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
    务）、120s 兜底超时；失败的侧如实带错误（不拖垮别的侧）。profile
    provider 经构建缝装配（profileProviderFor——测试注入；不经
    providerOverride 注入面）。
+（规则 105 = 会话规则固化，见待并 #314。）
+106. 审计查询：`zgo audit --tool=<名> --decision=<标签> --since=<Nd>
+   --err --limit=<N>`——组合过滤（零值字段不过滤；decision 词表同规
+   则 102）。Search 与 Recent 同回扫 30 天、新到旧；--since 的时限跨
+   文件生效。无过滤时保持默认最近 20 条。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
