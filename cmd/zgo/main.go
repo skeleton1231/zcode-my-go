@@ -132,6 +132,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "models" {
 		os.Exit(runModels(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "mcp" && len(os.Args) > 2 && os.Args[2] == "serve" {
+		os.Exit(runMCPServe(os.Args[3:]))
+	}
 	prompt, workspace, fullscreen, images, cont, resume, format, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "zgo: %v\n\n", err)

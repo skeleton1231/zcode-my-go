@@ -19,7 +19,7 @@
 | core/context/、session-context/、memory/ | — | `internal/prompt`（ZGO/AGENTS/CLAUDE.md 注入、git 摘要）+ `internal/tools/memory.go`（workspace 级长期记忆：文件存储、memory 工具、系统提示注入 4KB）——即分层记忆：项目上下文层 + 工作区记忆层 + 会话压缩层 | ✅ 已翻译 |
 | core/subagent/ | — | `internal/agent/subagent.go`（RunSubtask 嵌套循环 + `task` 工具 + tools.ReadOnly） | ✅ 已翻译 |
 | core/workflow/、dynamic-workflow/、runtime-task/ | 26k | `internal/agent/workflow.go`（RunWorkflow：research/edit 步骤编排、逐步提示携带计划与前序结果、edit 步骤继承权限门与会话规则；after 依赖按 DAG 并行调度，独立步并发上限 4，失败停摆并跳过下游）+ `workflow` 工具 | ✅ 已翻译（步骤编排、门控与 DAG 并行） |
-| core/mcp/ | — | `internal/mcp`（stdio JSON-RPC 2.0：initialize 握手、tools/list、tools/call、mcp_ 前缀适配、settings.mcpServers、退出唤醒等待者；真子进程测试） | ✅ 已翻译 |
+| core/mcp/ | — | `internal/mcp` 客户端（stdio JSON-RPC 2.0：initialize 握手、tools/list、tools/call、mcp_ 前缀适配、settings.mcpServers、退出唤醒等待者；真子进程测试） | ✅ 已翻译 |
 | core/hooks/、telemetry/ | 4k | 事件流（agent.Event）即观测面；ZGO_DEBUG 请求转储 | ✅ 等价实现（hook 注入点见 Zgo 路线） |
 | core/system-reminder/ | — | `agent.EvCompaction` 等 notice 事件 + UI notice 项 | ✅ 等价实现 |
 | contracts/（协议与类型，22k） | 22k | `internal/agent` 类型（Event/ToolResult/AskRequest/Question 即协议）+ specs 事件序列 | ✅ 已翻译 |
@@ -439,6 +439,12 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **用量历史趋势**（spec 规则 90，89 的时间轴半边）：usage-*.json 翻
    日即历史——History(dataDir, N) 只读重放近 N 日（缺日照列 0）；
    `zgo usage --days=N` 每日总量 + ▮▯ 条形。
+
+**MCP 服务端模式**（spec 规则 92）：`zgo mcp serve [--all]` 把工具面
+   暴露成 stdio JSON-RPC 服务端（internal/mcpserver）——任何 MCP 客户
+   端（ZCode、Claude Code、Cursor）可直接调用 zgo 的 path-jail 工具。
+   默认只读四件（无确认通道的安全默认），--all 开全量；结果打码；客
+   户端↔服务端 dogfood（internal/mcp 拨号自重执行进程）双向验证。
 
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘
