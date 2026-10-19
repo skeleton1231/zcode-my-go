@@ -412,6 +412,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    后今日已计价 token 达 budgetDailyTokens 即拒新回合（Chat 入口熔
    断、明确报错不进转录；cron 同闸；跨天自然解开；落盘重启仍在）。
 
+**子代理用量记账与熔断**（spec 规则 87）：SubtaskResult.Usage（loop
+   事件末值）经 runner 闭包入当日记账——子代理的钱此前对记账/熔断
+   完全不可见；硬预算闸在子代理启动前同样生效（共用 hardFuseErr 判
+   据）。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，

@@ -461,11 +461,18 @@ func (s *AgentService) rewire() {
 			return cfg, nil
 		}
 		task := tools.NewTask(func(ctx context.Context, prompt, agentName string) (agent.SubtaskResult, error) {
+			// 子代理熔断（spec 规则 87）：硬预算闸对回合内 nested
+			// loop 同样生效——启动前拒。
+			if err := s.hardFuseErr(); err != nil {
+				return agent.SubtaskResult{}, err
+			}
 			cfg, err := subtaskCfg(agentName)
 			if err != nil {
 				return agent.SubtaskResult{}, err
 			}
-			return agent.RunSubtask(ctx, cfg, prompt)
+			res, err := agent.RunSubtask(ctx, cfg, prompt)
+			s.recordSubagentUsage(res.Usage) // 用量入当日记账（规则 87）
+			return res, err
 		})
 		contextRead := contextReader(ws)
 		// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
@@ -481,12 +488,19 @@ func (s *AgentService) rewire() {
 				})
 			})
 			tools := append(append([]agent.Tool{}, roTools...), agentAsk)
-			return agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
+			// 后台代理熔断（规则 87）：启动前拒——后台烧钱最狠且无
+			// 回合边界。
+			if ferr := s.hardFuseErr(); ferr != nil {
+				return agent.SubtaskResult{}, nil, ferr
+			}
+			res, hist, err := agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
 				Provider: provider(),
 				Model:    model,
 				System:   agent.SubtaskSystem(),
 				Tools:    tools,
 			}, prior, prompt)
+			s.recordSubagentUsage(res.Usage) // 用量入当日记账（规则 87）
+			return res, hist, err
 		}
 		all = append(tools.AllW(ws, state, question), task,
 			tools.NewMemoryTool(s.memoryFor(workspace)),
@@ -505,6 +519,13 @@ func (s *AgentService) rewire() {
 		wfPerms := permissionFor(s, sessionID)
 		wfAsk := s.ask
 		all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string, agentName string) []agent.SubtaskResult {
+			if ferr := s.hardFuseErr(); ferr != nil { // 子代理熔断（规则 87）
+				out := make([]agent.SubtaskResult, len(prompts))
+				for i := range out {
+					out[i] = agent.SubtaskResult{Text: "error: " + ferr.Error()}
+				}
+				return out
+			}
 			cfg, err := subtaskCfg(agentName)
 			if err != nil {
 				// 整批失败同型：每个条目一份错误文本（RunSubtasks 的
@@ -515,7 +536,11 @@ func (s *AgentService) rewire() {
 				}
 				return out
 			}
-			return agent.RunSubtasks(ctx, cfg, prompts)
+			results := agent.RunSubtasks(ctx, cfg, prompts)
+			for _, r := range results { // 用量入当日记账（规则 87）
+				s.recordSubagentUsage(r.Usage)
+			}
+			return results
 		}))
 		all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
 			return s.execWorkflow(ctx, sessionID, workspace, req,
@@ -1191,10 +1216,8 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	}
 	// 硬预算熔断（spec 规则 85）：今日已计价 token 达预算即拒新回合
 	//（明确报错、不进转录——止损闸在回合开始前；cron 调度同闸）。
-	if cfg := s.resolve(); cfg.HardBudgetStop && cfg.BudgetDailyTokens > 0 &&
-		s.day.Total() >= cfg.BudgetDailyTokens {
-		return fmt.Errorf("今日已计价 %d token，已达硬预算 %d——新回合被熔断（zgo config set hardBudgetStop false 可解除）",
-			s.day.Total(), cfg.BudgetDailyTokens)
+	if err := s.hardFuseErr(); err != nil {
+		return err
 	}
 	// 回合开始前快照工作区（本地 git 仓库时）：seq = 新用户消息的序号
 	//（现有用户消息数），回滚按序号定位。
@@ -2632,6 +2655,33 @@ func (s *AgentService) SetHardBudgetStop(on bool) error {
 
 // HardBudgetStopEnabled 报告硬预算熔断开关（缺省 = 关）。
 func (s *AgentService) HardBudgetStopEnabled() bool { return s.resolve().HardBudgetStop }
+
+// hardFuseErr 报告硬预算熔断态（nil = 闸开）。回合入口与子代理启动
+// 共用同一判据（spec 规则 85/87）。
+func (s *AgentService) hardFuseErr() error {
+	cfg := s.resolve()
+	if !cfg.HardBudgetStop || cfg.BudgetDailyTokens <= 0 {
+		return nil
+	}
+	if s.day.Total() < cfg.BudgetDailyTokens {
+		return nil
+	}
+	return fmt.Errorf("今日已计价 %d token，已达硬预算 %d——新回合被熔断（zgo config set hardBudgetStop false 可解除）",
+		s.day.Total(), cfg.BudgetDailyTokens)
+}
+
+// recordSubagentUsage 把子代理运行的用量折算进当日记账（spec 规则
+// 87：子代理的钱此前对记账/熔断不可见——不 emit 通知（子任务无回
+// 合边界），仅入账）。
+func (s *AgentService) recordSubagentUsage(u ai.Usage) {
+	delta := usage.Priced(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens)
+	if delta <= 0 {
+		return
+	}
+	if err := s.day.Add(delta); err != nil {
+		log.Printf("subagent usage: %v", err)
+	}
+}
 
 // SetSessionPinned 切换置顶组织态（spec 规则 86）：接受 id 或唯一前
 // 缀；置顶只影响列表次序，内容/搜索/恢复面不变。

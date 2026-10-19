@@ -701,6 +701,18 @@ dc907a4 (feat: glob and grep honor .gitignore)
    次序——内容/搜索/恢复/导出面不变（组织态与内容正交）。归档与置
    顶可并存（归档过滤在先——--archived 视图内置顶同样排前）。
 
+87. 子代理用量记账与熔断：子代理（task/dispatch/后台 agent 四件
+   套）烧的钱此前**对当日记账与硬预算熔断完全不可见**——回合内
+   nested loop 的 usage 只进临时会话随运行丢弃。本规则双补：①
+   SubtaskResult 增 Usage（loop 事件流的 EvMessageEnd 末值即单次运
+   行总计；resume 形态是单次量）——服务侧 runner 闭包（task/
+   dispatch/agentRunner）逐一入账 recordSubagentUsage（Priced 折算
+   直接 Add——子任务无回合边界不 emit 通知）；②硬预算闸在**子代
+   理启动前**同样生效（hardFuseErr 提取为共用判据——task/后台
+   runner 返回错误、dispatch 整批错误文本）。主回合入口熔断复用同
+   一判据（规则 85 的实现重构为 hardFuseErr）。workflow 步骤
+   （StepResult 无用量面）暂不入账。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
