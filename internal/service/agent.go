@@ -1122,11 +1122,15 @@ func (s *AgentService) DeleteSession(id string) error {
 		return err
 	}
 	// 检查点 refs 随会话清光（issue #224：活 ref 钉住 git 对象——不清
-	// 是硬泄漏；ws 已在删 state 前取出，ssh:// 与非仓库静默无操作）。
+	// 是硬泄漏；ws 已在删 state 前取出，ssh:// 与非仓库静默无操作）；
+	// 文件快照库同清（spec 规则 83）。
 	if ws != "" && !strings.HasPrefix(ws, "ssh://") {
 		if err := checkpoint.RemoveAll(ws, id); err != nil {
 			log.Printf("removing checkpoint refs for %s: %v", id, err)
 		}
+	}
+	if err := checkpoint.SnapshotRemoveAll(s.dir(), id); err != nil {
+		log.Printf("removing snapshots for %s: %v", id, err)
 	}
 	s.fireSessionEnd(id, ws, "delete")
 	return nil
@@ -1286,16 +1290,23 @@ func excerptRunes(s string, n int) string {
 	return string([]rune(s)[:n]) + "…"
 }
 
-// captureCheckpoint snapshots the workspace before a turn. Non-repo and
-// SSH-remote workspaces degrade silently to conversation-only rewind.
+// captureCheckpoint snapshots the workspace before a turn. SSH-remote
+// degrades to conversation-only rewind; 非 git 本地工作区走文件快照
+// （spec 规则 83）——超限降级回既往行为。
 func (s *AgentService) captureCheckpoint(sess *agent.Session, seq int) {
 	info := sess.Info()
 	if strings.HasPrefix(info.Workspace, "ssh://") {
 		return
 	}
-	if err := checkpoint.Capture(info.Workspace, info.ID, seq); err != nil &&
-		!errors.Is(err, checkpoint.ErrNotARepo) {
-		log.Printf("checkpoint capture: %v", err)
+	if err := checkpoint.Capture(info.Workspace, info.ID, seq); err != nil {
+		if !errors.Is(err, checkpoint.ErrNotARepo) {
+			log.Printf("checkpoint capture: %v", err)
+			return
+		}
+		if serr := checkpoint.SnapshotCapture(s.dir(), info.Workspace, info.ID, seq); serr != nil &&
+			!errors.Is(serr, checkpoint.ErrTooLarge) {
+			log.Printf("snapshot capture: %v", serr)
+		} // ErrTooLarge：大目录维持既往「仅回退转录」——不因快照失败阻塞回合
 	}
 }
 
@@ -1310,6 +1321,18 @@ func (s *AgentService) restoreCheckpoint(sess *agent.Session, seq int) error {
 	}
 	err := checkpoint.Restore(info.Workspace, info.ID, seq)
 	if errors.Is(err, checkpoint.ErrNotARepo) {
+		// 文件快照路径（spec 规则 83）：旧会话无快照 → 降级仅回退转
+		// 录；有快照但被修剪 → 中止（对齐仓库内语义，issue #152）。
+		serr := checkpoint.SnapshotRestore(s.dir(), info.Workspace, info.ID, seq)
+		if errors.Is(serr, checkpoint.ErrSnapshotMissing) {
+			return nil
+		}
+		if errors.Is(serr, checkpoint.ErrSnapshotPruned) {
+			return fmt.Errorf("该回合的快照已修剪（保留最近 %d 回合），文件未回退——为避免对话与文件分裂已中止回退；可回退更近的回合", checkpoint.Retention)
+		}
+		if serr != nil {
+			return fmt.Errorf("restoring workspace snapshot: %w", serr)
+		}
 		return nil
 	}
 	if errors.Is(err, checkpoint.ErrCheckpointPruned) {

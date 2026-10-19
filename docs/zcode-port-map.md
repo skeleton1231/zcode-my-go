@@ -395,6 +395,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    组织态与内容正交（转录/搜索/导出不变）；list 默认隐藏（--archived/
    --all）；-c 恢复跳过归档；meta 行持久。
 
+**文件快照存储**（spec 规则 83，非 git 工作区的检查点）：整树复制进
+   dataDir 快照库、恢复镜像回写（删快照后新增——对齐 git 路径语
+   义）；上限 5000 文件/100MB 超限降级；错误分层对齐（Missing 降级/
+   Pruned 中止）；会话删除清库。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
