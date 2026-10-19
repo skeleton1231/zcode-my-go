@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"fmt"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -28,6 +29,11 @@ const (
 	mentionTotalCap = 2 << 20
 	// mentionMaxFiles 是单条消息最多展开的引用数（防御拖拽整目录）。
 	mentionMaxFiles = 30
+	// 目录引用（spec 规则 76）的上限：深度 3、条目 400、单棵树 32KB
+	//（预算与文本引用共享 mentionTotalCap——目录树计入总量）。
+	mentionDirDepth   = 3
+	mentionDirEntries = 400
+	mentionDirTextCap = 32 << 10
 )
 
 // expandMentions 把消息里的 @路径 引用展开（specs/agent-core 规则 11）：
@@ -56,7 +62,19 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 		seen[rel] = true
 		data, err := tools.ReadFileIn(ws, rel)
 		if err != nil {
-			continue // 不存在或越界：保留原样
+			// 不是文件——目录引用（spec 规则 76）：展开有界目录树
+			//（深度/条目/体积三重上限，预算与文本引用共享）。
+			if tree, ok := renderDirTree(ws, rel); ok {
+				if len(expansions) >= mentionMaxFiles || total+len(tree) > mentionTotalCap {
+					skipped++
+					continue
+				}
+				total += len(tree)
+				fence := exporthtml.FenceFor(tree)
+				expansions = append(expansions, fmt.Sprintf("@%s/（目录树，深度 ≤%d）:\n%s\n%s\n%s",
+					rel, mentionDirDepth, fence, tree, fence))
+			}
+			continue // 既非文件也非目录：保留原样
 		}
 		if mt := imageMediaType(rel); mt != "" {
 			if len(data) > mentionImageCap {
@@ -186,4 +204,49 @@ func (s *AgentService) ReadWorkspaceFile(sessionID, rel string) (string, error) 
 		return string(data[:previewCap]) + "\n…（预览截断）", nil
 	}
 	return string(data), nil
+}
+
+// renderDirTree 渲染一棵有界目录树（spec 规则 76）：深度 ≤3、条目
+// ≤400、单树 ≤32KB，超限截断并标注；读不了的子目录静默跳过（坏链
+// 接不拖垮整棵树）。目录尾部带 /，缩进两空格一层。空目录/读失败返
+// ok=false（调用方按普通引用保留原样）。
+func renderDirTree(ws tools.Workspace, root string) (string, bool) {
+	var b strings.Builder
+	entries := 0
+	truncated := false
+	var walk func(rel string, depth int)
+	walk = func(rel string, depth int) {
+		if truncated {
+			return
+		}
+		des, err := tools.ListIn(ws, rel)
+		if err != nil {
+			return // 子目录读失败：跳过该枝
+		}
+		for _, de := range des {
+			if entries >= mentionDirEntries || b.Len() > mentionDirTextCap {
+				truncated = true
+				return
+			}
+			entries++
+			indent := strings.Repeat("  ", depth)
+			if !de.IsDir {
+				fmt.Fprintf(&b, "%s%s\n", indent, de.Name)
+				continue
+			}
+			fmt.Fprintf(&b, "%s%s/\n", indent, de.Name)
+			if depth+1 < mentionDirDepth {
+				walk(path.Join(rel, de.Name), depth+1)
+			}
+		}
+	}
+	walk(root, 0)
+	if truncated {
+		b.WriteString("…（截断：深度/条目/体积上限）\n")
+	}
+	tree := strings.TrimRight(b.String(), "\n")
+	if tree == "" {
+		return "", false
+	}
+	return tree, true
 }
