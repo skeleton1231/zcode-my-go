@@ -480,6 +480,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    列出全部注入面（权限规则 allow 计数、* 标注、自定义工具/命令/技
    能/子代理）；纯读；信任门（规则 53）的决策面。
 
+**审计的权限决策维度**（spec 规则 102）：审计条目带 decision 标签
+   （rule:/capability/ask:granted(-always)/ask:denied/deny:/bypass）——
+   规则 100 注明的缺口收口；zgo audit 行内 <> 呈现。
+
 **@会话引用**（spec 规则 97）：`@session:<前缀>` 跨会话带上下文——
    最近 20 条对话有界摘录（30KB、预算与文件引用共享）；自引用/未解
    析原样保留。

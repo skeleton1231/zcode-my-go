@@ -14,6 +14,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/audit"
 )
 
 type auditToolProvider struct{ n int }
@@ -108,4 +109,85 @@ func TestAuditOffByDefault(t *testing.T) {
 	if raw, err := os.ReadFile(path); err != nil || !strings.Contains(string(raw), "bash") {
 		t.Fatalf("runtime enable failed: %v %s", err, raw)
 	}
+}
+
+// TestAuditDecisionLabels（spec 规则 102）：权限决策进审计——只读工具
+// capability 放行、ask 授予（单次/总是）、ask 拒绝。
+func TestAuditDecisionLabels(t *testing.T) {
+	dir := t.TempDir()
+	raw, _ := json.Marshal(map[string]bool{"auditLog": true})
+	os.WriteFile(filepath.Join(dir, "settings.json"), raw, 0o600)
+	svc, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	svc.DisableAutoTitleForTesting()
+	svc.DisableAutoMemoryForTesting()
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &decisionProvider{}
+	svc.UseProviderForTesting(func() ai.Provider { return p })
+
+	// 回合 1：read（只读 capability 放行）+ bash ask 授予。
+	svc.SetAsker(func(agent.AskRequest) agent.AskResponse { return agent.AskResponse{} })
+	if err := svc.Chat(info.ID, "两件套", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	entries := audit.Recent(dir, 10)
+	labels := map[string]string{}
+	for _, e := range entries {
+		labels[e.Tool] = e.Decision
+	}
+	if labels["read"] != "capability" {
+		t.Fatalf("read decision = %q (entries %+v)", labels["read"], entries)
+	}
+	if labels["bash"] != "ask:granted" {
+		t.Fatalf("bash decision = %q", labels["bash"])
+	}
+
+	// 回合 2：asker 拒绝 → ask:denied（IsError）。
+	svc.SetAsker(func(agent.AskRequest) agent.AskResponse {
+		return agent.AskResponse{Deny: true}
+	})
+	if err := svc.Chat(info.ID, "再试", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range audit.Recent(dir, 4) {
+		if e.Tool == "bash" && strings.Contains(e.Args, "other") {
+			if e.Decision != "ask:denied" || !e.IsError {
+				t.Fatalf("deny decision = %+v", e)
+			}
+			return
+		}
+	}
+	t.Fatal("denied bash entry missing")
+}
+
+// decisionProvider：回合 1 发 read + bash 双调用，回合 2 收尾。
+type decisionProvider struct{ n int }
+
+func (p *decisionProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	p.n++
+	out := make(chan ai.StreamEvent, 6)
+	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	if p.n == 1 {
+		out <- ai.StreamEvent{Kind: ai.EvToolCallStart, ToolCallID: "r1", ToolCallName: "read"}
+		out <- ai.StreamEvent{Kind: ai.EvToolCallDelta, ToolCallID: "r1",
+			ToolCallArgs: `{"path":"a.txt"}`}
+		out <- ai.StreamEvent{Kind: ai.EvToolCallStart, ToolCallID: "b1", ToolCallName: "bash"}
+		out <- ai.StreamEvent{Kind: ai.EvToolCallDelta, ToolCallID: "b1",
+			ToolCallArgs: `{"command":"mkdir sub"}`}
+	} else if p.n == 3 { // 第二回合的工具轮（拒绝轮）
+		out <- ai.StreamEvent{Kind: ai.EvToolCallStart, ToolCallID: "b2", ToolCallName: "bash"}
+		out <- ai.StreamEvent{Kind: ai.EvToolCallDelta, ToolCallID: "b2",
+			ToolCallArgs: `{"command":"mkdir other"}`}
+	} else {
+		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "done"}
+	}
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	close(out)
+	return out
 }

@@ -34,7 +34,11 @@ type Entry struct {
 	Tool      string    `json:"tool"`
 	// Args 是参数摘要（审计核心：bash 记命令全文、write/edit/patch 记
 	// 目标路径；内容体不记——文件内容不是审计对象，改动是）。
-	Args     string `json:"args,omitempty"`
+	Args string `json:"args,omitempty"`
+	// Decision 是权限决策标签（spec 规则 102）：rule:<id> / capability
+	// / ask:granted(-always) / ask:denied / deny:<id> / ask:no-channel /
+	// bypass；空 = 无权限决策路径。
+	Decision string `json:"decision,omitempty"`
 	IsError  bool   `json:"isError,omitempty"`
 	Duration int64  `json:"durationMs"`
 }
