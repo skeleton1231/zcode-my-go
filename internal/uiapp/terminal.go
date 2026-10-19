@@ -30,12 +30,8 @@ func (a *App) terminalPanelView(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	ui.Column(c).Height(300).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		ui.Row(c).Padding(6, 12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "终端 · "+a.termDir).Bold().FontSize(13)
-			ui.Spacer(c)
-			if ui.Button(c, "✕").Clicked() {
-				a.ToggleTerminal()
-			}
+		panelHeader(c, t, iconTerminal, "终端 · "+a.termDir, func() {
+			closeIconButton(c, a.ToggleTerminal)
 		})
 		if a.term == nil {
 			ui.Text(c, "终端不可用："+a.termErr).TextColor(t.Danger).Padding(12, 16)

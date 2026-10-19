@@ -42,6 +42,7 @@ func (a *App) settingsModal(c *ui.Context, t *ui.Theme) {
 					a.runMCPDiagnostics()
 				}
 				if a.mcpDiagRunning {
+					ui.Spinner(c).FontSize(12)
 					ui.Text(c, "诊断中…").TextColor(t.TextMuted).FontSize(12)
 				}
 			})
