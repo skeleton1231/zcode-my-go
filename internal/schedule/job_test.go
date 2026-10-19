@@ -67,6 +67,7 @@ func TestSchedulerFiresDueAndRecords(t *testing.T) {
 	}
 	runner := &fakeRunner{}
 	s := NewScheduler(store, runner)
+	t.Cleanup(s.Stop) // 排空在飞 fire 的 record 落盘——TempDir 清理竞态（Windows CI flake）
 	s.now = func() time.Time { return now }
 
 	s.tick(context.Background())
@@ -111,6 +112,7 @@ func TestSchedulerSkipsDisabledAndOverlaps(t *testing.T) {
 	release := make(chan struct{})
 	runner := &fakeRunner{block: release}
 	s := NewScheduler(store, runner)
+	t.Cleanup(s.Stop) // 排空在飞 fire 的 record 落盘——TempDir 清理竞态（Windows CI flake）
 	s.now = func() time.Time { return now }
 
 	s.tick(context.Background())
@@ -154,6 +156,7 @@ func TestSchedulerHotReloads(t *testing.T) {
 	now := time.Date(2026, 10, 18, 10, 30, 0, 0, time.Local)
 	runner := &fakeRunner{}
 	s := NewScheduler(store, runner)
+	t.Cleanup(s.Stop) // 排空在飞 fire 的 record 落盘——TempDir 清理竞态（Windows CI flake）
 	s.now = func() time.Time { return now }
 
 	// 空表 → 无事发生。
@@ -176,6 +179,7 @@ func TestSummaryAndErrorRecording(t *testing.T) {
 	store := NewStore(t.TempDir())
 	runner := &fakeRunner{fail: true}
 	s := NewScheduler(store, runner)
+	t.Cleanup(s.Stop) // 排空在飞 fire 的 record 落盘——TempDir 清理竞态（Windows CI flake）
 	now := time.Date(2026, 10, 18, 10, 30, 0, 0, time.Local)
 	s.now = func() time.Time { return now }
 	store.Upsert(job("e", "* * * * *", true, time.Time{}))
@@ -273,6 +277,7 @@ func TestStopDrainsInflightFire(t *testing.T) {
 	block := make(chan struct{})
 	s := NewScheduler(store, &fakeRunner{block: block,
 		summary: "慢结果", entered: entered})
+	t.Cleanup(s.Stop) // 排空在飞 fire 的 record 落盘——清理竞态防御
 	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.Local)
 	if err := store.Upsert(job("slow", "* * * * *", true, now.Add(-2*time.Minute))); err != nil {
 		t.Fatal(err)
@@ -310,6 +315,7 @@ func TestFireGlobalConcurrencyCap(t *testing.T) {
 	entered := make(chan struct{}, 3)
 	r := &fakeRunner{block: block, entered: entered}
 	s := NewScheduler(store, r)
+	t.Cleanup(s.Stop) // 排空在飞 fire 的 record 落盘——TempDir 清理竞态（Windows CI flake）
 	s.SetClock(func() time.Time { return time.Date(2026, 10, 19, 12, 0, 0, 0, time.Local) })
 
 	s.FireDue(context.Background())
@@ -389,6 +395,7 @@ func TestRunNowSingleFlight(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	r := &fakeRunner{block: block, entered: entered}
 	s := NewScheduler(store, r)
+	t.Cleanup(s.Stop) // 排空在飞 fire 的 record 落盘——TempDir 清理竞态（Windows CI flake）
 	defer s.Stop()
 
 	go func() {
