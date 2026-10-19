@@ -484,6 +484,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    （rule:/capability/ask:granted(-always)/ask:denied/deny:/bypass）——
    规则 100 注明的缺口收口；zgo audit 行内 <> 呈现。
 
+**多模型对比**（spec 规则 104）：`zgo compare <问题> [--profiles=a,b]`
+   ——同题并行问 N 个 profile，并排呈现答案/用量/$ 成本/耗时；单请求
+   封顶、失败侧不拖垮。
+
 **@会话引用**（spec 规则 97）：`@session:<前缀>` 跨会话带上下文——
    最近 20 条对话有界摘录（30KB、预算与文件引用共享）；自引用/未解
    析原样保留。
