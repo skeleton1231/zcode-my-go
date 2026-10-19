@@ -91,3 +91,24 @@ func TestSessionsSanitizeCLI(t *testing.T) {
 		t.Fatal("unknown flag accepted")
 	}
 }
+
+// TestSessionsSearchRegexCLI（spec 规则 80）：--regex 走正则；坏模式
+// 非零退出并带错误。
+func TestSessionsSearchRegexCLI(t *testing.T) {
+	dir, ids := seedCLI(t)
+	appendMsg(t, dir, ids[0], ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: "事故票 INC-12345 复盘时再查"}}})
+
+	code, out := runSessionsCaptured(t, dir, "search", "--regex", "INC-[0-9]")
+	if code != 0 || !strings.Contains(out, "INC-") {
+		t.Fatalf("regex search = %d %q", code, out)
+	}
+	// 坏模式：非零退出（错误文案走 stderr——捕获面只有 stdout）。
+	if code, _ := runSessionsCaptured(t, dir, "search", "--regex", "INC-["); code == 0 {
+		t.Fatal("bad pattern accepted")
+	}
+	// 子串形态不受影响（回归）。
+	if code, _ := runSessionsCaptured(t, dir, "search", "INC-"); code != 0 {
+		t.Fatal("substring search regressed")
+	}
+}
