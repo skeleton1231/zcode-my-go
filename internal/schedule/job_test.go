@@ -295,3 +295,128 @@ func TestStopDrainsInflightFire(t *testing.T) {
 		}
 	}
 }
+
+// TestFireGlobalConcurrencyCap（spec 规则 78）：三个任务同一 tick 到
+// 期——并发上限内先跑两个，第三个不启动（LastRun 不动，排队语义）；
+// 槽位释放后下一 tick 补跑。
+func TestFireGlobalConcurrencyCap(t *testing.T) {
+	store := NewStore(t.TempDir())
+	for _, id := range []string{"a", "b", "c"} {
+		if err := store.Upsert(job(id, "* * * * *", true, time.Time{})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	block := make(chan struct{})
+	entered := make(chan struct{}, 3)
+	r := &fakeRunner{block: block, entered: entered}
+	s := NewScheduler(store, r)
+	s.SetClock(func() time.Time { return time.Date(2026, 10, 19, 12, 0, 0, 0, time.Local) })
+
+	s.FireDue(context.Background())
+	// 两个进入运行（entered 两次），第三个被并发上限挡住。
+	for i := 0; i < 2; i++ {
+		select {
+		case <-entered:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("run %d never started", i+1)
+		}
+	}
+	select {
+	case <-entered:
+		t.Fatal("third run started beyond concurrency cap")
+	case <-time.After(150 * time.Millisecond):
+	}
+	// 第三个任务未被记 skipped（排队不是跳过）。
+	jobs, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range jobs {
+		if j.ID == "c" && strings.Contains(j.LastStatus, "skipped") {
+			t.Fatalf("deferred job marked skipped: %+v", j)
+		}
+	}
+
+	// 释放槽位：等前两个 run 完整收尾（record 落盘、槽位归还）再推
+	// 下一 tick——收尾是异步的，不等会让 c 又撞一次满员。
+	close(block)
+	waitFor(t, func() bool {
+		jobs, err := store.List()
+		if err != nil {
+			return false
+		}
+		done := 0
+		for _, j := range jobs {
+			if (j.ID == "a" || j.ID == "b") && j.LastStatus == "ok" {
+				done++
+			}
+		}
+		return done == 2
+	})
+	s.clockMu.Lock()
+	s.now = func() time.Time { return time.Date(2026, 10, 19, 12, 1, 0, 0, time.Local) }
+	s.clockMu.Unlock()
+	s.FireDue(context.Background())
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("deferred job never ran after slot freed")
+	}
+	// block 已在释放槽位时关闭——c 的 run 即刻返回；等收尾再停。
+	waitFor(t, func() bool {
+		jobs, err := store.List()
+		if err != nil {
+			return false
+		}
+		for _, j := range jobs {
+			if j.ID == "c" && j.LastStatus == "ok" {
+				return true
+			}
+		}
+		return false
+	})
+	s.Stop()
+}
+
+// TestRunNowSingleFlight（spec 规则 78）：手动触发不再绕过互斥——任务
+// 在跑时 RunNow 拒绝；空闲时照常执行。
+func TestRunNowSingleFlight(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Upsert(job("x", "* * * * *", true, time.Time{})); err != nil {
+		t.Fatal(err)
+	}
+	block := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	r := &fakeRunner{block: block, entered: entered}
+	s := NewScheduler(store, r)
+	defer s.Stop()
+
+	go func() {
+		_, _ = s.RunNow(context.Background(), Job{ID: "x", Schedule: "* * * * *"})
+	}()
+	<-entered
+	if _, err := s.RunNow(context.Background(), Job{ID: "x", Schedule: "* * * * *"}); err == nil ||
+		!strings.Contains(err.Error(), "仍在运行") {
+		t.Fatalf("RunNow bypassed single-flight: %v", err)
+	}
+	close(block)
+	// 等第一次 run 完整收尾（record 落盘 + running 清理）再触发。
+	waitFor(t, func() bool {
+		jobs, err := store.List()
+		if err != nil {
+			return false
+		}
+		for _, j := range jobs {
+			if j.ID == "x" && j.LastStatus == "ok" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// 空闲后手动触发照常。
+	sum, err := s.RunNow(context.Background(), Job{ID: "x", Schedule: "* * * * *"})
+	if err != nil || sum == "" {
+		t.Fatalf("idle RunNow: %q %v", sum, err)
+	}
+}

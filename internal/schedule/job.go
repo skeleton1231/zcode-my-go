@@ -181,6 +181,8 @@ type Scheduler struct {
 
 	mu      sync.Mutex
 	running map[string]bool
+	// active 是在飞 run 的全局计数（spec 规则 78：并发上限）。
+	active  int
 	cancel  context.CancelFunc
 	stopped chan struct{}
 	// inflight 追踪派发的 fire goroutine（issue #134：Stop 曾只等 tick
@@ -188,6 +190,12 @@ type Scheduler struct {
 	// 下个启动周期双触发；测试侧与 t.TempDir 清理竞争致全套件抖动）。
 	inflight sync.WaitGroup
 }
+
+// maxConcurrentRuns 是定时任务的全局并发上限（spec 规则 78）：每个
+// run 是一次完整 agent 会话——同时跑 N 个例程任务既烧 token 也抢
+// provider 配额。超出的到期任务本轮不启动（LastRun 不动——任务保持
+// 到期，下一分钟 tick 自然重试，排队而非跳过）。
+const maxConcurrentRuns = 2
 
 // NewScheduler wires a store and runner.
 func NewScheduler(store *Store, runner Runner) *Scheduler {
@@ -293,7 +301,14 @@ func (s *Scheduler) fire(ctx context.Context, job Job) {
 		s.record(job.ID, "skipped: 上一轮仍在运行", "")
 		return
 	}
+	// 全局并发上限（spec 规则 78）：满员即不启动——LastRun 不动，任务
+	// 保持到期，下一 tick 自然重试（排队语义，不记 skipped 噪音）。
+	if s.active >= maxConcurrentRuns {
+		s.mu.Unlock()
+		return
+	}
 	s.running[job.ID] = true
+	s.active++
 	s.mu.Unlock()
 
 	started := s.clock()
@@ -303,6 +318,7 @@ func (s *Scheduler) fire(ctx context.Context, job Job) {
 		defer func() {
 			s.mu.Lock()
 			delete(s.running, job.ID)
+			s.active--
 			s.mu.Unlock()
 		}()
 		runCtx, cancel := context.WithCancel(ctx)
@@ -317,7 +333,23 @@ func (s *Scheduler) fire(ctx context.Context, job Job) {
 }
 
 // RunNow forces one immediate run (zgo cron run), waiting for it.
+// 互斥语义与 fire 同源（spec 规则 78）：该任务已在跑（无论来自 tick
+// 还是另一次手动）即拒绝并说明——手动触发不再绕过 single-flight。
 func (s *Scheduler) RunNow(ctx context.Context, job Job) (string, error) {
+	s.mu.Lock()
+	if s.running[job.ID] {
+		s.mu.Unlock()
+		return "", fmt.Errorf("上一轮仍在运行，稍后再试")
+	}
+	s.running[job.ID] = true
+	s.active++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.running, job.ID)
+		s.active--
+		s.mu.Unlock()
+	}()
 	summary, err := s.runner.Run(ctx, job)
 	status := "ok"
 	if err != nil {

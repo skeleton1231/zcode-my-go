@@ -623,15 +623,23 @@ dc907a4 (feat: glob and grep honor .gitignore)
    ≤80 rune。自定义定义的非致命问题以 ⚠ 行附尾（parseDef 记诊断
    ——缺 name/description、模板为空），坏定义跳过不拖垮清单。
 
-79. /context 上下文构成观测（78 为待合并的调度并发硬化预留）：
-   「token 都花哪了」一命令可见——/context 列出下一请求的构成分段，
-   与 loop 装配同源（SystemStableFS/SystemVolatile/memoryFor.Section/
-   skills·agents Section/buildTools 的声明 JSON/Messages——测的即发
-   的）：system·stable（缓存前缀）、system·git（易变段）、memory
-   （4KB 尾窗注入）、skills、agents、tools（N 个工具声明）、
-   transcript（N 条消息/M 用户回合）。字节口径（token 估算 ≈/4 只做
-   参照）；合计行附 /compact 提示。观测面导出 agent.Declarations
-   （与 wire 请求同构）。
+78. 调度并发硬化：定时任务 run 是完整 agent 会话——无上限并发既烧
+   token 也抢 provider 配额。**全局并发上限**（maxConcurrentRuns=2）：
+   满员的到期任务本轮不启动且 LastRun 不动（任务保持到期，下一
+   tick 自然重试——**排队语义而非跳过**，不记 skipped 噪音）。
+   **手动触发同源互斥**：RunNow（zgo cron run）不再绕过 single-
+   flight——该任务已在跑（无论来自 tick 还是另一次手动）即拒绝并
+   说明；空闲时照常执行并记录。计数与互斥共用 Scheduler 的锁域
+   （running 集合 + active 计数）。
+
+79. /context 上下文构成观测：「token 都花哪了」一命令可见——
+   /context 列出下一请求的构成分段，与 loop 装配同源
+   （SystemStableFS/SystemVolatile/memoryFor.Section/skills·agents
+   Section/buildTools 的声明 JSON/Messages——测的即发的）：system·
+   stable（缓存前缀）、system·git（易变段）、memory（4KB 尾窗注
+   入）、skills、agents、tools（N 个工具声明）、transcript（N 条消
+   息/M 用户回合）。字节口径（token 估算 ≈/4 只做参照）；合计行附
+   /compact 提示。观测面导出 agent.Declarations（与 wire 请求同构）。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
