@@ -458,6 +458,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    实际模型折算（微美元整数）；/usage 成本行、归因 $ 合计、--days 每日
    $ 列；未知价诚实跳过。
 
+**自然语言 cron**（spec 规则 95）：`zgo cron add --at "每天下午3点"`——
+   schedule.ParseNatural 翻成五字段走既有校验/落库（认不出明确报错不
+   猜）；Job.At 原文回显；--at 与 --schedule 互斥。
+
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘
    要），JSONL 持久化；超限缩放重编码（stdlib 双线性，20MB 输入 /
