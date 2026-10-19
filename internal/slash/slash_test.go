@@ -640,3 +640,14 @@ func TestSlashTools(t *testing.T) {
 		t.Fatalf("diagnostics missing:\n%s", out)
 	}
 }
+
+// TestSlashContext（spec 规则 79）：/context 输出分段名与合计行。
+func TestSlashContext(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/context")
+	for _, want := range []string{"[上下文]", "system·stable", "tools", "transcript", "合计"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("segment %q missing:\n%s", want, out)
+		}
+	}
+}

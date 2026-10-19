@@ -179,3 +179,7 @@ func declarations(tools []Tool) []ai.ToolDeclaration {
 	}
 	return decls
 }
+
+// Declarations 导出工具声明面（/context 的构成观测——与 wire 请求同
+// 构的声明 JSON 长度即模型侧工具表开销）。
+func Declarations(tools []Tool) []ai.ToolDeclaration { return declarations(tools) }

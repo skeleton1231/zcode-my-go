@@ -623,6 +623,16 @@ dc907a4 (feat: glob and grep honor .gitignore)
    ≤80 rune。自定义定义的非致命问题以 ⚠ 行附尾（parseDef 记诊断
    ——缺 name/description、模板为空），坏定义跳过不拖垮清单。
 
+79. /context 上下文构成观测（78 为待合并的调度并发硬化预留）：
+   「token 都花哪了」一命令可见——/context 列出下一请求的构成分段，
+   与 loop 装配同源（SystemStableFS/SystemVolatile/memoryFor.Section/
+   skills·agents Section/buildTools 的声明 JSON/Messages——测的即发
+   的）：system·stable（缓存前缀）、system·git（易变段）、memory
+   （4KB 尾窗注入）、skills、agents、tools（N 个工具声明）、
+   transcript（N 条消息/M 用户回合）。字节口径（token 估算 ≈/4 只做
+   参照）；合计行附 /compact 提示。观测面导出 agent.Declarations
+   （与 wire 请求同构）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
