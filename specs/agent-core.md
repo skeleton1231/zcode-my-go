@@ -490,6 +490,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    加该文件即时诊断（gopls check，仅在有错时追加，10s 上限，缺 gopls
    静默跳过）。工具执行超时 30s、输出照家族截断。
 
+
 68. Stop / Notification 命令钩子（issue #209）：CommandHooks 增
    `stop` 与 `notification` 两事件。**stop** 在回合自然收尾（无工具调
    用的 EndTurn，steering 排空之后）触发：payload {event, sessionId,
@@ -500,6 +501,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    发（observer：payload {event, sessionId, workspace, tool, reason}，
    退出码不影响主流程）——headless/TUI 接系统通知的挂点。两钩子超时
    与 runHook 家族一致（10s，失败记日志放行）。
+
 
 69. MCP 传输矩阵：stdio（既往）与 **Streamable HTTP**（2025-03 规范，
    issue #204）二选一——Config 增 `url` + `headers`（与 command 互斥，
@@ -514,6 +516,20 @@ dc907a4 (feat: glob and grep honor .gitignore)
    输层）。鉴权 headers 全链路不落日志、不进会话 JSONL、不回显界面
    （对齐 API key 教义）；热重载签名覆盖 url+headers（哈希形态——值
    变更触发重载，但签名本身不可读出凭据）。
+
+70. gopls 常驻 daemon（LSP 路线 A v2）：每个本地工作区根一个常驻
+   gopls 进程走 LSP JSON-RPC（base protocol 分帧）——initialize 只付
+   一次，definition/references 的冷启开销（每次 spawn 1-2s 起）摊平。
+   生命周期：按需拉起；空闲 10 分钟回收；进程死亡/连接断同根透明重
+   启（重试一次，再失败该次调用退回 v1 CLI 子进程路径——可用性优先
+   于性能）；服务 Close 全量收割（不留孤儿进程）。位置编码：协商
+   utf-8（与 CLI 字节列同口径）；老 gopls（v0.16.2 等未实现 3.17 协
+   商）缺省 utf-16——查询与渲染两侧按行内容换算列单位（BMP 外字符
+   按 2 unit），模型可见口径与 v1 完全一致。诊断：单文件 check 走
+   拉取（textDocument/diagnostic）；编辑回灌先发 didChangeWatched
+   Files 显式失效再拉（不依赖服务端文件监视器，磁盘改动即刻可见）；
+   全工作区 check（无 LSP 等价）与未知子命令留 CLI 路径。服务端主
+   动请求（workspace/configuration 等）必须回应——否则握手挂起。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

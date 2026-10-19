@@ -75,7 +75,7 @@ func TestStopCommandHooks(t *testing.T) {
 }
 
 // TestStopCommandHooksPayload：payload 字段（event/sessionId/workspace/
-// lastText）组装契约（spec 规则 68）。
+// lastText）组装契约（spec 规则 69）。
 func TestStopCommandHooksPayload(t *testing.T) {
 	got := string(stopPayloadJSON(StopContext{SessionID: "sess-9", Workspace: "/ws/x", LastText: "最后回答"}))
 	for _, want := range []string{`"event":"stop"`, `"sessionId":"sess-9"`, `"/ws/x"`, "最后回答"} {

@@ -462,6 +462,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    PATH 且工作区本地才声明工具组（ssh:// 文件不在本地盘、wasm 无子进
    程）；缺位由 doctor 引导安装。
 
+
 **Stop / Notification 命令钩子**（spec 规则 68，issue #209）：CommandHooks
    增 stop/notification——stop 在回合自然收尾（steering 排空后）触发，
    exit 2 阻止收尾（输出为原因，注入「[stop 钩子]」续跑用户消息进转
@@ -469,6 +470,7 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    {event, sessionId, workspace, lastText}。notification 在权限询问即将
    阻塞时触发（观察者，payload {event, sessionId, workspace, tool,
    reason}，退出码不影响主流程）——headless/TUI 接系统通知的挂点。
+
 
 **MCP Streamable HTTP 传输**（2025-03 规范，spec 规则 69，issue #204）：
    Config 增 url+headers（与 command 互斥）；每条 JSON-RPC 消息 POST 到
@@ -478,3 +480,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    线重连不重启）；握手/tools/prompts/resources 流程与 stdio 完全共用
    （差异只在 transport 层）。鉴权 headers 不进日志/JSONL/界面；热重载
    签名覆盖 url+headers（sha256——值敏感但读不出凭据）。
+
+**gopls 常驻 daemon**（LSP 路线 A v2，spec 规则 70）：internal/lsp——
+   每个工作区根一个常驻 gopls 进程走 LSP JSON-RPC（initialize 只付一
+   次，冷启摊平）；空闲 10 分钟回收、崩溃透明重启、失败退 CLI 子进程
+   （可用性优先）；服务 Close 全量收割。位置编码协商 utf-8、老 gopls
+   缺省 utf-16 时按行内容双向换算列单位（模型可见口径与 v1 一致）；
+   编辑回灌显式 didChangeWatchedFiles 再拉诊断（磁盘改动即刻可见）；
+   单文件诊断走拉取，全工作区 check 留 CLI。

@@ -84,7 +84,7 @@ func capabilityFor(t Tool, args string) permission.Capability {
 // (ZCode's permission broker asking the surface).
 type AskRequest struct {
 	SessionID string
-	// Workspace 标注钩子 payload（notification 事件，spec 规则 68）。
+	// Workspace 标注钩子 payload（notification 事件，spec 规则 69）。
 	Workspace string
 	Tool      string
 	Args      string

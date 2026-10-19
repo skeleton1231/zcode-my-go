@@ -60,7 +60,7 @@ func HooksFromCommands(cfg CommandHooks) Hooks {
 	}
 }
 
-// stopFromCommands 把 stop 命令接成 loop 的收尾询问（spec 规则 68）：
+// stopFromCommands 把 stop 命令接成 loop 的收尾询问（spec 规则 69）：
 // exit 2 阻止收尾（输出为原因，注入续跑消息）；其他退出码记日志放行
 // ——对齐 Claude Code 的 exit-2 语义。
 func stopFromCommands(hooks []CommandHook) func(StopContext) StopResult {
@@ -103,7 +103,7 @@ func stopPayloadJSON(c StopContext) []byte {
 }
 
 // NotificationHooks runs notification hooks（观察者：退出码不影响主流
-// 程失败记日志）——权限询问即将阻塞等待用户时触发（spec 规则 68）.
+// 程失败记日志）——权限询问即将阻塞等待用户时触发（spec 规则 69）.
 func NotificationHooks(hooks []CommandHook, payload any) {
 	runObserverHooks("notification", hooks, payload)
 }

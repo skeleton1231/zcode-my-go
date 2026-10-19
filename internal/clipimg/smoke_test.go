@@ -33,7 +33,10 @@ func TestClipboardSmoke(t *testing.T) {
 		t.Skip("GlobalLock failed")
 	}
 	// Call 返回的 uintptr 实为指针：存储重解释取回（同 clipboardFormat）。
-	hdr := struct{ p uintptr; l, c int }{mem, len(dib), len(dib)}
+	hdr := struct {
+		p    uintptr
+		l, c int
+	}{mem, len(dib), len(dib)}
 	dst := *(*[]byte)(unsafe.Pointer(&hdr))
 	copy(dst, dib)
 	procGlobalUnlock.Call(h)
