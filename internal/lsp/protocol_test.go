@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -198,15 +200,19 @@ func TestParsePosArg(t *testing.T) {
 }
 
 func TestURIRoundTrip(t *testing.T) {
-	for _, p := range []string{"/tmp/a b.go", "/tmp/%pct.go"} {
-		uri := pathToURI(p)
-		back := uriToPath(uri)
-		if strings.HasPrefix(back, "/") && !strings.HasPrefix(p, "/") {
-			t.Fatalf("roundtrip %q -> %q -> %q", p, uri, back)
-		}
+	// 用本机临时目录做真路径往返（含空格与 %——两侧转义对称）。
+	p := filepath.Join(t.TempDir(), "a b%20.go")
+	uri := pathToURI(p)
+	back := uriToPath(uri)
+	if uri == "" || back != p {
+		t.Fatalf("roundtrip %q -> %q -> %q", p, uri, back)
 	}
-	win := pathToURI(`D:\my repo\x.go`)
-	if !strings.Contains(win, "/D:/") || !strings.Contains(win, "%20") {
-		t.Fatalf("windows uri = %q", win)
+	// Windows 盘符形态只在 Windows 断言（盘符/斜杠语义平台特定——
+	// CI ubuntu 上 ToSlash 对反斜杠是 no-op）。
+	if runtime.GOOS == "windows" {
+		win := pathToURI(`D:\my repo\x.go`)
+		if !strings.Contains(win, "/D:/") || !strings.Contains(win, "%20") {
+			t.Fatalf("windows uri = %q", win)
+		}
 	}
 }

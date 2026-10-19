@@ -362,7 +362,7 @@ func (m *Manager) positionQuery(ctx context.Context, root, mode, file string, li
 }
 
 // fileDiagnostics 单文件拉取诊断，渲染 file:line:col: message 形态
-//（file 相对 root 或绝对路径皆可）。
+// （file 相对 root 或绝对路径皆可）。
 func (m *Manager) fileDiagnostics(ctx context.Context, root, file string) (string, bool, error) {
 	abs := file
 	if !filepath.IsAbs(abs) {
@@ -456,10 +456,8 @@ func uriToPath(uri string) string {
 	if err != nil {
 		return uri
 	}
-	path, err := url.PathUnescape(u.Path)
-	if err != nil {
-		return u.Path
-	}
+	// u.Path 已是解码形态（u.RawPath 才是原文）——不能再解一次。
+	path := u.Path
 	if runtime.GOOS == "windows" && len(path) > 2 && path[0] == '/' && path[2] == ':' {
 		return filepath.FromSlash(path[1:]) // /D:/… → D:\…
 	}
@@ -470,7 +468,7 @@ func uriToPath(uri string) string {
 func goplsRawStart() *exec.Cmd { return exec.Command(goplsPath) }
 
 // DaemonProbe 是 edit/write 回灌的 daemon 版探测：先显式失效该文件
-//（didChangeWatchedFiles——磁盘改动即刻可见），再走拉取诊断；busy 或
+// （didChangeWatchedFiles——磁盘改动即刻可见），再走拉取诊断；busy 或
 // daemon 不可用时退 v1 CLI Probe（ProbeTimeout 口径不变）。
 func DaemonProbe(ctx context.Context, root, absPath string) string {
 	Default.NotifyChanged(root, absPath)
