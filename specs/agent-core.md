@@ -503,7 +503,21 @@ dc907a4 (feat: glob and grep honor .gitignore)
    与 runHook 家族一致（10s，失败记日志放行）。
 
 
-69. gopls 常驻 daemon（LSP 路线 A v2）：每个本地工作区根一个常驻
+69. MCP 传输矩阵：stdio（既往）与 **Streamable HTTP**（2025-03 规范，
+   issue #204）二选一——Config 增 `url` + `headers`（与 command 互斥，
+   两者皆空皆有报错）。HTTP 传输：每条 JSON-RPC 消息 POST 到 url
+   （Accept: application/json, text/event-stream），响应按 Content-Type
+   分流——application/json 直读单响应；text/event-stream 解析 SSE 事件
+   流取首个响应（通知/心跳忽略）。initialize 响应的 `Mcp-Session-Id`
+   头记存，后续请求回传；响应 404 且已有会话时判定会话失效——清会话、
+   重走 initialize 握手并重试原请求一次（断线重连不重启应用）。通知
+   （notifications/initialized）POST 后接受 202 无响应。握手与
+   tools/list、prompts、resources 流程与 stdio 完全共用（差异只在传
+   输层）。鉴权 headers 全链路不落日志、不进会话 JSONL、不回显界面
+   （对齐 API key 教义）；热重载签名覆盖 url+headers（哈希形态——值
+   变更触发重载，但签名本身不可读出凭据）。
+
+70. gopls 常驻 daemon（LSP 路线 A v2）：每个本地工作区根一个常驻
    gopls 进程走 LSP JSON-RPC（base protocol 分帧）——initialize 只付
    一次，definition/references 的冷启开销（每次 spawn 1-2s 起）摊平。
    生命周期：按需拉起；空闲 10 分钟回收；进程死亡/连接断同根透明重

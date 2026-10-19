@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -18,20 +19,26 @@ import (
 // handshakeTimeout bounds the initialize handshake.
 const handshakeTimeout = 20 * time.Second
 
-// Server is one launched MCP server process.
+// Server is one connected MCP server (stdio process or HTTP endpoint).
 type Server struct {
 	Name string
 	// Signature identifies the config this server was started from (set
 	// by the caller): hot reload compares it to stop-and-restart.
 	Signature string
-	cmd       *exec.Cmd
-	stdin     chan<- []byte
+	tr        transport
 	mu        sync.Mutex
-	pending   map[int64]chan json.RawMessage
 	nextID    int64
 	tools     []ToolDef
 	prompts   []PromptDef
 	resources []ResourceDef
+}
+
+// transport is one JSON-RPC wire: roundTrip sends a marshaled message and
+// returns its response (nil for fire-and-forget notifications). stdio 多
+// 路复用一根管道按 id 分发；HTTP 每请求一次 POST（spec 规则 69）。
+type transport interface {
+	roundTrip(ctx context.Context, body []byte, notify bool) (json.RawMessage, error)
+	close()
 }
 
 // ToolDef is a tool an MCP server advertises.
@@ -41,11 +48,23 @@ type ToolDef struct {
 	InputSchema map[string]any `json:"inputSchema"`
 }
 
-// Config describes one MCP server to launch, from settings.
+// Config describes one MCP server from settings: a local command (stdio)
+// or a remote endpoint (Streamable HTTP)——两者互斥。
 type Config struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers"` // 鉴权头：不进日志/JSONL/界面
+}
+
+// validate 报告互斥与必填违规。
+func (c Config) validate() error {
+	hasCmd, hasURL := c.Command != "", c.URL != ""
+	if hasCmd == hasURL {
+		return fmt.Errorf("mcp config needs exactly one of command or url")
+	}
+	return nil
 }
 
 type rpcRequest struct {
@@ -87,55 +106,54 @@ func serverEnv(cmd *exec.Cmd, overrides map[string]string) []string {
 	return env
 }
 
-// Start launches a server and performs the MCP handshake, returning its
-// advertised tools.
+// Start launches a server (stdio command or HTTP endpoint, spec 规则 69)
+// and performs the MCP handshake, returning its advertised tools.
 func Start(ctx context.Context, name string, cfg Config) (*Server, error) {
-	cmd := exec.Command(cfg.Command, cfg.Args...)
-	cmd.Env = serverEnv(cmd, cfg.Env)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
+	var tr transport
+	var err error
+	if cfg.URL != "" {
+		tr, err = newHTTPTransport(cfg)
+	} else {
+		tr, err = startStdio(cfg)
 	}
-	if err := cmd.Start(); err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("starting %s: %w", name, err)
 	}
-
-	s := &Server{Name: name, cmd: cmd, pending: map[int64]chan json.RawMessage{}}
-	writes := make(chan []byte, 16)
-	s.stdin = writes
-	go func() {
-		for b := range writes {
-			if _, err := stdin.Write(b); err != nil {
-				return
-			}
-		}
-	}()
-	go s.readLoop(bufio.NewReaderSize(stdout, 1024*1024))
+	s := &Server{Name: name, tr: tr}
 
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
+	if err := s.handshake(ctx); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	// HTTP 传输注入重连再握手（404 会话失效后由 roundTrip 复用）。
+	if ht, ok := tr.(*httpTransport); ok {
+		ht.handshake = func(ctx context.Context) error { return s.handshake(ctx) }
+	}
+	return s, nil
+}
+
+// handshake runs the initialize → tools/list (→ 可选 prompts/resources)
+// sequence。initialize 失败立即上报：继续 tools/list 只会报误导性的
+// listing 超时，掩盖协议版本不匹配等真实原因（issue #18）。
+func (s *Server) handshake(ctx context.Context) error {
 	var init struct {
 		Tools []ToolDef `json:"tools"`
 	}
-	// initialize → (notifications/initialized) → tools/list。initialize
-	// 失败必须立即上报：继续 tools/list 只会报误导性的 listing 超时，
-	// 掩盖协议版本不匹配等真实原因（issue #18）。
 	if err := s.call(ctx, "initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "zgo", "version": "0.3"},
 	}, &init); err != nil {
-		s.Close()
-		return nil, fmt.Errorf("initializing %s: %w", name, err)
+		return fmt.Errorf("initializing: %w", err)
 	}
-	s.notify("notifications/initialized")
+	s.notify(ctx, "notifications/initialized")
 	if err := s.call(ctx, "tools/list", map[string]any{}, &init); err != nil {
-		s.Close()
-		return nil, fmt.Errorf("listing tools of %s: %w", name, err)
+		return fmt.Errorf("listing tools: %w", err)
 	}
 	s.mu.Lock()
 	s.tools = init.Tools
@@ -159,7 +177,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Server, error) {
 		s.resources = rlist.Resources
 		s.mu.Unlock()
 	}
-	return s, nil
+	return nil
 }
 
 // Tools returns the server's advertised tool definitions.
@@ -202,71 +220,135 @@ func (s *Server) Call(ctx context.Context, name string, args json.RawMessage) (s
 	return text, nil
 }
 
-// Close terminates the server process.
+// Close terminates the server connection/process.
 func (s *Server) Close() {
-	if s.cmd.Process != nil {
-		_ = s.cmd.Process.Kill()
+	if s.tr != nil {
+		s.tr.close()
 	}
 }
 
-// call sends a request and decodes the matching response into out.
+// call sends a request via the transport and decodes the response into out.
 func (s *Server) call(ctx context.Context, method string, params any, out any) error {
 	s.mu.Lock()
 	s.nextID++
 	id := s.nextID
-	ch := make(chan json.RawMessage, 1)
-	s.pending[id] = ch
 	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		delete(s.pending, id)
-		s.mu.Unlock()
-	}()
 
 	body, err := json.Marshal(rpcRequest{JSONRPC: "2.0", ID: id, Method: method, Params: params})
 	if err != nil {
 		return err
 	}
-	select {
-	case s.stdin <- append(body, '\n'):
-	case <-ctx.Done():
-		return ctx.Err()
+	raw, err := s.tr.roundTrip(ctx, body, false)
+	if err != nil {
+		return err
 	}
-
-	select {
-	case raw := <-ch:
-		var resp rpcResponse
-		if err := json.Unmarshal(raw, &resp); err != nil {
-			return fmt.Errorf("parsing response: %w", err)
-		}
-		if resp.Error != nil {
-			return fmt.Errorf("%d %s", resp.Error.Code, resp.Error.Message)
-		}
-		if out == nil || len(resp.Result) == 0 {
-			return nil
-		}
-		return json.Unmarshal(resp.Result, out)
-	case <-ctx.Done():
-		return ctx.Err()
+	var resp rpcResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return fmt.Errorf("parsing response: %w", err)
 	}
+	if resp.Error != nil {
+		return fmt.Errorf("%d %s", resp.Error.Code, resp.Error.Message)
+	}
+	if out == nil || len(resp.Result) == 0 {
+		return nil
+	}
+	return json.Unmarshal(resp.Result, out)
 }
 
 // notify sends a notification (no response expected).
-func (s *Server) notify(method string) {
+func (s *Server) notify(ctx context.Context, method string) {
 	body, _ := json.Marshal(rpcRequest{JSONRPC: "2.0", Method: method})
+	_, _ = s.tr.roundTrip(ctx, body, true)
+}
+
+// --- stdio transport --------------------------------------------------------
+
+// stdioTransport is the classic child-process wire (LSP-style stdio JSON-
+// RPC): one pipe, responses dispatched by id.
+type stdioTransport struct {
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	writes  chan []byte
+	mu      sync.Mutex
+	pending map[int64]chan json.RawMessage
+}
+
+// startStdio launches the command and returns the wired transport.
+func startStdio(cfg Config) (transport, error) {
+	cmd := exec.Command(cfg.Command, cfg.Args...)
+	cmd.Env = serverEnv(cmd, cfg.Env)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	t := &stdioTransport{cmd: cmd, stdin: stdin,
+		writes: make(chan []byte, 16), pending: map[int64]chan json.RawMessage{}}
+	go func() {
+		for b := range t.writes {
+			if _, err := stdin.Write(b); err != nil {
+				return
+			}
+		}
+	}()
+	go t.readLoop(bufio.NewReaderSize(stdout, 1024*1024))
+	return t, nil
+}
+
+func (t *stdioTransport) roundTrip(ctx context.Context, body []byte, notify bool) (json.RawMessage, error) {
+	if notify {
+		select {
+		case t.writes <- append(body, '\n'):
+			return nil, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	var head struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal(body, &head)
+	ch := make(chan json.RawMessage, 1)
+	t.mu.Lock()
+	t.pending[head.ID] = ch
+	t.mu.Unlock()
+	defer func() {
+		t.mu.Lock()
+		delete(t.pending, head.ID)
+		t.mu.Unlock()
+	}()
 	select {
-	case s.stdin <- append(body, '\n'):
-	default:
+	case t.writes <- append(body, '\n'):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case raw := <-ch:
+		return raw, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (t *stdioTransport) close() {
+	if t.cmd.Process != nil {
+		_ = t.cmd.Process.Kill()
 	}
 }
 
 // readLoop dispatches responses to their waiters; notifications are
 // dropped (v0.3 consumes no server-initiated messages).
-func (s *Server) readLoop(r *bufio.Reader) {
+func (t *stdioTransport) readLoop(r *bufio.Reader) {
 	for {
 		line, err := r.ReadBytes('\n')
 		if len(line) == 0 && err != nil {
-			s.failPending(err)
+			t.failPending(err)
 			return
 		}
 		// id 宽容解码（issue #18）：JSON-RPC 规范允许 string|number，
@@ -279,16 +361,16 @@ func (s *Server) readLoop(r *bufio.Reader) {
 		if json.Unmarshal(line, &head) != nil || len(head.ID) == 0 || head.Method != "" {
 			continue // notification、server-initiated request 或损坏行
 		}
-		s.mu.Lock()
-		ch, ok := s.pending[normalizeID(head.ID)]
-		if !ok && len(s.pending) == 1 {
+		t.mu.Lock()
+		ch, ok := t.pending[normalizeID(head.ID)]
+		if !ok && len(t.pending) == 1 {
 			// id 与任何等待者都对不上（服务器重写了 id，如网关）：恰有
 			// 一个等待中的调用时按单飞关联投递，顺序握手下无错配风险。
-			for _, c := range s.pending {
+			for _, c := range t.pending {
 				ch, ok = c, true
 			}
 		}
-		s.mu.Unlock()
+		t.mu.Unlock()
 		if ok {
 			ch <- line
 		}
@@ -304,18 +386,18 @@ func normalizeID(raw json.RawMessage) int64 {
 	return id
 }
 
-func (s *Server) failPending(err error) {
+func (t *stdioTransport) failPending(err error) {
 	// 进程退出后唤醒所有等待者：投递一个错误响应而不是 close（close 后
 	// readLoop 再投递会 panic）。
 	fake := json.RawMessage(`{"jsonrpc":"2.0","error":{"code":-32603,"message":"server exited"}}`)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for id, ch := range s.pending {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for id, ch := range t.pending {
 		select {
 		case ch <- fake:
 		default:
 		}
-		delete(s.pending, id)
+		delete(t.pending, id)
 	}
 	_ = err
 }
