@@ -40,6 +40,8 @@ type SessionInfo struct {
 	Running   bool      `json:"running"`
 	Archived  bool      `json:"archived,omitempty"` // 组织态（spec 规则 82）：归档会话默认从列表/恢复隐藏
 	Pinned    bool      `json:"pinned,omitempty"`   // 组织态（spec 规则 86）：置顶会话在列表最前（组内时间序不变）
+	// ParentID 是谱系父（spec 规则 103）：ForkAtUserTurn 落父；空 = 根。
+	ParentID string `json:"parentId,omitempty"`
 }
 
 // Session is a conversation: a transcript persisted as JSONL plus run state.
@@ -494,6 +496,7 @@ type metaRecord struct {
 	CreatedAt time.Time `json:"createdAt"`
 	Archived  bool      `json:"archived,omitempty"`
 	Pinned    bool      `json:"pinned,omitempty"`
+	ParentID  string    `json:"parentId,omitempty"`
 }
 
 type messageRecord struct {
@@ -607,7 +610,7 @@ func (s *Session) writeMetaLocked() error {
 	rec, err := json.Marshal(metaRecord{
 		Type: recordMeta, ID: s.info.ID, Title: s.info.Title,
 		Workspace: s.info.Workspace, CreatedAt: s.info.UpdatedAt,
-		Archived: s.info.Archived, Pinned: s.info.Pinned,
+		Archived: s.info.Archived, Pinned: s.info.Pinned, ParentID: s.info.ParentID,
 	})
 	if err != nil {
 		return err
@@ -676,7 +679,8 @@ func loadMetaOnly(path string) (s *Session, err error) {
 		}
 		return &Session{path: path, loaded: false,
 			info: SessionInfo{ID: rec.ID, Title: rec.Title, Workspace: rec.Workspace,
-				UpdatedAt: mtime, Archived: rec.Archived, Pinned: rec.Pinned},
+				UpdatedAt: mtime, Archived: rec.Archived, Pinned: rec.Pinned,
+				ParentID: rec.ParentID},
 			metaTitle: rec.Title}, nil
 	}
 	// 首行缺失/损坏/非 meta：退回全量。
@@ -727,6 +731,7 @@ func loadSession(path string) (*Session, error) {
 						s.info.Workspace = rec.Workspace
 						s.info.Archived = rec.Archived
 						s.info.Pinned = rec.Pinned
+						s.info.ParentID = rec.ParentID
 						s.metaTitle = rec.Title
 					}
 				case recordMessage:
@@ -1064,6 +1069,15 @@ func (m *Manager) ForkAtUserTurn(src *Session, userTurn int) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 谱系（spec 规则 103）：分叉记父——tree 视图的边；立即重写 meta
+	// 行（New 落盘时还没有父，不重写重启即丢）。
+	fork.mu.Lock()
+	fork.info.ParentID = src.Info().ID
+	if err := fork.writeMetaLocked(); err != nil {
+		fork.mu.Unlock()
+		return fork, fmt.Errorf("persisting lineage: %w", err)
+	}
+	fork.mu.Unlock()
 	m.mu.Lock()
 	wiring := m.wiring
 	m.mu.Unlock()
@@ -1145,4 +1159,59 @@ func (m *Manager) SetPinnedById(id string, on bool) bool {
 		return false
 	}
 	return s.SetPinned(on) == nil
+}
+
+// TreeNode 是谱系树的一个节点（spec 规则 103）：会话与其分叉后代。
+type TreeNode struct {
+	Info     SessionInfo
+	Children []*TreeNode
+}
+
+// SessionTree 把全部会话按 ParentID 组装成森林（spec 规则 103）：根是
+// 无父或父不存在的会话（孤儿当根——父被删不丢子）；同层按更新时间新
+// 到旧。includeArchived 控制归档过滤（规则 82 语义）。
+func (m *Manager) SessionTree(includeArchived bool) []*TreeNode {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	byID := map[string]*TreeNode{}
+	var order []string
+	for id, s := range m.sessions {
+		s.mu.Lock()
+		info := s.info
+		s.mu.Unlock()
+		if info.Archived && !includeArchived {
+			continue
+		}
+		byID[id] = &TreeNode{Info: info}
+		order = append(order, id)
+	}
+	var roots []*TreeNode
+	seen := map[string]bool{}
+	var attach func(n *TreeNode)
+	attach = func(n *TreeNode) {
+		if seen[n.Info.ID] {
+			return // 环防御：数据损坏时不无限递归
+		}
+		seen[n.Info.ID] = true
+		if p := n.Info.ParentID; p != "" {
+			if parent, ok := byID[p]; ok && parent.Info.ID != n.Info.ID {
+				parent.Children = append(parent.Children, n)
+				return
+			}
+		}
+		roots = append(roots, n) // 根或孤儿
+	}
+	for _, id := range order {
+		attach(byID[id])
+	}
+	sortTreeNodes(roots)
+	return roots
+}
+
+// sortTreeNodes 树内各层按更新时间新到旧（谱系视图，spec 规则 103）。
+func sortTreeNodes(ns []*TreeNode) {
+	sort.Slice(ns, func(i, j int) bool { return ns[i].Info.UpdatedAt.After(ns[j].Info.UpdatedAt) })
+	for _, n := range ns {
+		sortTreeNodes(n.Children)
+	}
 }

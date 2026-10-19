@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
@@ -293,4 +295,58 @@ func captureSessionsOut(fn func() int) (int, string) {
 	w.Close()
 	data, _ := io.ReadAll(r)
 	return code, string(data)
+}
+
+// TestSessionsTreeCLI（spec 规则 103）：tree 渲染缩进谱系——根行在缩
+// 进 0、子代缩进 1；无分叉时提示。
+func TestSessionsTreeCLI(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("ZGO_TEST_DATADIR", dataDir)
+	svc, err := service.New(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	svc.DisableAutoTitleForTesting()
+	svc.DisableAutoMemoryForTesting()
+	base, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fork 要至少一条用户消息（ForkSession 按 user turn 切）。
+	svc.UseProviderForTesting(func() ai.Provider { return &treeTurnProvider{} })
+	if err := svc.Chat(base.ID, "一问", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	fork, err := svc.ForkSession(base.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := captureSessionsOut(func() int { return runSessions([]string{"tree"}) })
+	if code != 0 {
+		t.Fatalf("tree = %d %q", code, out)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("tree lines = %q", out)
+	}
+	if strings.HasPrefix(lines[0], " ") || !strings.HasPrefix(lines[1], "  ") {
+		t.Fatalf("indentation wrong:\n%s", out)
+	}
+	if !strings.Contains(out, fork.ID[:8]) {
+		t.Fatalf("fork missing:\n%s", out)
+	}
+}
+
+// treeTurnProvider 单条文本回复。
+type treeTurnProvider struct{}
+
+func (p *treeTurnProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	out := make(chan ai.StreamEvent, 3)
+	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "回复"}
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	close(out)
+	return out
 }
