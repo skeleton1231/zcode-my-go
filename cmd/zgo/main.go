@@ -11,15 +11,18 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/export"
+	"github.com/skeleton1231/zcode-my-go/internal/i18n"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -27,16 +30,9 @@ import (
 // （issue #35：此前四类误行为全部静默——缺值进 REPL、-p 吞 flag、
 // 未知 flag 被跳过、-C 缺值吞掉）。
 func usage(w io.Writer) {
-	fmt.Fprintln(w, `用法：zgo [选项] [prompt]
-
-  -p, --print <prompt>   运行一个任务后退出（与位置参数二选一）
-  -t, --tui              全屏终端界面
-  -C <dir>               工作区目录（默认当前目录）
-  -c, --continue         恢复同工作区最近会话（无则新建）
-  -r, --resume <前缀>    恢复指定会话（唯一前缀；-r 优先于 -c）
-  --output-format <格式>  print 输出：text（默认）或 json（逐事件 JSONL）
-
-不带 -p 时进入 REPL。`)
+	// 帮助在服务构建前打印：语言走环境检测（spec 规则 94——
+	// settings.lang 对服务面生效，此处 ZGO_LANG/LANG 即可）。
+	fmt.Fprintln(w, i18n.Catalog(i18n.Resolve("")).CLI.Help)
 }
 
 // parseArgs 严格解析 argv：取值型 flag 的值不得形似 flag（否则报错而非
@@ -51,7 +47,7 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images
 		switch {
 		case arg == "-p" || arg == "--print":
 			if next == "" || strings.HasPrefix(next, "-") {
-				return "", "", false, nil, false, "", "", fmt.Errorf("-p/--print 需要一个 prompt 值")
+				return "", "", false, nil, false, "", "", errors.New(i18n.Catalog(i18n.Resolve("")).CLI.NeedPrompt)
 			}
 			i++
 			prompt = argv[i]
@@ -87,7 +83,7 @@ func parseArgs(argv []string) (prompt, workspace string, fullscreen bool, images
 			i++
 			resume = argv[i]
 		case strings.HasPrefix(arg, "-"):
-			return "", "", false, nil, false, "", "", fmt.Errorf("未知参数 %q", arg)
+			return "", "", false, nil, false, "", "", fmt.Errorf(i18n.Catalog(i18n.Resolve("")).CLI.UnknownFlag, strconv.Quote(arg))
 		default:
 			if prompt != "" {
 				return "", "", false, nil, false, "", "", fmt.Errorf("多余的位置参数 %q（prompt 已由 %q 给出）", arg, prompt)

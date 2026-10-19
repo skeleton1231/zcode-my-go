@@ -67,6 +67,7 @@ func configList(svc *service.AgentService) int {
 	fmt.Fprintf(os.Stdout, "redactSecrets     %v\n", svc.RedactionEnabled())
 	fmt.Fprintf(os.Stdout, "autoMemory        %v\n", svc.AutoMemoryEnabled())
 	fmt.Fprintf(os.Stdout, "hardBudgetStop    %v\n", svc.HardBudgetStopEnabled())
+	fmt.Fprintf(os.Stdout, "lang               %s\n", svc.LangView())
 	teOn, teEx, teEp := svc.TelemetryView()
 	fmt.Fprintf(os.Stdout, "telemetry.enabled  %v\n", teOn)
 	fmt.Fprintf(os.Stdout, "telemetry.exporter %s\n", teEx)
@@ -97,6 +98,8 @@ func configGet(svc *service.AgentService, key string) int {
 		fmt.Fprintln(os.Stdout, svc.AutoMemoryEnabled())
 	case "hardBudgetStop":
 		fmt.Fprintln(os.Stdout, svc.HardBudgetStopEnabled())
+	case "lang":
+		fmt.Fprintln(os.Stdout, svc.LangView())
 	case "telemetry.enabled", "telemetry.exporter", "telemetry.endpoint":
 		teOn, teEx, teEp := svc.TelemetryView()
 		switch key {
@@ -108,7 +111,7 @@ func configGet(svc *service.AgentService, key string) int {
 			fmt.Fprintln(os.Stdout, teEp)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory/hardBudgetStop/telemetry.*）\n", key)
+		fmt.Fprintf(os.Stderr, svc.Copy().CLI.UnknownKey+"（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory/hardBudgetStop/telemetry.*/lang）\n", key)
 		return 1
 	}
 	return 0
@@ -207,8 +210,14 @@ func configSet(svc *service.AgentService, key, value string) int {
 			return 1
 		}
 		fmt.Fprintln(os.Stdout, "已更新", key)
+	case "lang":
+		if err := svc.SetLang(value); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stdout, "已更新 lang =", svc.LangView())
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory/hardBudgetStop/telemetry.*）\n", key)
+		fmt.Fprintf(os.Stderr, svc.Copy().CLI.UnknownKey+"（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory/hardBudgetStop/telemetry.*/lang）\n", key)
 		return 1
 	}
 	return 0

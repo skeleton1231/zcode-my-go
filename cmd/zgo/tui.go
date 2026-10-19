@@ -17,6 +17,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/i18n"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
@@ -51,7 +52,8 @@ func ansi(code, s string) string {
 
 type tuiState struct {
 	mu      sync.Mutex
-	lines   []string // transcript lines (wrapped before storing)
+	copy    i18n.Copy // 界面文案（spec 规则 94；初始化定住）
+	lines   []string  // transcript lines (wrapped before storing)
 	input   []rune
 	status  string
 	running bool
@@ -108,7 +110,8 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 	}()
 	os.Stdout.WriteString("\x1b[?2004h") // 开括号粘贴
 
-	s := &tuiState{status: "就绪", redraw: make(chan struct{}, 1), topIdx: -1, turnCur: -1}
+	s := &tuiState{status: svc.Copy().TUI.Idle, copy: svc.Copy(),
+		redraw: make(chan struct{}, 1), topIdx: -1, turnCur: -1}
 	s.resize()
 	info := resumeInfo
 	if resumed {
@@ -147,7 +150,7 @@ func runTUI(svc *service.AgentService, workspace string, resumeInfo agent.Sessio
 	// 后中止的是当前会话的运行。
 	s.abort = func() {
 		svc.Abort(info.ID)
-		s.setStatus("中止中…", true)
+		s.setStatus(svc.Copy().TUI.Stopping, true)
 	}
 	svc.SetAsker(stdinAsker)
 	svc.SetQuestion(stdinQuestion)
@@ -250,11 +253,11 @@ func (s *tuiState) handleLine(line string, svc *service.AgentService, info *agen
 
 // sendChat runs one chat turn（/mcp 展开与常规输入共用；spec 规则 28）。
 func (s *tuiState) sendChat(svc *service.AgentService, info *agent.SessionInfo, workspace, line string) {
-	s.setStatus("运行中…", true)
+	s.setStatus(svc.Copy().TUI.Running, true)
 	defer func() {
 		s.mu.Lock()
 		s.running = false
-		s.status = "就绪"
+		s.status = svc.Copy().TUI.Idle
 		if s.onUsage != nil {
 			if u := s.onUsage(); u != "" {
 				s.status = "就绪 · " + u
@@ -274,11 +277,11 @@ func (s *tuiState) sendChat(svc *service.AgentService, info *agent.SessionInfo, 
 // 规则 29）：状态与事件渲染同 sendChat；重发文本进转录（旧轮的显示行
 // 留在上方，与 CC 的转录观感一致）。
 func (s *tuiState) rerunChat(svc *service.AgentService, info *agent.SessionInfo, text string) error {
-	s.setStatus("重跑中…", true)
+	s.setStatus(svc.Copy().TUI.Rerunning, true)
 	defer func() {
 		s.mu.Lock()
 		s.running = false
-		s.status = "就绪"
+		s.status = svc.Copy().TUI.Idle
 		s.mu.Unlock()
 		s.requestRedraw()
 	}()
@@ -751,7 +754,12 @@ func (s *tuiState) abortRun() {
 		return
 	}
 	s.abort()
-	s.push(ansi(ansiYellow, "[已中止] Esc 中断了当前回合"))
+	// 测试直接构造 tuiState 时 copy 未注入——零值回退基准目录。
+	msg := s.copy.TUI.Aborted
+	if msg == "" {
+		msg = i18n.Catalog(i18n.Zh).TUI.Aborted
+	}
+	s.push(ansi(ansiYellow, msg))
 	s.requestRedraw()
 }
 

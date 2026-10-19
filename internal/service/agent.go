@@ -33,10 +33,11 @@ import (
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
 	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
+	"github.com/skeleton1231/zcode-my-go/internal/i18n"
 	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/pricing"
-"github.com/skeleton1231/zcode-my-go/internal/prompt"
+	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/redact"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
@@ -90,6 +91,8 @@ type settings struct {
 	// Pricing 是模型牌价覆盖（spec 规则 93）：键为模型 ID（族前缀匹
 	// 配），$/Mtok 三键——覆盖目录内置近似价。
 	Pricing map[string]pricing.Override `json:"pricing,omitempty"`
+	// Lang 是界面语言（spec 规则 94）：auto（默认，环境检测）/zh/en。
+	Lang string `json:"lang,omitempty"`
 }
 
 // telemetrySettings 是遥测配置（zgo config telemetry.* 三键）。
@@ -155,8 +158,8 @@ type AgentService struct {
 	buildTools       func(workspace, sessionID string) []agent.Tool // 工具面装配（/tools 列举同源）
 	tracer           *telemetry.Tracer                              // span 追踪（spec 规则 91；nil 关闭）
 	prices           *pricing.Table                                 // 模型牌价（spec 规则 93；含设置覆盖）
+	loc              i18n.Locale                                    // 界面语言（spec 规则 94）
 }
-
 
 // New builds the service: loads settings, loads sessions, wires the loop.
 func New(dataDir string) (*AgentService, error) {
@@ -416,6 +419,8 @@ func (s *AgentService) syncRedaction(cfg settings) {
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.syncRedaction(cfg)
+	// 界面语言（spec 规则 94）：设置值优先，auto 走环境检测。
+	s.loc = i18n.Resolve(s.settings.Lang)
 	// 遥测 tracer（spec 规则 91）：随设置重建（rewire 在 New 与每次
 	// 设置变更后都会跑）——config set telemetry.* 即时生效。
 	s.tracer = telemetry.New(s.settings.Telemetry.Enabled,
@@ -2382,10 +2387,10 @@ func (s *AgentService) recordDailyUsage(sessionID, model string, before, after a
 	switch s.day.CheckBudget(budget) {
 	case "near":
 		emit(agent.Event{Kind: agent.EvBudgetNotice,
-			Text: fmt.Sprintf("今日已用 %d token（预算的 80%%+）", s.day.Total())})
+			Text: fmt.Sprintf(s.Copy().Budget.Near, s.day.Total())})
 	case "over":
 		emit(agent.Event{Kind: agent.EvBudgetNotice,
-			Text: fmt.Sprintf("今日已用 %d token，超出预算 %d", s.day.Total(), budget)})
+			Text: fmt.Sprintf(s.Copy().Budget.Over, s.day.Total(), budget)})
 	}
 }
 
@@ -2429,6 +2434,39 @@ func (s *AgentService) FallbackModels() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.settings.FallbackModels...)
+}
+
+// Copy 返回当前语言的文案目录（spec 规则 94）——CLI/TUI 与服务层
+// 文案同源；语言随设置与环境解析，New 时定住（config set lang 后新
+// 进程生效）。
+func (s *AgentService) Copy() i18n.Copy {
+	return i18n.Catalog(s.loc)
+}
+
+// SetLang 落盘界面语言（spec 规则 94）：auto/zh/en；非法值报错。
+// 语言在 New 时定住——config set 后新进程生效（服务内已构建的文案
+// 不热切，避免半中半英的一屏）。
+func (s *AgentService) SetLang(v string) error {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v != "auto" && v != string(i18n.Zh) && v != string(i18n.En) {
+		return fmt.Errorf(string(i18n.Catalog(i18n.Zh).CLI.BadLangValue), v)
+	}
+	s.mu.Lock()
+	cfg := s.settings
+	cfg.Lang = v
+	_, err := s.saveSettingsLocked(cfg)
+	s.mu.Unlock()
+	return err
+}
+
+// LangView 返回当前语言设置（auto 表示环境检测）。
+func (s *AgentService) LangView() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.settings.Lang == "" {
+		return "auto"
+	}
+	return s.settings.Lang
 }
 
 // SetBudgetDailyTokens updates the daily budget（0=不限，spec 规则 37
@@ -2780,8 +2818,7 @@ func (s *AgentService) hardFuseErr() error {
 	if s.day.Total() < cfg.BudgetDailyTokens {
 		return nil
 	}
-	return fmt.Errorf("今日已计价 %d token，已达硬预算 %d——新回合被熔断（zgo config set hardBudgetStop false 可解除）",
-		s.day.Total(), cfg.BudgetDailyTokens)
+	return fmt.Errorf(s.Copy().Budget.Fuse, s.day.Total(), cfg.BudgetDailyTokens)
 }
 
 // recordSubagentUsage 把子代理运行的用量折算进当日记账（spec 规则
