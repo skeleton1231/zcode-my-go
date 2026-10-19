@@ -1,12 +1,14 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 )
@@ -295,4 +297,62 @@ func TestExpandMentionsLineRange(t *testing.T) {
 		strings.Contains(out, "line-05") {
 		t.Fatalf("multi-window:\n%s", out)
 	}
+}
+
+// TestSessionMentionExpand（spec 规则 97）：@session:<前缀> 展开为被引
+// 用会话的最近对话摘录；未解析前缀与自引用原样保留；同 token 去重。
+func TestSessionMentionExpand(t *testing.T) {
+	svc, other, _ := mentionEnv(t)
+	// 在 other 会话里跑一回合留下内容（脚本 provider 只回文本）。
+	svc.DisableAutoTitleForTesting()
+	svc.DisableAutoMemoryForTesting()
+	p := &mentionChatProvider{}
+	svc.UseProviderForTesting(func() ai.Provider { return p })
+	if err := svc.Chat(other, "昨天的问题", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	self, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prefix := other // 日期时间戳前缀同日全歧义（memory 教训）——用完整 ID
+	text, _ := svc.expandMentions(self.ID, fmt.Sprintf("继续 @session:%s 的工作", prefix), nil)
+	if !strings.Contains(text, "继续 @session:"+prefix) {
+		t.Fatalf("token not kept: %q", text)
+	}
+	if !strings.Contains(text, "user: 昨天的问题") || !strings.Contains(text, "assistant: 回复内容") {
+		t.Fatalf("excerpt missing:\n%s", text)
+	}
+	if !strings.Contains(text, "的最近对话：") {
+		t.Fatalf("header missing:\n%s", text)
+	}
+
+	// 未解析前缀：原样、不展开。
+	text, _ = svc.expandMentions(self.ID, "看看 @session:zzzzzzzz", nil)
+	if strings.Contains(text, "的最近对话：") || !strings.Contains(text, "@session:zzzzzzzz") {
+		t.Fatalf("unknown prefix expanded: %q", text)
+	}
+	// 自引用：不展开（摘录自己没有意义）。
+	text, _ = svc.expandMentions(self.ID, "自指 @session:"+self.ID[:8], nil)
+	if strings.Contains(text, "的最近对话：") {
+		t.Fatalf("self mention expanded:\n%s", text)
+	}
+	// 同 token 重复：只展开一次。
+	text, _ = svc.expandMentions(self.ID, fmt.Sprintf("@session:%s 和 @session:%s", prefix, prefix), nil)
+	if strings.Count(text, "的最近对话：") != 1 {
+		t.Fatalf("dedup failed: %d", strings.Count(text, "的最近对话："))
+	}
+}
+
+// mentionChatProvider 固定回复（给被引用会话留下可断言的转录）。
+type mentionChatProvider struct{}
+
+func (p *mentionChatProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	out := make(chan ai.StreamEvent, 3)
+	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "回复内容"}
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	close(out)
+	return out
 }

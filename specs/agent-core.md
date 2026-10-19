@@ -782,7 +782,6 @@ dc907a4 (feat: glob and grep honor .gitignore)
    刻（HH:MM、时段词+N点——中午12点=12、晚上12点=0、下午3点=15、
    N点半）；全角数字与冒号归一。Job.At 保留原文（仅回显，调度以
    Schedule 为准）；--at 与 --schedule 互斥；list 计划列附原文。
-（规则 91 的嵌套扩展见待并 #301。）
 96. 提示钩子：settings.hooks.userPromptSubmit（外部命令）。时机在
    expandMentions 之前——钩子看到的是用户敲的原始提示。exit 2 拦截
    （输出为原因；服务层明确报错，**不进转录**）；exit 0 且 stdout 是
@@ -790,6 +789,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    记日志放行。payload：{event:"userPromptSubmit", sessionId,
    workspace, prompt}。这是 hook 家族最后一个注入点（pre/post 工具、
    stop/notification、sessionStart/End、preCompact 之外）。
+
+97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
+   ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
+   时间戳）；自引用与未解析前缀原样留给模型（不展开不报错）。摘录
+   是尾部 20 条 user/assistant 文本（工具结果/系统行不进），rune 截
+   断 30KB，动态围栏 + 「@session:<前缀> 的最近对话」头；预算与文
+   件引用共享（mentionTotalCap/mentionMaxFiles），同 token 去重。展
+   开在 expandMentions 内先行于文件/目录引用。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |

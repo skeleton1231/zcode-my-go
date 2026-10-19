@@ -468,6 +468,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    家族（pre/post 工具、stop/notification、session 生命周期、
    preCompact）的最后一个注入点。
 
+**@会话引用**（spec 规则 97）：`@session:<前缀>` 跨会话带上下文——
+   最近 20 条对话有界摘录（30KB、预算与文件引用共享）；自引用/未解
+   析原样保留。
+
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘
    要），JSONL 持久化；超限缩放重编码（stdlib 双线性，20MB 输入 /
