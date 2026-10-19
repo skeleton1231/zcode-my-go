@@ -257,10 +257,12 @@ func (s *Scheduler) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 		<-s.stopped
-		// 排空在飞的 fire（issue #134）：record 落盘完成后才返回，调用
-		// 方（应用退出、测试清理）随即关 store/删 TempDir 不再竞争。
-		s.inflight.Wait()
 	}
+	// 排空无条件执行（issue #134 的 Windows 补遗）：手动 tick（未
+	// Start）的调用方同样要等 record 落盘完成再删数据目录——CI 曾因
+	// 清理竞态报「directory is not empty」（Windows TempDir RemoveAll
+	// 撞上 fire goroutine 的 LastRun 写回）。
+	s.inflight.Wait()
 }
 
 // tick re-reads the store（热重载）and fires everything due.
