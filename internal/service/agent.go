@@ -471,7 +471,7 @@ func (s *AgentService) rewire() {
 				return agent.SubtaskResult{}, err
 			}
 			res, err := agent.RunSubtask(ctx, cfg, prompt)
-			s.recordSubagentUsage(res.Usage) // 用量入当日记账（规则 87）
+			s.recordSubagentUsage(sessionID, "subagent", res.Usage) // 归因记账（规则 87/89）
 			return res, err
 		})
 		contextRead := contextReader(ws)
@@ -499,7 +499,7 @@ func (s *AgentService) rewire() {
 				System:   agent.SubtaskSystem(),
 				Tools:    tools,
 			}, prior, prompt)
-			s.recordSubagentUsage(res.Usage) // 用量入当日记账（规则 87）
+			s.recordSubagentUsage(sessionID, "subagent", res.Usage) // 归因记账（规则 87/89）
 			return res, hist, err
 		}
 		all = append(tools.AllW(ws, state, question), task,
@@ -537,8 +537,8 @@ func (s *AgentService) rewire() {
 				return out
 			}
 			results := agent.RunSubtasks(ctx, cfg, prompts)
-			for _, r := range results { // 用量入当日记账（规则 87）
-				s.recordSubagentUsage(r.Usage)
+			for _, r := range results { // 归因记账（规则 87/89）
+				s.recordSubagentUsage(sessionID, "subagent", r.Usage)
 			}
 			return results
 		}))
@@ -1228,7 +1228,7 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	if err == nil {
 		// 每日预算记账（spec 规则 35）：回合增量折算入当日记账，跨阈
 		// 值发一次通知（软预算——不阻断）。
-		s.recordDailyUsage(before, sess.UsageTotal(), emit)
+		s.recordDailyUsage(sessionID, before, sess.UsageTotal(), emit)
 		// 首个回合成功结束后尝试自动命名（规则 21）：等值守卫在内部，
 		// 改过名的会话这里直接空手而归；WaitGroup 让 Close 收束它。
 		s.titleWG.Add(1)
@@ -1826,7 +1826,7 @@ func (s *AgentService) execWorkflow(ctx context.Context, sessionID, workspace st
 	}
 	results, runErr := run(ctx, steps, prefill)
 	for _, r := range results {
-		s.recordSubagentUsage(r.Usage)
+		s.recordSubagentUsage(sessionID, "workflow", r.Usage) // 归因记账（规则 88/89）
 	}
 	status := "completed"
 	if runErr != nil {
@@ -2305,7 +2305,7 @@ func capResourceText(text string) string {
 
 // recordDailyUsage 把本回合的用量增量折算入当日记账，跨阈值发一次通
 // 知（80%/100%，spec 规则 35）。
-func (s *AgentService) recordDailyUsage(before, after ai.Usage, emit func(agent.Event)) {
+func (s *AgentService) recordDailyUsage(sessionID string, before, after ai.Usage, emit func(agent.Event)) {
 	delta := usage.Priced(
 		after.InputTokens-before.InputTokens,
 		after.OutputTokens-before.OutputTokens,
@@ -2314,7 +2314,7 @@ func (s *AgentService) recordDailyUsage(before, after ai.Usage, emit func(agent.
 	if delta <= 0 {
 		return
 	}
-	if err := s.day.Add(delta); err != nil {
+	if err := s.day.AddFor(sessionID, "main", delta); err != nil {
 		log.Printf("daily usage: %v", err)
 		return
 	}
@@ -2681,13 +2681,13 @@ func (s *AgentService) hardFuseErr() error {
 // recordSubagentUsage 把子代理运行的用量折算进当日记账（spec 规则
 // 87：子代理的钱此前对记账/熔断不可见——不 emit 通知（子任务无回
 // 合边界），仅入账）。
-func (s *AgentService) recordSubagentUsage(u ai.Usage) {
+func (s *AgentService) recordSubagentUsage(sessionID, source string, u ai.Usage) {
 	delta := usage.Priced(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens)
 	if delta <= 0 {
 		return
 	}
-	if err := s.day.Add(delta); err != nil {
-		log.Printf("subagent usage: %v", err)
+	if err := s.day.AddFor(sessionID, source, delta); err != nil {
+		log.Printf("%s usage: %v", source, err)
 	}
 }
 
@@ -2702,4 +2702,14 @@ func (s *AgentService) SetSessionPinned(idOrPrefix string, on bool) error {
 		return fmt.Errorf("pinning session: %s", id)
 	}
 	return nil
+}
+
+// UsageAttribution 是今日用量的归因观测面（spec 规则 89）：按会话与
+// 按来源（main/subagent/workflow）的聚合。
+func (s *AgentService) UsageAttribution() (sessions []usage.SessionTotal, main, subagent, workflow int) {
+	sessions = s.day.TopSessions()
+	main = s.day.SourceTotal("main")
+	subagent = s.day.SourceTotal("subagent")
+	workflow = s.day.SourceTotal("workflow")
+	return sessions, main, subagent, workflow
 }

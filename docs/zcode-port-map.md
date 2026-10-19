@@ -422,6 +422,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    穿线）；execWorkflow 启动前熔断 + 各步入账——nested loop 三入口
    （子代理/后台/工作流）的钱全部进记账与硬预算闸。
 
+**用量归因**（spec 规则 89，87/88 的可观测半边）：usage 条目带
+   session/source 键（旧文件兼容重放）；来源词表 main/subagent/
+   workflow（nested loop 归因宿主会话）；TopSessions/SourceTotal 观
+   测面 + `zgo usage` 今日归因段（来源三数 + 会话 Top 5）。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，

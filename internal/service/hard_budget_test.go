@@ -182,6 +182,10 @@ func (p *taskScriptProvider) Stream(ctx context.Context, req ai.Request) <-chan 
 		return closeAndReturn(out)
 	} else {
 		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: p.turns[min(n-1, len(p.turns)-1)]}
+		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn,
+			Usage: ai.Usage{InputTokens: 100, OutputTokens: 50}} // 主回合用量（归因断言）
+		close(out)
+		return out
 	}
 	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
 	close(out)
@@ -255,4 +259,39 @@ func (p *wfScriptProvider) Stream(ctx context.Context, req ai.Request) <-chan ai
 	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
 	close(out)
 	return out
+}
+
+// TestUsageAttributionFlow（spec 规则 89）：主回合与子代理用量分别归
+// 因到会话与来源。
+func TestUsageAttributionFlow(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	svc.DisableAutoTitleForTesting()
+	svc.DisableAutoMemoryForTesting()
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &taskScriptProvider{turns: []string{"", "主回合收尾"}}
+	svc.UseProviderForTesting(func() ai.Provider { return p })
+	if err := svc.Chat(info.ID, "调查", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	_, main, sub, wf := svc.UsageAttribution()
+	if sub < 3000 {
+		t.Fatalf("subagent attribution missing: %d", sub)
+	}
+	if main == 0 {
+		t.Fatal("main attribution missing")
+	}
+	if wf != 0 {
+		t.Fatalf("workflow should be zero: %d", wf)
+	}
+	tops := svc.day.TopSessions()
+	if len(tops) == 0 || tops[0].SessionID != info.ID {
+		t.Fatalf("session attribution wrong: %+v", tops)
+	}
 }
