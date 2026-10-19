@@ -770,6 +770,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
    迁移面（受控，同 ZCode 的 CliCopy/TuiCopy 精神，非全量抽取）：CLI
    帮助与参数错误、config 键错误、usage 头行、TUI 五状态语、预算
    near/over 通知与硬预算熔断错误。帮助在服务构建前打印，走环境检测。
+
+（规则 91 扩展：嵌套循环节点——task/dispatch/agent_send 的子代理循环
+产 subagent.turn、工作流步骤产 workflow.step，与主回合 agent.turn 名
+字区分；各循环保留独立 trace，父子关联不做（跨 loop 的 span 上下文
+传递需更深的 plumbing，收益存疑）。LoopConfig.SpanName 是命名点。）
 95. 自然语言 cron（调度人性化）：`zgo cron add --at "每天下午3点"`
    ——ParseNatural 翻成五字段表达式后走既有 ParseCron 校验与落库路径
    （翻译不猜：认不出的输入明确报错并建议 --schedule 原文）。语料：

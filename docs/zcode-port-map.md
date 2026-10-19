@@ -445,7 +445,8 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    agent.turn（根）/model.call（重试数+三段 token）/tool.call（仅工具
    名与成败，参数与输出永不进遥测）/session.compact；导出器 file（按
    日 JSONL）或 otlp（OTLP/HTTP JSON）；错误与属性过密钥打码，导出失
-   败只计数丢弃不阻塞 agent。
+   败只计数丢弃不阻塞 agent。嵌套循环同产 span（subagent.turn /
+   workflow.step，规则 91 扩展）。
 
 **MCP 服务端模式**（spec 规则 92）：`zgo mcp serve [--all]` 把工具面
    暴露成 stdio JSON-RPC 服务端（internal/mcpserver）——任何 MCP 客户

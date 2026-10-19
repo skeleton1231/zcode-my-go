@@ -7,6 +7,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/telemetry"
 )
 
 // Step kinds: research steps run read-only; edit steps run the full toolset
@@ -62,6 +63,8 @@ type WorkflowConfig struct {
 	Editable    []Tool // edit steps
 	Permissions *permission.Service
 	Ask         func(AskRequest) AskResponse
+	// Telemetry 记录各步骤嵌套循环的 span（规则 91 扩展）：nil 关闭。
+	Telemetry *telemetry.Tracer
 	// Prefill 是续跑注入：下标 → 已完成步骤的既往结果（spec 规则
 	// 48）。命中的步骤跳过执行、结果直接进入上下文——依赖它的下游
 	// 照常看到文本；定义不可变，下标即稳定键。
@@ -314,6 +317,9 @@ func subConfigFor(cfg WorkflowConfig, step WorkflowStep) SubtaskConfig {
 		Tools:     cfg.ReadOnly,
 		MaxTurns:  25,
 		MaxTokens: 16384,
+		// 规则 91 扩展：步骤循环节点名为 workflow.step。
+		Telemetry: cfg.Telemetry,
+		SpanName:  "workflow.step",
 	}
 	if step.Kind == StepEdit {
 		sub.Tools = cfg.Editable
