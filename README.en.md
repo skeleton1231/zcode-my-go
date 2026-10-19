@@ -94,6 +94,29 @@ MIT © 2026 skeleton1231
 - Stop/Notification hooks: a round-end hook (exit 2 blocks the wrap-up
   and feeds the output back) and a permission-wait notification hook.
 
+## v0.12.0 highlights
+
+- Cost accounting: $/Mtok pricing (catalog approximations +
+  settings.pricing overrides); the daily ledger carries per-entry model
+  and in/out/cache segments, so $ is computed from the actual model —
+  cost line in /usage, $ totals in attribution, per-day $ in
+  `zgo usage --days=N`.
+- Bilingual UI: zh baseline + en overlay (settings.lang / ZGO_LANG);
+  CLI help, budget notices and TUI status strings.
+- Natural-language scheduling: `zgo cron add --at "每天下午3点"` —
+  unrecognized phrases are rejected, never guessed.
+- Prompt hooks: userPromptSubmit sees the raw prompt before @-mention
+  expansion (exit 2 blocks, JSON stdout rewrites) — the ninth and
+  final hook injection point.
+- Cross-session mentions: `@session:<prefix>` carries another
+  session's recent conversation into the current message.
+- Lifecycle & compliance: session retention (auto-archive to
+  archive/, retired/restore CLI); tool-execution audit log
+  (auditLog — masked command summaries, `zgo audit`); nested loops
+  emit their own telemetry spans.
+- Symbol search: the symbol tool (gopls workspace/symbol) completes
+  the semantic quartet.
+
 ## v0.11.0 highlights
 
 - Snapshots everywhere: non-git workspaces and ssh:// remote sessions
