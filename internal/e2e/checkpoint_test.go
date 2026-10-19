@@ -83,25 +83,33 @@ func TestE2ERewindLatestRestoresWorkspace(t *testing.T) {
 	}
 }
 
-// TestE2ERewindWithoutCheckpointKeepsFiles: a non-git workspace degrades
-// to conversation-only rewind — files stay, transcript truncates.
-func TestE2ERewindWithoutCheckpointKeepsFiles(t *testing.T) {
+func TestE2ENonGitRewindRestoresFiles(t *testing.T) {
+	// 文件快照（spec 规则 83）：非 git 工作区此前降级「仅回退转录、文
+	// 件不动」——现在走快照镜像回写，回合内写入的文件随转录一起回退。
 	h := New(t,
 		Turn{ToolCalls: []ToolCall{{
 			Name: "write",
-			Args: Marshal(map[string]string{"path": "kept.txt", "content": "kept\n"}),
+			Args: Marshal(map[string]string{"path": "gone.txt", "content": "gone\n"}),
 		}}},
-		Turn{Text: "已创建 kept.txt"},
+		Turn{Text: "已创建 gone.txt"},
 	)
-	events := h.Ask("创建 kept.txt")
+	// 回合前先放一个基础文件——快照里有它，回退后必须还在。
+	h.WriteWorkspace("base.txt", "base\n")
+	events := h.Ask("创建 gone.txt")
 	if !HasEvents(events, agent.EvAgentEnd, "") {
 		t.Fatalf("run did not end: %+v", events)
+	}
+	if !h.WorkspaceHas("gone.txt") || !h.WorkspaceHas("base.txt") {
+		t.Fatal("setup: files missing before rewind")
 	}
 	if err := h.Svc.RewindLatest(h.SessionID); err != nil {
 		t.Fatalf("rewind: %v", err)
 	}
-	if !h.WorkspaceHas("kept.txt") {
-		t.Fatal("non-git rewind must leave files alone")
+	if h.WorkspaceHas("gone.txt") {
+		t.Fatal("non-git rewind should remove files written during the turn (snapshot mirror)")
+	}
+	if !h.WorkspaceHas("base.txt") {
+		t.Fatal("snapshot-mirrored base file lost")
 	}
 	msgs, err := h.Svc.Messages(h.SessionID)
 	if err != nil {

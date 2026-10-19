@@ -664,6 +664,19 @@ dc907a4 (feat: glob and grep honor .gitignore)
    `-c/--continue` 恢复跳过归档会话（同工作区取最近未归档）。跨会
    话搜索照常搜归档内容（内容可查、组织态只管列表）。
 
+83. 文件快照存储（非 git 工作区的检查点降级路径）：git 临时索引方
+   案对非仓库返回 ErrNotARepo 后此前只剩「仅回退转录」——这里补另
+   一半：工作区整树按相对路径复制进 dataDir 快照库（snapshots/
+   <session>/<seq>/）；恢复是镜像回写（快照内文件覆写、快照后新增
+   文件删除——对齐 git 路径 read-tree -u --reset + clean -fd 语义）。
+   上限：文件 5000 / 总量 100MB——超限 ErrTooLarge 降级回既往行为
+   （大目录维持仅回退转录，不因快照失败阻塞回合）；符号链接与系统
+   噪音（.DS_Store/Thumbs.db）跳过；.git 防御性不入库。错误分层对
+   齐 git 路径：旧会话无快照（ErrSnapshotMissing）→ 降级；有快照
+   但被修剪（ErrSnapshotPruned）→ 中止回退（issue #152 语义）。
+   半截快照不留（失败即清会话根——空根会让 Restore 误判）。会话
+   删除清快照库（SnapshotRemoveAll，与 checkpoint refs 同步）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
