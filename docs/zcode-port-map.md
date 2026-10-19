@@ -359,6 +359,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    重写）——历史 JSONL 的三类自由文本载体同面打码，未触及行字节不动；
    幂等；密钥面与打码器同源。
 
+**会话记忆自动化**（Claude Code auto-memory 的形态，spec 规则 74）：
+   服务收尾为有实质回合的会话提炼一次持久事实（用户偏好/项目约定/
+   关键决定，≤3 行）进工作区记忆——下次会话经既有 4KB 注入面生效；
+   每会话每进程一次 + 工作区当日去重；触发点在 Close（与自动命名
+   解耦、WaitGroup 落地）；「无持久事实」不写；settings.autoMemory
+   默认开可关。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
