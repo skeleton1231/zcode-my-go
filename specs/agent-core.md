@@ -677,6 +677,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    半截快照不留（失败即清会话根——空根会让 Restore 误判）。会话
    删除清快照库（SnapshotRemoveAll，与 checkpoint refs 同步）。
 
+85. 硬预算熔断（84 为待合并的远程工作区快照预留）：budgetDailyTokens
+   此前只是软预算（80%/100% 各发一次 EvBudgetNotice 不阻断）——
+   settings.hardBudgetStop（默认关；zgo config set）开启后，今日已
+   计价 token **达预算即拒新回合**：ChatMedia 入口熔断（明确报错、
+   不进转录——止损闸在回合开始前；错误文案带解除命令）。cron 调度
+   同闸（scheduleRunner 走 Chat 入口——定时任务也烧预算）。跨天由
+   当日记账的重放机制自然解开（新一天新文件）。开关与预算均落盘
+   （重启后闸仍在）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

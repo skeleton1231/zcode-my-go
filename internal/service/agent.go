@@ -68,6 +68,10 @@ type settings struct {
 	OAuth      aiAuth.Token          `json:"oauth"` // subscription login (/login)；与剖面正交
 	// BudgetDailyTokens 是每日软预算（0=不限，spec 规则 35）。
 	BudgetDailyTokens int `json:"budgetDailyTokens"`
+	// HardBudgetStop 是硬预算熔断（spec 规则 85）：今日已计价 token 达
+	// budgetDailyTokens 时拒绝新回合（明确报错——软通知之外的止损
+	// 闸；默认关）。cron 调度面同样受闸。
+	HardBudgetStop bool `json:"hardBudgetStop,omitempty"`
 	// FallbackModels 是模型兜底链（spec 规则 56）：主模型可重试失败
 	// （429/过载）时按序降级重发。
 	FallbackModels []string `json:"fallbackModels"`
@@ -1184,6 +1188,13 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	sess, ok := s.mgr.Get(sessionID)
 	if !ok {
 		return fmt.Errorf("no session %s", sessionID)
+	}
+	// 硬预算熔断（spec 规则 85）：今日已计价 token 达预算即拒新回合
+	//（明确报错、不进转录——止损闸在回合开始前；cron 调度同闸）。
+	if cfg := s.resolve(); cfg.HardBudgetStop && cfg.BudgetDailyTokens > 0 &&
+		s.day.Total() >= cfg.BudgetDailyTokens {
+		return fmt.Errorf("今日已计价 %d token，已达硬预算 %d——新回合被熔断（zgo config set hardBudgetStop false 可解除）",
+			s.day.Total(), cfg.BudgetDailyTokens)
 	}
 	// 回合开始前快照工作区（本地 git 仓库时）：seq = 新用户消息的序号
 	//（现有用户消息数），回滚按序号定位。
@@ -2583,3 +2594,15 @@ func (s *AgentService) SetSessionArchived(idOrPrefix string, on bool) error {
 	}
 	return nil
 }
+
+// SetHardBudgetStop 切换硬预算熔断并落盘（spec 规则 85；zgo config 面）。
+func (s *AgentService) SetHardBudgetStop(on bool) error {
+	s.mu.Lock()
+	s.settings.HardBudgetStop = on
+	_, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	return err
+}
+
+// HardBudgetStopEnabled 报告硬预算熔断开关（缺省 = 关）。
+func (s *AgentService) HardBudgetStopEnabled() bool { return s.resolve().HardBudgetStop }

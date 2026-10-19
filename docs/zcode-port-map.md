@@ -400,6 +400,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    义）；上限 5000 文件/100MB 超限降级；错误分层对齐（Missing 降级/
    Pruned 中止）；会话删除清库。
 
+**硬预算熔断**（spec 规则 85，软预算的止损闸）：hardBudgetStop 开启
+   后今日已计价 token 达 budgetDailyTokens 即拒新回合（Chat 入口熔
+   断、明确报错不进转录；cron 同闸；跨天自然解开；落盘重启仍在）。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，

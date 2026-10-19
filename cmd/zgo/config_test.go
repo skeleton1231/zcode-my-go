@@ -140,3 +140,25 @@ func TestConfigAutoMemory(t *testing.T) {
 		t.Fatal("restore true failed")
 	}
 }
+
+// TestConfigHardBudgetStop（spec 规则 85）：默认关 / set true 生效 /
+// 非法值拒绝。
+func TestConfigHardBudgetStop(t *testing.T) {
+	code, out := captureConfig(t, func() int { return runConfig([]string{"get", "hardBudgetStop"}) })
+	if code != 0 || strings.TrimSpace(out) != "false" {
+		t.Fatalf("default should be off: %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "hardBudgetStop", "true"}) }); code != 0 {
+		t.Fatal("set true failed")
+	}
+	code, out = captureConfig(t, func() int { return runConfig([]string{"get", "hardBudgetStop"}) })
+	if code != 0 || strings.TrimSpace(out) != "true" {
+		t.Fatalf("after set: %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "hardBudgetStop", "maybe"}) }); code == 0 {
+		t.Fatal("non-bool accepted")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "hardBudgetStop", "false"}) }); code != 0 {
+		t.Fatal("restore failed")
+	}
+}
