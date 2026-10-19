@@ -789,7 +789,6 @@ dc907a4 (feat: glob and grep honor .gitignore)
    记日志放行。payload：{event:"userPromptSubmit", sessionId,
    workspace, prompt}。这是 hook 家族最后一个注入点（pre/post 工具、
    stop/notification、sessionStart/End、preCompact 之外）。
-（规则 97 = @会话引用，见待并 #303。）
 98. 会话保留期：settings.sessionRetentionDays（0=不限，默认）。启动
    装载前扫 sessions/——mtime 早于 N 天的 *.jsonl 移入 dataDir/
    archive/（重命名原子、同名不覆盖、单个失败跳过不阻启动）——不
@@ -797,6 +796,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    archive/unarchive（规则 82）正交：那是显示态，这是生命周期。
    `zgo sessions retired` 列归档文件；`zgo sessions restore <前缀>`
    移回并刷新 mtime（不会立即再归档）；活跃面同名拒绝。
+
+99. gopls 符号搜索：symbol 工具——按名模糊查全库声明点（LSP
+   workspace/symbol，daemon 路径；CLI 兜底映射 gopls 的
+   workspace_symbol 子命令）。输出行「file:line:col name kind」（kind
+   是可读标签：Function/Struct/Method/Interface…；无 location 的条目
+   跳过）；空输出=无命中。查询不定位文件，无 jail 面；只读低风险自
+   动放行；输出照家族截断。语义工具四件套（definition/references/
+   diagnostics/symbol）——「不知道符号在哪」先 symbol 再定位。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
