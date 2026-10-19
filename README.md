@@ -142,6 +142,14 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   脱敏边界）。
 - **剪贴板贴图**：composer Ctrl+V 直接贴截图（DIB→PNG）。
 - **Stop/Notification 钩子**：回合收尾钩子（exit 2 阻止收尾续跑）与权限询问
+- **会话记忆自动化**：收尾提炼持久事实进工作区记忆（≤3 行，当日去重，
+  可关）。
+- **自定义工具**：`.zgo/tools/*.md` 命令模板包装成模型可调用工具（权限按渲染后
+  命令判定）；/tools 一命令查看工具面。
+- **@目录 / @行范围**：@目录 展开有界目录树；@file.go:120-180 只带相关行段。
+- **/context 上下文构成**：下一请求的构成分段一命令可见（测的即发的）。
+- **搜索正则**：`zgo sessions search --regex`（RE2、原大小写）。
+- **会话归档**：archive/unarchive 组织态（list 默认隐藏、-c 跳过——内容不删）。
   通知挂点。
   的分享物就是导出文件本身）。
 
