@@ -11,8 +11,8 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
-// TestAgentsViewRendersStates 状态条渲染（spec 规则 62）：四态标记、
-// 运行计数、耗时、摘要、折叠；空不占位。
+// TestAgentsViewRendersStates 状态条渲染（spec 规则 62）：四态行（状态
+// 经图标呈现，行文本为 ID/耗时/摘要）、运行计数、折叠；空不占位。
 func TestAgentsViewRendersStates(t *testing.T) {
 	svc, err := service.New(t.TempDir())
 	if err != nil {
@@ -37,8 +37,8 @@ func TestAgentsViewRendersStates(t *testing.T) {
 	})
 	tt.Frame()
 	joined := strings.Join(tt.Texts(), "\n")
-	for _, want := range []string{"后台代理 · 2 运行/5", "▶ ag-1 · 45s · 调查模块结构",
-		"✓ ag-2 · 审计依赖", "✕ ag-3", "■ ag-4", "…+1"} {
+	for _, want := range []string{"后台代理 · 2 运行/5", "ag-1 · 45s · 调查模块结构",
+		"ag-2 · 审计依赖", "ag-3", "ag-4", "…+1"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in:\n%s", want, joined)
 		}

@@ -28,34 +28,39 @@ func (a *App) agentsView(c *ui.Context, t *ui.Theme) {
 			running++
 		}
 	}
-	ui.Column(c).Gap(4).Padding(0, 16).Children(func() {
-		ui.Text(c, fmt.Sprintf("后台代理 · %d 运行/%d", running, len(a.agents))).
-			FontSize(12).TextColor(t.Accent)
+	ui.Column(c).Gap(4).Padding(0, 24).Children(func() {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconBot).FontSize(13).TextColor(t.Accent)
+			ui.Text(c, fmt.Sprintf("后台代理 · %d 运行/%d", running, len(a.agents))).
+				FontSize(12).TextColor(t.Accent)
+		})
 		for i, v := range views {
 			if i >= 4 {
-				ui.Text(c, fmt.Sprintf("  …+%d", len(views)-4)).
+				ui.Text(c, fmt.Sprintf("…+%d", len(views)-4)).
 					FontSize(12).TextColor(t.TextMuted)
 				break
 			}
-			mark, color := "?", t.TextMuted
-			switch v.State {
-			case tools.AgentRunning:
-				mark, color = "▶", t.Accent
-			case tools.AgentDone:
-				mark, color = "✓", t.Success
-			case tools.AgentFailed:
-				mark, color = "✕", t.Danger
-			case tools.AgentStopped:
-				mark, color = "■", t.TextMuted
-			}
-			line := "  " + mark + " " + v.ID
-			if v.State == tools.AgentRunning {
-				line += " · " + v.Duration.Round(time.Second).String()
-			}
-			if brief := agentBrief(v.Prompt); brief != "" {
-				line += " · " + brief
-			}
-			ui.Text(c, line).FontSize(12).TextColor(color)
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				// 状态图标代替文本记号：运行 Spinner、完成 ✓、失败 ✕、停止 ■。
+				switch v.State {
+				case tools.AgentRunning:
+					ui.Spinner(c).FontSize(11)
+				case tools.AgentDone:
+					ui.Icon(c, iconCheck).FontSize(12).TextColor(t.Success)
+				case tools.AgentFailed:
+					ui.Icon(c, iconCircleX).FontSize(12).TextColor(t.Danger)
+				default:
+					ui.Icon(c, iconSquare).FontSize(12).TextColor(t.TextMuted)
+				}
+				line := v.ID
+				if v.State == tools.AgentRunning {
+					line += " · " + v.Duration.Round(time.Second).String()
+				}
+				if brief := agentBrief(v.Prompt); brief != "" {
+					line += " · " + brief
+				}
+				ui.Text(c, line).FontSize(12).TextColor(t.TextMuted)
+			})
 		}
 	})
 }

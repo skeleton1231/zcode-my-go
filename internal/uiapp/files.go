@@ -14,16 +14,12 @@ func (a *App) filesPanelView(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	ui.Column(c).Width(280).BorderWidth(0, 0, 0, 1).BorderColor(t.Border).Children(func() {
-		ui.Row(c).Padding(10, 14).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "文件").Bold().FontSize(14)
-			ui.Spacer(c)
-			if ui.Button(c, "刷新").Clicked() {
+		panelHeader(c, t, iconFolder, "文件", func() {
+			if iconButton(c, iconRefresh, "刷新", "重新读取工作区").Clicked() {
 				a.treeEntries = map[string][]tools.DirEntry{}
 				a.treeExpanded = map[string]bool{}
 			}
-			if ui.Button(c, "✕").Clicked() {
-				a.filesOpen = false
-			}
+			closeIconButton(c, func() { a.filesOpen = false })
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			a.treeDir(c, t, "")

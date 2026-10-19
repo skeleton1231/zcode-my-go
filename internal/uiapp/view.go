@@ -20,6 +20,7 @@ func (a *App) View(c *ui.Context) {
 	defer a.mu.Unlock()
 	t := c.Theme()
 	a.md.Reveal = &markdown.Reveal{Unit: markdown.ByWord}
+	applyMarkdownTheme(&a.md, t)
 
 	ui.Row(c).Fill().Children(func() {
 		a.sidebarView(c, t)
@@ -47,13 +48,13 @@ func (a *App) View(c *ui.Context) {
 // sidebarView lists sessions under the brand, with the actions below.
 func (a *App) sidebarView(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Width(232).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
-		ui.Row(c).Padding(14, 16).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Padding(12, 14).AlignItems(ui.Center).Gap(2).Children(func() {
 			ui.Text(c, "Zgo").Bold().FontSize(15)
 			ui.Spacer(c)
-			if ui.Button(c, "文件").Clicked() {
+			if iconButton(c, iconFolder, "文件树", "文件树（Ctrl+B）").Clicked() {
 				a.ToggleFiles()
 			}
-			if ui.Button(c, "设置…").Clicked() {
+			if iconButton(c, iconSettings, "设置", "设置（Ctrl+,）").Clicked() {
 				a.OpenSettings()
 			}
 		})
@@ -65,10 +66,13 @@ func (a *App) sidebarView(c *ui.Context, t *ui.Theme) {
 					if label == "" {
 						label = "（未命名）"
 					}
+					// 运行中的会话带 play 图标（SidebarItem 的图标位），
+					// 不再把记号拼进文本。
+					var icon *ui.SVG
 					if s.Running {
-						label = "▶ " + label
+						icon = iconPlay
 					}
-					ui.SidebarItem(c, s.ID, nil, label)
+					ui.SidebarItem(c, s.ID, icon, label)
 				}
 			})
 		}).Grow(1)
@@ -76,7 +80,7 @@ func (a *App) sidebarView(c *ui.Context, t *ui.Theme) {
 			a.open(choice)
 		}
 		ui.Row(c).Padding(10, 12).Children(func() {
-			if ui.Button(c, "＋ 新会话…").Grow(1).Clicked() {
+			if textIconButton(c, iconPlus, "新会话").Grow(1).Clicked() {
 				a.NewSession()
 			}
 		})
@@ -130,9 +134,14 @@ func (a *App) chatView(c *ui.Context, t *ui.Theme) {
 		}
 	})
 	if a.chat.endErr != "" {
-		// 终止错误以横幅形式钉在消息区底部。
-		ui.Row(c).Padding(6, 24).Children(func() {
-			ui.Text(c, a.chat.endErr).TextColor(t.Danger).FontSize(12)
+		// 终止错误以横幅形式钉在消息区底部：图标 + 危险色浅底，读作一条
+		// 状态告警而不是一段散落的红字。
+		ui.Row(c).Padding(4, 24).Children(func() {
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(4, 10).Radius(t.Radius).
+				Background(t.Danger.Alpha(0.08)).Grow(1).Children(func() {
+				ui.Icon(c, iconCircleX).FontSize(14).TextColor(t.Danger)
+				ui.Text(c, a.chat.endErr).TextColor(t.Danger).FontSize(12)
+			})
 		})
 	}
 }
@@ -158,7 +167,8 @@ func (a *App) searchBarView(c *ui.Context, t *ui.Theme) {
 	}
 	ui.Row(c).Gap(8).Padding(6, 24).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).
 		AlignItems(ui.Center).Children(func() {
-		in := ui.TextInput(c, &a.searchQuery).Placeholder("搜索会话…").Grow(1)
+		ui.Icon(c, iconSearch).FontSize(14).TextColor(t.TextMuted)
+		in := ui.TextInput(c, &a.searchQuery).Placeholder("搜索会话…（Esc 关闭）").Grow(1)
 		in.OnTextKey(func(k ui.TextKey) bool {
 			if k.Key == ui.KeyEscape {
 				a.searchOpen = false
@@ -177,7 +187,7 @@ func (a *App) searchBarView(c *ui.Context, t *ui.Theme) {
 			}
 			ui.Text(c, fmt.Sprintf("%d 处", n)).TextColor(t.TextMuted).FontSize(12)
 		}
-		if ui.Button(c, "✕").Clicked() {
+		if iconButton(c, iconX, "关闭搜索", "关闭搜索（Esc）").Clicked() {
 			a.searchOpen = false
 			a.searchQuery = ""
 		}
@@ -188,7 +198,11 @@ func (a *App) searchBarView(c *ui.Context, t *ui.Theme) {
 func (a *App) welcomeView(c *ui.Context, t *ui.Theme) {
 	needsSetup := a.settings != nil && (!a.settings.HasAPIKey || a.settings.Model == "")
 	ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
-		ui.Text(c, "Zgo").FontSize(30).Bold()
+		// 品牌标记：强调色圆角方块里的 Z，替代裸标题开场。
+		ui.Column(c).Center().Size(56, 56).Radius(14).Background(t.Accent).Children(func() {
+			ui.Text(c, "Z").FontSize(22).Bold().TextColor(t.AccentText)
+		})
+		ui.Text(c, "Zgo").FontSize(24).Bold()
 		ui.Text(c, "开源桌面 coding agent · 纯 Go").TextColor(t.TextMuted)
 		if needsSetup {
 			ui.Text(c, "尚未配置 API Key 或模型：先点「设置…」完成配置。").TextColor(t.Warning)
@@ -231,12 +245,12 @@ func (a *App) userItemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 		ui.Text(c, item.text).Selectable().Padding(8, 12).Radius(12).
 			Background(t.Surface).MaxWidth(520)
 		if i == lastUserIndex(a.chat.items) && !a.chat.running && a.activeID != "" && !a.searching() {
-			if ui.Button(c, "✎ 编辑").Clicked() {
+			if textIconButton(c, iconPencil, "编辑").Clicked() {
 				a.StartEdit()
 			}
 		}
 		if !a.chat.running && a.activeID != "" && !a.searching() {
-			if ui.Button(c, "⟲ 回滚到此").Clicked() {
+			if textIconButton(c, iconUndo, "回滚到此").Clicked() {
 				a.RewindToTurn(i)
 			}
 		}
@@ -251,7 +265,7 @@ func (a *App) itemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 	case itemAssistant:
 		ui.Column(c).MaxWidth(760).Grow(1).Children(func() {
 			if item.think != "" {
-				ui.Collapsible(c, "💭 思考过程", &item.thinkOpen, func() {
+				ui.Collapsible(c, "思考过程", &item.thinkOpen, func() {
 					ui.Text(c, item.think).FontSize(12).TextColor(t.TextMuted).Selectable()
 				})
 			}
@@ -276,24 +290,41 @@ func (a *App) itemView(c *ui.Context, t *ui.Theme, i int, item *chatItem) {
 
 // toolView is a collapsible card: status mark · name · argument summary,
 // the full output below when open — a colored diff when the tool carried
-// one, else the plain output.
+// one, else the plain output. 卡片化（表面色 + 边框 + 圆角），头部用
+// CollapsibleBase 自绘：状态图标（Spinner/✓/✕）+ 等宽工具名 + 参数摘要。
 func (a *App) toolView(c *ui.Context, t *ui.Theme, item *chatItem) {
-	label := fmt.Sprintf("%s %s · %s", statusMark(item), item.name, summarizeArgs(item.args))
 	ui.Column(c).MaxWidth(760).Grow(1).Children(func() {
-		ui.Collapsible(c, label, &item.open, func() {
-			ui.Scroll(c).MaxHeight(300).Children(func() {
-				if item.diff != "" {
-					diffView(c, t, item.diff)
-					if item.result != "" {
-						ui.Text(c, item.result).Font("monospace").FontSize(12).
-							TextColor(t.TextMuted).Selectable()
+		ui.Column(c).
+			Background(t.Surface).
+			BorderWidth(1, 1, 1, 1).BorderColor(t.Border).
+			Radius(t.Radius).
+			Children(func() {
+				p := ui.CollapsibleBase(c, &item.open)
+				p.Trigger.Grow(1).Padding(6, 10).Gap(8).AlignItems(ui.Center).Children(func() {
+					statusIcon(c, t, item)
+					ui.Text(c, item.name).Font("monospace").FontSize(12).Bold()
+					if s := summarizeArgs(item.args); s != "" {
+						ui.Text(c, s).FontSize(12).TextColor(t.TextMuted).Shrink(1)
 					}
-					return
-				}
-				ui.Text(c, outputOf(item)).Font("monospace").FontSize(12).
-					TextColor(t.TextMuted).Selectable()
+				})
+				p.Panel(func() {
+					// 输出区在卡内再沉一层：底色块 + 内边距 + 圆角，与头部拉开层次。
+					ui.Column(c).Margin(4).Radius(t.Radius).Background(t.Background).Children(func() {
+						ui.Scroll(c).MaxHeight(300).Children(func() {
+							if item.diff != "" {
+								diffView(c, t, item.diff)
+								if item.result != "" {
+									ui.Text(c, item.result).Font("monospace").FontSize(12).
+										TextColor(t.TextMuted).Selectable()
+								}
+								return
+							}
+							ui.Text(c, outputOf(item)).Font("monospace").FontSize(12).
+								TextColor(t.TextMuted).Selectable()
+						})
+					})
+				})
 			})
-		})
 	})
 }
 
@@ -311,17 +342,6 @@ func diffView(c *ui.Context, t *ui.Theme, diff string) {
 			color = t.Accent
 		}
 		ui.Text(c, line).Font("monospace").FontSize(12).TextColor(color).Selectable()
-	}
-}
-
-func statusMark(item *chatItem) string {
-	switch {
-	case item.running:
-		return "▶"
-	case item.isError:
-		return "✕"
-	default:
-		return "✓"
 	}
 }
 
@@ -366,17 +386,20 @@ func (a *App) planView(c *ui.Context, t *ui.Theme) {
 	}
 	ui.Row(c).Padding(4, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		ui.Collapsible(c, "计划 · "+itoa(done)+"/"+itoa(len(a.plan)), &a.planOpen, func() {
-			ui.Column(c).Gap(2).Children(func() {
+			ui.Column(c).Gap(4).Children(func() {
 				for _, task := range a.plan {
-					mark := " "
-					switch task.Status {
-					case tools.TodoInProgress:
-						mark = "▶"
-					case tools.TodoDone:
-						mark = "✓"
-					}
-					ui.Text(c, mark+" "+task.Content).FontSize(12).
-						TextColor(t.TextMuted)
+					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+						// 状态图标代替文本记号：进行中 Spinner、完成绿 ✓、待办空点。
+						switch task.Status {
+						case tools.TodoInProgress:
+							ui.Spinner(c).FontSize(12)
+						case tools.TodoDone:
+							ui.Icon(c, iconCheck).FontSize(13).TextColor(t.Success)
+						default:
+							ui.Icon(c, iconTodo).FontSize(13).TextColor(t.TextMuted)
+						}
+						ui.Text(c, task.Content).FontSize(12).TextColor(t.TextMuted)
+					})
 				}
 			})
 		}).Grow(1)
@@ -413,12 +436,12 @@ func (a *App) composerView(c *ui.Context, t *ui.Theme) {
 			return false
 		})
 		if !a.chat.running {
-			if ui.Button(c, "📎").Clicked() {
+			if iconButton(c, iconPaperclip, "添加图片", "添加图片（也可 Ctrl+V 粘贴截图）").Clicked() {
 				a.Attach()
 			}
 		}
 		if a.chat.running {
-			if ui.Button(c, "停止").Clicked() {
+			if textIconButton(c, iconSquare, "停止").Tooltip("中止当前运行").Clicked() {
 				a.Stop()
 			}
 		} else if ui.PrimaryButton(c, "发送").
@@ -437,10 +460,11 @@ func (a *App) attachmentsView(c *ui.Context, t *ui.Theme) {
 	ui.Row(c).Gap(6).Padding(6, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
 		Wrap().Children(func() {
 		for i, at := range a.attach {
-			ui.Row(c).Gap(4).Padding(3, 8).Radius(8).
-				Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
+			ui.Row(c).Gap(4).Padding(3, 8).Radius(999).
+				Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).
+				AlignItems(ui.Center).Children(func() {
 				ui.Text(c, at.Name).FontSize(12).TextColor(t.TextMuted)
-				if ui.Button(c, "✕").Clicked() {
+				if iconButton(c, iconX, "移除 "+at.Name, "移除附件").Clicked() {
 					a.RemoveAttachment(i)
 				}
 			})
@@ -464,8 +488,7 @@ func (a *App) mentionHintsView(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	ui.Column(c).Padding(4, 24).Children(func() {
-		ui.Column(c).Gap(2).Padding(6, 8).Radius(8).
-			Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
+		hintCard(ui.Column(c).Gap(2).Padding(6, 8), t).Children(func() {
 			for _, h := range hints {
 				path := h
 				if ui.Button(c, "@"+path).Grow(1).Clicked() {
@@ -498,8 +521,7 @@ func (a *App) slashHintsView(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	ui.Column(c).Padding(4, 24).Children(func() {
-		ui.Column(c).Gap(2).Padding(6, 8).Radius(8).
-			Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
+		hintCard(ui.Column(c).Gap(2).Padding(6, 8), t).Children(func() {
 			for _, h := range hints {
 				usage := h.Usage
 				help := h.Help
@@ -513,16 +535,18 @@ func (a *App) slashHintsView(c *ui.Context, t *ui.Theme) {
 
 // statusView shows the model and the run's token usage.
 func (a *App) statusView(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Padding(4, 24).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+	ui.Row(c).Padding(4, 24).Gap(6).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).
+		AlignItems(ui.Center).Children(func() {
 		model := "未配置模型"
 		if a.settings != nil && a.settings.Model != "" {
 			model = a.settings.Model
 		}
 		if a.chat.running {
-			model = "● " + model
+			// 运行中以 Spinner 点亮模型名前缀，代替 "● " 字符。
+			ui.Spinner(c).FontSize(11)
 		}
 		if a.planMode {
-			model = "◍ 计划模式 · " + model
+			model = "计划模式 · " + model
 		}
 		ui.Text(c, model).TextColor(t.TextMuted).FontSize(12)
 		ui.Spacer(c)
