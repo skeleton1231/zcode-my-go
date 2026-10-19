@@ -37,11 +37,15 @@ func runSessions(argv []string) int {
 	cmd, rest := argv[0], argv[1:]
 	switch cmd {
 	case "list":
-		return sessionsList(svc)
+		return sessionsList(svc, rest)
 	case "export":
 		return sessionsExport(svc, rest)
 	case "rm":
 		return sessionsRm(svc, rest)
+	case "archive":
+		return sessionsArchive(svc, rest, true)
+	case "unarchive":
+		return sessionsArchive(svc, rest, false)
 	case "search":
 		return sessionsSearch(svc, rest)
 	case "sanitize":
@@ -52,8 +56,29 @@ func runSessions(argv []string) int {
 	}
 }
 
-func sessionsList(svc *service.AgentService) int {
-	sessions := svc.ListSessions() // newest first
+func sessionsList(svc *service.AgentService, rest []string) int {
+	// 归档过滤（spec 规则 82）：默认隐藏；--archived 只看归档；--all 全量。
+	mode := "active"
+	for _, a := range rest {
+		if a == "--archived" || a == "--all" {
+			mode = a[2:]
+		}
+	}
+	var sessions []agent.SessionInfo
+	for _, s := range svc.ListSessions() { // newest first
+		switch mode {
+		case "archived":
+			if s.Archived {
+				sessions = append(sessions, s)
+			}
+		case "all":
+			sessions = append(sessions, s)
+		default:
+			if !s.Archived {
+				sessions = append(sessions, s)
+			}
+		}
+	}
 	if len(sessions) == 0 {
 		fmt.Println("（无会话）")
 		return 0
@@ -215,4 +240,23 @@ func applyNote(apply bool) string {
 		return "（已清洗）"
 	}
 	return "（含密钥形态）"
+}
+
+// sessionsArchive 归档/取消归档（spec 规则 82）：接受 id 或唯一前缀；
+// 归档会话从列表与 -c 恢复默认隐藏——内容不删（搜索/导出照常）。
+func sessionsArchive(svc *service.AgentService, args []string, on bool) int {
+	if len(args) != 1 {
+		fmt.Fprintf(os.Stderr, "用法：zgo sessions %s <id|前缀>\n", map[bool]string{true: "archive", false: "unarchive"}[on])
+		return 2
+	}
+	if err := svc.SetSessionArchived(args[0], on); err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	if on {
+		fmt.Println("已归档（列表/-c 恢复默认隐藏；unarchive 取消；rm 删除）")
+	} else {
+		fmt.Println("已取消归档")
+	}
+	return 0
 }

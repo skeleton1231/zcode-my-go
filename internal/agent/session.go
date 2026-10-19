@@ -37,6 +37,7 @@ type SessionInfo struct {
 	Workspace string    `json:"workspace"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	Running   bool      `json:"running"`
+	Archived  bool      `json:"archived,omitempty"` // 组织态（spec 规则 82）：归档会话默认从列表/恢复隐藏
 }
 
 // Session is a conversation: a transcript persisted as JSONL plus run state.
@@ -483,6 +484,7 @@ type metaRecord struct {
 	Title     string    `json:"title"`
 	Workspace string    `json:"workspace"`
 	CreatedAt time.Time `json:"createdAt"`
+	Archived  bool      `json:"archived,omitempty"`
 }
 
 type messageRecord struct {
@@ -596,6 +598,7 @@ func (s *Session) writeMetaLocked() error {
 	rec, err := json.Marshal(metaRecord{
 		Type: recordMeta, ID: s.info.ID, Title: s.info.Title,
 		Workspace: s.info.Workspace, CreatedAt: s.info.UpdatedAt,
+		Archived: s.info.Archived,
 	})
 	if err != nil {
 		return err
@@ -664,7 +667,7 @@ func loadMetaOnly(path string) (s *Session, err error) {
 		}
 		return &Session{path: path, loaded: false,
 			info: SessionInfo{ID: rec.ID, Title: rec.Title, Workspace: rec.Workspace,
-				UpdatedAt: mtime},
+				UpdatedAt: mtime, Archived: rec.Archived},
 			metaTitle: rec.Title}, nil
 	}
 	// 首行缺失/损坏/非 meta：退回全量。
@@ -713,6 +716,7 @@ func loadSession(path string) (*Session, error) {
 						s.info.ID = rec.ID
 						s.info.Title = rec.Title
 						s.info.Workspace = rec.Workspace
+						s.info.Archived = rec.Archived
 						s.metaTitle = rec.Title
 					}
 				case recordMessage:
@@ -1052,4 +1056,32 @@ func (m *Manager) ForkAtUserTurn(src *Session, userTurn int) (*Session, error) {
 		fork.mu.Unlock()
 	}
 	return fork, nil
+}
+
+// SetArchived 切换归档组织态（spec 规则 82）：meta 行重写持久（同
+// Rename 的首行重写路径）；归档不删内容——转录/搜索/导出面不变。
+func (s *Session) SetArchived(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.info.Archived == on {
+		return nil
+	}
+	old := s.info.Archived
+	s.info.Archived = on
+	if err := s.writeMetaLocked(); err != nil {
+		s.info.Archived = old
+		return fmt.Errorf("persisting archive flag: %w", err)
+	}
+	return nil
+}
+
+// SetArchivedById 经 Manager 切换归档（false = 未命中）。
+func (m *Manager) SetArchivedById(id string, on bool) bool {
+	m.mu.Lock()
+	s, ok := m.sessions[id]
+	m.mu.Unlock()
+	if !ok {
+		return false
+	}
+	return s.SetArchived(on) == nil
 }

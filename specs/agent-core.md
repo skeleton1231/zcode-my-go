@@ -641,6 +641,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    息/M 用户回合）。字节口径（token 估算 ≈/4 只做参照）；合计行附
    /compact 提示。观测面导出 agent.Declarations（与 wire 请求同构）。
 
+82. 会话归档（ZCode tasks-index 组织态的 Zgo 形态；80/81 为待合并的
+   搜索正则/行范围预留）：组织态与内容正交——归档不删内容（转录/
+   搜索/导出面不变），只影响「活跃面」。meta 行增 archived 标志
+   （SessionInfo.Archived；meta 首行重写持久——与 Rename 同路径）；
+   `zgo sessions archive|unarchive <id|前缀>`；list 默认隐藏归档
+   （--archived 只看归档、--all 全量）；`-c/--continue` 恢复跳过归
+   档会话（同工作区取最近未归档）。跨会话搜索照常搜归档内容（内容
+   可查、组织态只管列表）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

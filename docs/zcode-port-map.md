@@ -383,6 +383,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    令可见（系统提示稳定前缀/git 摘要/记忆/技能/子代理/工具声明/转录，
    与 loop 装配同源——测的即发的）；字节口径 + 合计与 /compact 提示。
 
+**会话归档**（spec 规则 82，tasks-index 组织态的形态）：archive/unarchive
+   组织态与内容正交（转录/搜索/导出不变）；list 默认隐藏（--archived/
+   --all）；-c 恢复跳过归档；meta 行持久。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
