@@ -541,6 +541,18 @@ dc907a4 (feat: glob and grep honor .gitignore)
    段按构造等价（等价断言锚点）。保鲜：(size, mtime) 命中不重读；
    rewind/追加改 size 即触发重抽；会话删除剪条目。落盘异步（索引
    是加速器不是账本——写失败下次重建）。
+
+72. 内置技能层（ZCode bundled-skills/skill-creator 的 Zgo 形态）：
+   internal/skills/builtin——随二进制 go:embed 发行的高价值技能，首
+   批三个：skill-creator（把可复用流程写成 .zgo/skills 的元技能——
+   frontmatter 规范、description 即路由键、≤100 行）、go-testing（验
+   证次序：窄跑→全量门→涉并发双跑；表驱动；进程类测试自管目录）、
+   debug-methodically（先复现再读错误、一次一个假设、观察优先于改
+   动、禁修症状）。层级与优先级：工作区 > 全局 ~/.zgo > 内置（根序
+   先到先得，末位最低）——同名即覆盖，用户可改写内置行为而不动二
+   进制。内置层不是注入面（内容随产品发行不读盘）：未授信工作区同
+   样可用（信任门只挡工作区层）；发现/加载/系统提示注入走既有管道
+   零特判（嵌入 FS 与本地/远端同一 Root 面）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

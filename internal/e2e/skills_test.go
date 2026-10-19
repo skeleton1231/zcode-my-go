@@ -122,3 +122,37 @@ func TestE2ESkillsRemoteWorkspace(t *testing.T) {
 		t.Fatal("remote skill content not loaded over the wire")
 	}
 }
+
+// TestE2EBuiltinSkillLoadable：内置技能层（spec 规则 72）全栈——未种任
+// 何文件的干净工作区，系统提示仍含内置清单；skill 工具按名加载内置
+// 正文（嵌入内容带回模型）。
+func TestE2EBuiltinSkillLoadable(t *testing.T) {
+	h := New(t,
+		Turn{ToolCalls: []ToolCall{{Name: "skill", Args: `{"skill":"go-testing"}`}}},
+		Turn{Text: "done"},
+	)
+	if err := h.Svc.TrustWorkspace(h.Workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	events := h.Ask("测试")
+
+	if len(h.Script.Requests) == 0 {
+		t.Fatal("no provider request")
+	}
+	if sys := h.Script.Requests[0].System; !strings.Contains(sys, "go-testing:") {
+		t.Fatalf("builtin skill missing from system prompt:\n%s", sys)
+	}
+	found := false
+	for _, ev := range events {
+		if ev.Kind == agent.EvToolExecutionEnd && ev.ToolName == "skill" && !ev.IsError {
+			// 内置正文里的标志性短语必须完整到达模型。
+			if strings.Contains(ev.ResultContent, "Table-driven") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("builtin skill body not delivered via skill tool")
+	}
+}
