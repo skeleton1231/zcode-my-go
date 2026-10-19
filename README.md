@@ -153,6 +153,17 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   通知挂点。
   的分享物就是导出文件本身）。
 
+- **快照全覆盖**：非 git 工作区与 ssh:// 远程会话的检查点补全——整树
+  快照进数据目录（超限降级），回滚/编辑重发/重试三入口与 git 路径同语义。
+- **预算经济学**：硬预算熔断（达预算拒新回合，默认关）；子代理与工作流
+  的嵌套循环用量全部入账；`zgo usage` 按会话/来源归因 + `--days=N` 近
+  N 日趋势条形；📌 会话置顶。
+- **遥测**：默认关的 span 追踪（turn/model/tool/compact）——file 按日
+  JSONL 或 OTLP 导出；属性与错误打码，导出失败绝不阻塞 agent。
+- **MCP 服务端**：`zgo mcp serve` 把工具面暴露成 stdio JSON-RPC 服务端
+  （默认只读四件，--all 开全量）——ZCode/Claude Code/Cursor 可直接调用
+  zgo 的 path-jail 工具。
+
 ## 快速开始
 
 只依赖 Go 1.27+：
