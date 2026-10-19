@@ -589,6 +589,19 @@ dc907a4 (feat: glob and grep honor .gitignore)
    不是账本）。开关 settings.autoMemory（默认开；zgo config set
    ——token 成本敏感用户的逃生口）。
 
+75. 自定义工具（.zgo/tools）：commands/skills/agents 家族第四员
+   ——把固定命令流程包装成模型可调用的工具。定义是 frontmatter
+   （name/description 必填）+ 正文命令模板（$ARGUMENTS 占位；无占位
+   符时参数追加在尾部——固定命令 + 可选参数两形态都成立）；发现两
+   层平铺（工作区 `.zgo/tools/*.md` 覆盖全局 `~/.zgo/tools/*.md`，
+   SSH 经网线）；描述 ≤1K、模板 ≤16KB。
+   执行完全复用 bash 通道（超时/输出上限/权限门/path jail/远程同构/
+   cwd 哨兵）——**权限按渲染后的最终命令判定**（只读探测看到的是
+   真命令不是模板）；参数面单 string（args）。内置工具名优先：撞名
+   的定义不声明（模型可见面不被覆盖）。**信任门**：未授信工作区不
+   带其 .zgo/tools 层（工具模板是注入到执行的面——克隆来的恶意仓
+   库不得自带可执行模板）；全局层不受影响。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

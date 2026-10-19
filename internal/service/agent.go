@@ -39,6 +39,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
+	"github.com/skeleton1231/zcode-my-go/internal/tooldefs"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 	"github.com/skeleton1231/zcode-my-go/internal/trust"
 	"github.com/skeleton1231/zcode-my-go/internal/usage"
@@ -549,6 +550,22 @@ func (s *AgentService) rewire() {
 					func(ctx context.Context, dir string, args ...string) (string, error) {
 						return lsp.DaemonRun(ctx, dir, lsp.QueryTimeout, args...)
 					})...)
+			}
+			// 自定义工具（spec 规则 75）：.zgo/tools 命令模板包装成模
+			// 型可调用工具——工作区层过信任门（tooldefRoots 内）；内
+			// 置名优先，撞名的 def 不声明。
+			if defs := tooldefs.Discover(s.tooldefRoots(sessionID, workspace)).Defs; len(defs) > 0 {
+				names := map[string]bool{}
+				for _, t := range all {
+					names[t.Name()] = true
+				}
+				var free []tooldefs.Def
+				for _, d := range defs {
+					if !names[d.Name] {
+						free = append(free, d)
+					}
+				}
+				all = append(all, tools.NewCustomTools(free, ws, state.Jobs)...)
 			}
 			return all
 		},
@@ -2409,6 +2426,57 @@ func (s *AgentService) SetRedaction(on bool) error {
 // 密钥红线让「直接查转录文件」成为常规验证手段）。
 func (s *AgentService) SessionDir() string {
 	return filepath.Join(s.dir(), "sessions")
+}
+
+// tooldefsBaseDir 是自定义工具的工作区层目录（spec 规则 75）。
+const tooldefsBaseDir = ".zgo/tools"
+
+// tooldefRoots 取自定义工具定义根：工作区层（信任门内——工具模板
+// 是注入到执行的面，未授信仓库不得自带）+ 全局层。
+func (s *AgentService) tooldefRoots(sessionID, workspace string) []tooldefs.Root {
+	ws := s.workspaceFor(sessionID, workspace)
+	var roots []tooldefs.Root
+	if ws.IsRemote() {
+		roots = append(roots, tooldefs.Root{
+			Base: tooldefsBaseDir, Scope: tooldefs.ScopeProject,
+			FS: remoteTooldefsFS{ws.Remote},
+		})
+	} else if s.workspaceTrusted(workspace) {
+		roots = append(roots, tooldefs.Root{
+			Base:  filepath.Join(ws.Root, filepath.FromSlash(tooldefsBaseDir)),
+			Scope: tooldefs.ScopeProject, FS: tooldefs.LocalFS{},
+		})
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, tooldefs.Root{
+			Base:  filepath.Join(home, ".zgo", "tools"),
+			Scope: tooldefs.ScopeUser, FS: tooldefs.LocalFS{},
+		})
+	}
+	return roots
+}
+
+// remoteTooldefsFS 把 RemoteFS 适配为 tooldefs.FS（与 remoteSkillsFS
+// 同型）。
+type remoteTooldefsFS struct{ r tools.RemoteFS }
+
+// Join implements tooldefs.FS（根相对、斜杠形态）。
+func (f remoteTooldefsFS) Join(parts ...string) string { return path.Join(parts...) }
+
+// ReadFile implements tooldefs.FS.
+func (f remoteTooldefsFS) ReadFile(name string) ([]byte, error) { return f.r.ReadFile(name) }
+
+// ReadDir implements tooldefs.FS.
+func (f remoteTooldefsFS) ReadDir(dir string) ([]tooldefs.DirEntry, error) {
+	des, err := f.r.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tooldefs.DirEntry, len(des))
+	for i, de := range des {
+		out[i] = tooldefs.DirEntry{Name: de.Name, IsDir: de.IsDir}
+	}
+	return out, nil
 }
 
 // SetAutoMemory 切换会话记忆自动化并落盘（spec 规则 74；zgo config 面）。
