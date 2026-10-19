@@ -1,0 +1,16 @@
+{
+  "name": "redaction-transcript",
+  "description": "安全回归网（spec 规则 73）：read 读到含密钥形态的文件——工具结果进转录前必须打码（[REDACTED:…] 可见、裸密钥不出现）；若打码器在 loop 咽喉点回归，此场景失败",
+  "files": {
+    "keys.txt": "MY_KEY=sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa\nOTHER=sk-bbbbbbbbbbbbbbbbbbbbbbbbbb\nplain line stays\n"
+  },
+  "turns": [
+    {"tool": "read", "args": {"path": "keys.txt"}},
+    {"text": "已知悉"}
+  ],
+  "expect": {
+    "no_tool_errors": true,
+    "transcript_contains": ["[REDACTED:anthropic-key]", "[REDACTED:openai-key]", "plain line stays"],
+    "transcript_not_contains": ["sk-ant-aaaaaaaaaaaaaaaa", "sk-bbbbbbbbbbbbbbbbb"]
+  }
+}

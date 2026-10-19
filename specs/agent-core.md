@@ -397,7 +397,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    模拟未授信工作区（工作区层不加载）——**安全回归网**：trust-gate
    场景断言未授信的技能层不可读（信任门回归即红）、trust-granted 断
    言授信后可读（正向）。CI 以 `go run ./cmd/zgo eval evals` 为门禁
-   步骤——任一场景失败即红。
+   步骤——任一场景失败即红。**第二批（规则 73/75/76 面）**：断言集
+   增 transcript_not_contains（负向守卫——「必须不泄漏」类）；场景
+   增 prompt 字段（用户消息可写——@引用 等用户侧展开据此驱动）；
+   redaction-transcript（密钥打码：[REDACTED:…] 在、裸密钥不在）、
+   custom-tool-trust-gate/granted（工具层信任门双向）、dir-mention
+   （目录树展开）四场景常驻。
 
 56. 模型兜底链（spec 规则 55 场景评测之后）：settings.fallbackModels
    （逗号列表，空即关闭）——rewire 的 Provider 把主模型与兜底序包成

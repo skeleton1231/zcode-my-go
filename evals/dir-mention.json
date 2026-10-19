@@ -1,0 +1,26 @@
+{
+  "name": "dir-mention",
+  "description": "@目录 引用展开（spec 规则 76）：@pkg 展开为有界目录树——目录项（带尾斜杠）与文件名都进转录；若目录展开回归（原样保留），此场景失败",
+  "files": {
+    "pkg/outer.go": "package pkg\n",
+    "pkg/inner/deep.go": "package inner\n",
+    "other.txt": "x"
+  },
+  "turns": [
+    {
+      "text": "看下 @pkg 的结构"
+    },
+    {
+      "text": "已知悉"
+    }
+  ],
+  "expect": {
+    "no_tool_errors": true,
+    "transcript_contains": [
+      "pkg/（目录树",
+      "outer.go",
+      "deep.go"
+    ]
+  },
+  "prompt": "看下 @pkg 的结构"
+}

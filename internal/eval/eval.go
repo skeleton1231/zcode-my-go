@@ -29,10 +29,13 @@ type TurnSpec struct {
 // Expectations 是场景断言：转录包含、工作区文件包含、无错误工具、
 // 事件计数（kind 精确名）。
 type Expectations struct {
-	TranscriptContains []string          `json:"transcript_contains,omitempty"`
-	FileContains       map[string]string `json:"file_contains,omitempty"`
-	NoToolErrors       bool              `json:"no_tool_errors,omitempty"`
-	EventCount         map[string]int    `json:"event_count,omitempty"`
+	TranscriptContains []string `json:"transcript_contains,omitempty"`
+	// TranscriptNotContains 是负向守卫（安全回归网第二批）：转录里
+	// 不得出现的串——密钥打码等"必须不泄漏"类断言。
+	TranscriptNotContains []string          `json:"transcript_not_contains,omitempty"`
+	FileContains          map[string]string `json:"file_contains,omitempty"`
+	NoToolErrors          bool              `json:"no_tool_errors,omitempty"`
+	EventCount            map[string]int    `json:"event_count,omitempty"`
 }
 
 // Scenario 是一个评测场景。
@@ -47,6 +50,9 @@ type Scenario struct {
 	// 作区——工作区层（.zgo/skills、.zgo/commands、.zgorules.json）不
 	// 加载，安全边界场景据此断言。
 	Trusted *bool `json:"trusted,omitempty"`
+	// Prompt 是本场景的用户消息（默认「评测」）——@引用 等用户侧展
+	// 开据此驱动（spec 规则 76 的场景形态）。
+	Prompt string `json:"prompt,omitempty"`
 }
 
 // Result 是一个场景的运行结果。
@@ -141,7 +147,11 @@ func Run(s Scenario) Result {
 	}
 
 	var events []agent.Event
-	if err := svc.Chat(info.ID, "评测", func(ev agent.Event) { events = append(events, ev) }); err != nil {
+	prompt := s.Prompt
+	if prompt == "" {
+		prompt = "评测"
+	}
+	if err := svc.Chat(info.ID, prompt, func(ev agent.Event) { events = append(events, ev) }); err != nil {
 		res.Failures = append(res.Failures, "chat: "+err.Error())
 	}
 	res.Requests = provider.requests
@@ -158,6 +168,13 @@ func Run(s Scenario) Result {
 	for _, want := range s.Expect.TranscriptContains {
 		if !strings.Contains(transcript, want) {
 			res.Failures = append(res.Failures, fmt.Sprintf("转录缺少 %q", want))
+		}
+	}
+	// 负向守卫（安全回归网第二批）：转录里不得出现的串——密钥打码
+	// 等「必须不泄漏」类断言。
+	for _, banned := range s.Expect.TranscriptNotContains {
+		if strings.Contains(transcript, banned) {
+			res.Failures = append(res.Failures, fmt.Sprintf("转录泄漏 %q（必须不出现）", banned))
 		}
 	}
 	// 断言：工作区文件。
