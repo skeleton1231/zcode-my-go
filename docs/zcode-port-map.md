@@ -20,7 +20,7 @@
 | core/subagent/ | — | `internal/agent/subagent.go`（RunSubtask 嵌套循环 + `task` 工具 + tools.ReadOnly） | ✅ 已翻译 |
 | core/workflow/、dynamic-workflow/、runtime-task/ | 26k | `internal/agent/workflow.go`（RunWorkflow：research/edit 步骤编排、逐步提示携带计划与前序结果、edit 步骤继承权限门与会话规则；after 依赖按 DAG 并行调度，独立步并发上限 4，失败停摆并跳过下游）+ `workflow` 工具 | ✅ 已翻译（步骤编排、门控与 DAG 并行） |
 | core/mcp/ | — | `internal/mcp`（stdio JSON-RPC 2.0：initialize 握手、tools/list、tools/call、mcp_ 前缀适配、settings.mcpServers、退出唤醒等待者；真子进程测试） | ✅ 已翻译 |
-| core/hooks/、telemetry/ | 4k | 事件流（agent.Event）即观测面；ZGO_DEBUG 请求转储 | ✅ 等价实现（hook 注入点见 Zgo 路线） |
+| core/hooks/、telemetry/ | 4k | 事件流（agent.Event）即观测面；ZGO_DEBUG 请求转储；span 追踪 internal/telemetry（规则 91） | ✅ 已移植（hook 注入点 + 遥测见 Zgo 路线） |
 | core/system-reminder/ | — | `agent.EvCompaction` 等 notice 事件 + UI notice 项 | ✅ 等价实现 |
 | contracts/（协议与类型，22k） | 22k | `internal/agent` 类型（Event/ToolResult/AskRequest/Question 即协议）+ specs 事件序列 | ✅ 已翻译 |
 | adapters/（54k：各 provider 适配） | 54k | `internal/ai`：Anthropic 兼容（Anthropic/GLM/Kimi 一家通吃）+ OpenAI Chat Completions 原生流式 + Google Gemini 原生流式（完整 functionCall 对象、functionResponse 按名配对）；settings.api 三协议切换 | ✅ 已翻译（三家协议覆盖 ZCode 全部在用方言；其余厂商均为这三家的同构适配） |
@@ -439,6 +439,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **用量历史趋势**（spec 规则 90，89 的时间轴半边）：usage-*.json 翻
    日即历史——History(dataDir, N) 只读重放近 N 日（缺日照列 0）；
    `zgo usage --days=N` 每日总量 + ▮▯ 条形。
+
+**遥测子系统**（spec 规则 91，ZCode telemetry 的 Go 化）：settings.
+   telemetry 默认关（nil tracer 零开销）；开启后主循环 span 链——
+   agent.turn（根）/model.call（重试数+三段 token）/tool.call（仅工具
+   名与成败，参数与输出永不进遥测）/session.compact；导出器 file（按
+   日 JSONL）或 otlp（OTLP/HTTP JSON）；错误与属性过密钥打码，导出失
+   败只计数丢弃不阻塞 agent。
 
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘

@@ -162,3 +162,48 @@ func TestConfigHardBudgetStop(t *testing.T) {
 		t.Fatal("restore failed")
 	}
 }
+
+// TestConfigTelemetry：telemetry 三键的 get/set/校验与 list 呈现
+// （spec 规则 91）——默认关、exporter 枚举校验、set 后 get 反映。
+func TestConfigTelemetry(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZGO_TEST_DATADIR", dir)
+
+	code, out := captureConfig(t, func() int { return runConfig([]string{"get", "telemetry.enabled"}) })
+	if code != 0 || strings.TrimSpace(out) != "false" {
+		t.Fatalf("default should be off: %q (%d)", out, code)
+	}
+	code, out = captureConfig(t, func() int { return runConfig([]string{"get", "telemetry.exporter"}) })
+	if code != 0 || strings.TrimSpace(out) != "file" {
+		t.Fatalf("default exporter = %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "telemetry.exporter", "carrier-pigeon"}) }); code == 0 {
+		t.Fatal("bogus exporter accepted")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "telemetry.enabled", "yes"}) }); code == 0 {
+		t.Fatal("non-bool accepted")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "telemetry.endpoint", "http://127.0.0.1:4318"}) }); code != 0 {
+		t.Fatal("set endpoint failed")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "telemetry.exporter", "otlp"}) }); code != 0 {
+		t.Fatal("set otlp failed")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "telemetry.enabled", "true"}) }); code != 0 {
+		t.Fatal("enable failed")
+	}
+	code, out = captureConfig(t, func() int { return runConfig([]string{"list"}) })
+	if code != 0 || !strings.Contains(out, "telemetry.enabled  true") ||
+		!strings.Contains(out, "telemetry.exporter otlp") ||
+		!strings.Contains(out, "telemetry.endpoint http://127.0.0.1:4318") {
+		t.Fatalf("list missing telemetry:\n%s", out)
+	}
+	// 落盘可读回（新进程语义）。
+	raw, err := os.ReadFile(dir + string(os.PathSeparator) + "settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"telemetry"`) {
+		t.Fatalf("telemetry not persisted: %s", raw)
+	}
+}

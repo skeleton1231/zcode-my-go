@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
+	"github.com/skeleton1231/zcode-my-go/internal/telemetry"
 	"github.com/skeleton1231/zcode-my-go/internal/tooldefs"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 	"github.com/skeleton1231/zcode-my-go/internal/trust"
@@ -81,6 +83,16 @@ type settings struct {
 	// AutoMemory 开关会话记忆自动化（spec 规则 74；nil = 默认开——
 	// 服务收尾为有实质回合的会话提炼一次持久事实进工作区记忆）。
 	AutoMemory *bool `json:"autoMemory,omitempty"`
+	// Telemetry 是 span 追踪（spec 规则 91）：默认关；开启后
+	// turn/model/tool/compact span 落 file（按日 JSONL）或 otlp。
+	Telemetry telemetrySettings `json:"telemetry,omitempty"`
+}
+
+// telemetrySettings 是遥测配置（zgo config telemetry.* 三键）。
+type telemetrySettings struct {
+	Enabled  bool   `json:"enabled"`
+	Exporter string `json:"exporter"` // file（默认）| otlp
+	Endpoint string `json:"endpoint"` // otlp 基地址（/v1/traces 自动拼）
 }
 
 // profile 是一个命名 API 剖面。
@@ -137,7 +149,9 @@ type AgentService struct {
 	trustStore       *trust.Store                                   // 工作区授信表（spec 规则 54）
 	searchIdx        *sessionidx.Index                              // 跨会话搜索索引（spec 规则 71）
 	buildTools       func(workspace, sessionID string) []agent.Tool // 工具面装配（/tools 列举同源）
+	tracer           *telemetry.Tracer                              // span 追踪（spec 规则 91；nil 关闭）
 }
+
 
 // New builds the service: loads settings, loads sessions, wires the loop.
 func New(dataDir string) (*AgentService, error) {
@@ -395,6 +409,11 @@ func (s *AgentService) syncRedaction(cfg settings) {
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.syncRedaction(cfg)
+	// 遥测 tracer（spec 规则 91）：随设置重建（rewire 在 New 与每次
+	// 设置变更后都会跑）——config set telemetry.* 即时生效。
+	s.tracer = telemetry.New(s.settings.Telemetry.Enabled,
+		s.settings.Telemetry.Exporter, s.settings.Telemetry.Endpoint,
+		filepath.Dir(s.path))
 	// buildTools: see below (assigned before Wire).
 	s.buildTools = func(workspace, sessionID string) []agent.Tool {
 		s.mu.Lock()
@@ -597,6 +616,10 @@ func (s *AgentService) rewire() {
 		},
 		Model:    func() string { return cfg.Model },
 		Thinking: func() ai.ThinkingLevel { return thinkingLevelOf(s.resolve().Thinking) },
+		// 遥测（spec 规则 91）：随 rewire 重建——config set 后即时
+		// 生效（新回合用新导出器）；nil 即关闭；otlp 无 endpoint 时
+		// New 内部落回 file（本地面兜底）。
+		Telemetry: s.tracer,
 		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
 		// 随每个会话生效；配置为空时无钩子。
 		Hooks: agent.HooksFromCommands(s.settings.Hooks),
@@ -2380,6 +2403,52 @@ func (s *AgentService) SetBudgetDailyTokens(v int) error {
 	_, err := s.saveSettingsLocked(cfg)
 	s.mu.Unlock()
 	return err
+}
+
+// TelemetryView 返回遥测配置三元组（spec 规则 91，zgo config 面）。
+func (s *AgentService) TelemetryView() (enabled bool, exporter, endpoint string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := s.settings.Telemetry
+	if t.Exporter == "" {
+		t.Exporter = "file"
+	}
+	return t.Enabled, t.Exporter, t.Endpoint
+}
+
+// SetTelemetry 落盘一个遥测键（enabled/exporter/endpoint）并即时
+// rewire——新回合用新导出器，无需重启。校验在加锁前完成：带锁 return
+// 会把 s.mu 永久留在锁定态（Close 与异步 MCP 启动随即死锁——本测试
+// 90s 超时抓的）。
+func (s *AgentService) SetTelemetry(key, value string) error {
+	var apply func(*telemetrySettings)
+	switch key {
+	case "enabled":
+		on, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("telemetry.enabled 需要 true/false")
+		}
+		apply = func(t *telemetrySettings) { t.Enabled = on }
+	case "exporter":
+		if value != "file" && value != "otlp" {
+			return fmt.Errorf("telemetry.exporter 只支持 file/otlp")
+		}
+		apply = func(t *telemetrySettings) { t.Exporter = value }
+	case "endpoint":
+		apply = func(t *telemetrySettings) { t.Endpoint = value }
+	default:
+		return fmt.Errorf("未知遥测键 %q", key)
+	}
+	s.mu.Lock()
+	cfg := s.settings
+	apply(&cfg.Telemetry)
+	_, err := s.saveSettingsLocked(cfg)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	s.rewire()
+	return nil
 }
 
 // SetAPIKey updates the key alone（config set apiKey 的数据面）——不

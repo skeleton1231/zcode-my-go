@@ -67,6 +67,10 @@ func configList(svc *service.AgentService) int {
 	fmt.Fprintf(os.Stdout, "redactSecrets     %v\n", svc.RedactionEnabled())
 	fmt.Fprintf(os.Stdout, "autoMemory        %v\n", svc.AutoMemoryEnabled())
 	fmt.Fprintf(os.Stdout, "hardBudgetStop    %v\n", svc.HardBudgetStopEnabled())
+	teOn, teEx, teEp := svc.TelemetryView()
+	fmt.Fprintf(os.Stdout, "telemetry.enabled  %v\n", teOn)
+	fmt.Fprintf(os.Stdout, "telemetry.exporter %s\n", teEx)
+	fmt.Fprintf(os.Stdout, "telemetry.endpoint %s\n", teEp)
 	return 0
 }
 
@@ -93,8 +97,18 @@ func configGet(svc *service.AgentService, key string) int {
 		fmt.Fprintln(os.Stdout, svc.AutoMemoryEnabled())
 	case "hardBudgetStop":
 		fmt.Fprintln(os.Stdout, svc.HardBudgetStopEnabled())
+	case "telemetry.enabled", "telemetry.exporter", "telemetry.endpoint":
+		teOn, teEx, teEp := svc.TelemetryView()
+		switch key {
+		case "telemetry.enabled":
+			fmt.Fprintln(os.Stdout, teOn)
+		case "telemetry.exporter":
+			fmt.Fprintln(os.Stdout, teEx)
+		default:
+			fmt.Fprintln(os.Stdout, teEp)
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory）\n", key)
+		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory/hardBudgetStop/telemetry.*）\n", key)
 		return 1
 	}
 	return 0
@@ -187,8 +201,14 @@ func configSet(svc *service.AgentService, key, value string) int {
 		} else {
 			fmt.Fprintln(os.Stdout, "已更新 fallbackModels =", strings.Join(models, ", "))
 		}
+	case "telemetry.enabled", "telemetry.exporter", "telemetry.endpoint":
+		if err := svc.SetTelemetry(strings.TrimPrefix(key, "telemetry."), value); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stdout, "已更新", key)
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory）\n", key)
+		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory/hardBudgetStop/telemetry.*）\n", key)
 		return 1
 	}
 	return 0

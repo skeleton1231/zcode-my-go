@@ -8,6 +8,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	"github.com/skeleton1231/zcode-my-go/internal/redact"
+	"github.com/skeleton1231/zcode-my-go/internal/telemetry"
 )
 
 // DefaultMaxTurns caps tool-calling turns per user message, so a looping
@@ -78,6 +80,9 @@ type LoopConfig struct {
 	// retries (tests inject a millisecond; 0 uses the default).
 	RetryBackoff time.Duration
 
+	// Telemetry records turn/model/tool spans (spec 规则 91)；nil 完全
+	// 关闭（零开销），loop 内的 nil Span 调用都安全空转。
+	Telemetry *telemetry.Tracer
 	// Permissions gates tool execution (ZCode's permission service). Nil
 	// bypasses checking entirely — the v0.2 behavior — for callers that
 	// have not adopted the system yet.
@@ -92,6 +97,8 @@ type LoopConfig struct {
 type Loop struct {
 	cfg  LoopConfig
 	emit func(Event)
+	// turnSpan 是本次运行的根 span（遥测未启用时为 nil）。
+	turnSpan *telemetry.Span
 	// askMu 串行化权限确认：并行批次的 gate 可能同时要求用户确认，
 	// 确认通道（桌面 modal、终端 stdin）都是单实例，并发会互相覆盖
 	// 或把答案错配给另一个请求。
@@ -120,7 +127,23 @@ func NewLoop(cfg LoopConfig, emit func(Event)) *Loop {
 // the loop never rewrites history.
 func (l *Loop) Run(ctx context.Context, appendMessage func(ai.Message) error) ai.StopReason {
 	l.emit(Event{Kind: EvAgentStart})
+	// 回合 span（spec 规则 91）：本次运行的根，模型/工具调用都是其
+	// 子 span。nil 遥测（默认）拿到 nil Span，后续调用全部安全空转。
+	span := l.cfg.Telemetry.Start("agent.turn").
+		SetAttr("session.id", l.cfg.SessionID).
+		SetAttr("workspace", l.cfg.Workspace).
+		SetAttr("model", l.cfg.Model)
+	l.turnSpan = span
 	stop := runInner(ctx, l, appendMessage)
+	l.turnSpan = nil
+	span.SetAttr("stop.reason", string(stop.stop))
+	if ctx.Err() != nil {
+		span.Cancel()
+	} else if stop.stop == ai.StopError {
+		span.End(errors.New(stop.err))
+	} else {
+		span.End(nil)
+	}
 	l.emit(Event{Kind: EvAgentEnd, StopReason: stop.stop, Usage: stop.usage,
 		ErrorMessage: stop.err})
 	return stop.stop
@@ -222,8 +245,15 @@ func runInner(ctx context.Context, l *Loop, appendMessage func(ai.Message) error
 // overloaded): the failed turn never enters the transcript; each retry is
 // announced as EvTurnRetry so the UI can drop the partial output.
 func (l *Loop) streamAssistantWithRetry(ctx context.Context, turn int) (ai.Message, endInfo) {
+	// 模型调用 span（spec 规则 91）：一次「模型往返」含全部重试；用
+	// 量与停止原因记录在属性上（数字转字符串——OTLP 属性只有 string）。
+	span := l.turnSpan.Child("model.call").
+		SetAttr("model", l.cfg.Model).
+		SetAttr("turn", fmt.Sprintf("%d", turn))
 	msg, end := l.streamAssistant(ctx, turn)
-	for retries := 1; end.stop == ai.StopError && end.retryable && retries <= DefaultMaxRetries; retries++ {
+	retries := 0
+	for end.stop == ai.StopError && end.retryable && retries < DefaultMaxRetries {
+		retries++
 		base := l.cfg.RetryBackoff
 		if base <= 0 {
 			base = retryBackoffBase
@@ -233,10 +263,22 @@ func (l *Loop) streamAssistantWithRetry(ctx context.Context, turn int) (ai.Messa
 			Text: fmt.Sprintf("第 %d 次重试（%s）：%s", retries, wait.Round(time.Millisecond), end.err)})
 		select {
 		case <-ctx.Done():
+			span.SetAttr("stop.reason", string(ai.StopAborted)).SetAttr("retries", fmt.Sprintf("%d", retries))
+			span.Cancel()
 			return msg, endInfo{stop: ai.StopAborted}
 		case <-time.After(wait):
 		}
 		msg, end = l.streamAssistant(ctx, turn)
+	}
+	span.SetAttr("stop.reason", string(end.stop)).
+		SetAttr("retries", fmt.Sprintf("%d", retries)).
+		SetAttr("input_tokens", fmt.Sprintf("%d", end.usage.InputTokens)).
+		SetAttr("output_tokens", fmt.Sprintf("%d", end.usage.OutputTokens)).
+		SetAttr("cache_read_tokens", fmt.Sprintf("%d", end.usage.CacheReadTokens))
+	if end.stop == ai.StopError && end.err != "" {
+		span.End(errors.New(end.err))
+	} else {
+		span.End(nil)
 	}
 	return msg, end
 }
@@ -317,6 +359,9 @@ func (l *Loop) executeBatch(ctx context.Context, turn int, msg ai.Message, calls
 // executeOne runs a single call, wrapping its outcome as a result block
 // （工具携带图片时，图片块紧随其后——同一工具结果消息内，spec 规则 47）。
 func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai.Block, stop ai.StopReason) []ai.Block {
+	// 工具 span（spec 规则 91）：只记工具名与成败——参数与输出都不
+	// 进遥测（红线同规则 73：内容可能携带密钥/用户数据）。
+	span := l.turnSpan.Child("tool.call").SetAttr("tool", call.Name)
 	var result ToolResult
 	if stop == ai.StopLength {
 		result = ToolResult{IsError: true, Content: "error: the response hit the token " +
@@ -324,9 +369,26 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 	} else {
 		result = l.execute(ctx, turn, msg, call)
 	}
+	span.SetAttr("is_error", fmt.Sprintf("%t", result.IsError))
+	if result.IsError {
+		span.End(errors.New(shortReason(result.Content)))
+	} else {
+		span.End(nil)
+	}
 	out := []ai.Block{{Kind: ai.BlockToolResult, ToolCallID: call.ID,
 		Text: result.Content, IsError: result.IsError, Diff: result.Diff}}
 	return append(out, result.Images...)
+}
+
+// shortReason 截断工具错误文本进 span（遥测只关心成败与摘要，全文可能
+// 很大且已进转录——重复落盘无益）。
+func shortReason(s string) string {
+	const limit = 200
+	r := []rune(s)
+	if len(r) > limit {
+		return string(r[:limit]) + "…"
+	}
+	return s
 }
 
 // executeBatchParallel overlaps the batch's execution: each tool emits its

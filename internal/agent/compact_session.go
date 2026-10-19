@@ -65,10 +65,17 @@ func (s *Session) Compact(ctx context.Context) error {
 	if len(toSummarize) == 0 {
 		return errors.New("nothing to compact")
 	}
+	// 压缩 span（spec 规则 91）：独立根（手动 /compact 与自动压缩
+	// 都覆盖），记录保留尾部与摘要规模。
+	span := s.telemetry.Start("session.compact").
+		SetAttr("session.id", s.info.ID).
+		SetAttr("kept", fmt.Sprintf("%d", kept))
 	summary, err := summarize(ctx, provider, model, toSummarize)
 	if err != nil {
+		span.End(err)
 		return err
 	}
+	span.SetAttr("summarized", fmt.Sprintf("%d", len(toSummarize)))
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -78,9 +85,15 @@ func (s *Session) Compact(ctx context.Context) error {
 	rec, err := json.Marshal(compactionRecord{
 		Type: "compaction", Summary: summary, Kept: kept})
 	if err != nil {
+		span.End(err)
 		return err
 	}
-	return appendLine(s.path, rec)
+	if err := appendLine(s.path, rec); err != nil {
+		span.End(err)
+		return err
+	}
+	span.End(nil)
+	return nil
 }
 
 // autoCompact runs at Chat entry when the policy decides so (ZCode's
