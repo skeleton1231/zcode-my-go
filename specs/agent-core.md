@@ -720,6 +720,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    loop 的三个入口（task/dispatch、后台 agent 四件套、workflow）的
    钱全部进当日记账与硬预算闸。
 
+89. 用量归因（规则 87/88 的可观测半边）：usage 条目增 session/source
+   归因键（omitempty——旧文件无键照样重放，零值 = 未归因）；Day 增
+   AddFor(sessionID, source, tokens)（Add 保持兼容——未归因）与内存
+   聚合 bySession/bySource（重放自文件重建、翻日清零）；来源词表封
+   闭：main（主循环回合）/ subagent（task/dispatch/后台 agent）/
+   workflow（工作流步骤）——nested loop 归因到宿主会话。观测面：
+   TopSessions()（降序）/ SourceTotal()；`zgo usage` 附今日归因段
+   （来源三数 + 按会话 Top 5）。「哪个会话烧了预算」一命令可见。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

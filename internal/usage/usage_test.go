@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,5 +110,50 @@ func TestDayRolloverMidnight(t *testing.T) {
 	// warned 标志随翻滚重置：新一日 50/60 ≥ 80% 再次可触。
 	if got := d.CheckBudget(60); got != "near" {
 		t.Fatalf("post-rollover check = %q, want near", got)
+	}
+}
+
+// TestAttribution（spec 规则 89）：归因增量聚合按会话/按来源；旧文件
+// 无归因键照样重放；翻日清聚合。
+func TestAttribution(t *testing.T) {
+	dir := t.TempDir()
+	d := Load(dir)
+	if err := d.AddFor("s1", "main", 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.AddFor("s1", "subagent", 300); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.AddFor("s2", "workflow", 50); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(10); err != nil { // 未归因
+		t.Fatal(err)
+	}
+	if got := d.Total(); got != 460 {
+		t.Fatalf("total = %d", got)
+	}
+	tops := d.TopSessions()
+	if len(tops) != 3 || tops[0].SessionID != "s1" || tops[0].Tokens != 400 {
+		t.Fatalf("top sessions = %+v", tops)
+	}
+	if d.SourceTotal("main") != 100 || d.SourceTotal("subagent") != 300 || d.SourceTotal("workflow") != 50 {
+		t.Fatal("source totals wrong")
+	}
+
+	// 重放：聚合自文件重建。
+	d2 := Load(dir)
+	if d2.SourceTotal("subagent") != 300 || d2.TopSessions()[0].Tokens != 400 {
+		t.Fatalf("replay lost attribution: %+v", d2.TopSessions())
+	}
+
+	// 旧文件（无归因键）重放为零值键——总量不减。
+	old := filepath.Join(dir, "usage-"+time.Now().Format("20060102")+".json")
+	f, _ := os.OpenFile(old, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	fmt.Fprintln(f, `{"tokens":7}`)
+	f.Close()
+	d3 := Load(dir)
+	if d3.Total() != 467 || d3.SourceTotal("") != 17 {
+		t.Fatalf("legacy replay: total=%d unattributed=%d", d3.Total(), d3.SourceTotal(""))
 	}
 }

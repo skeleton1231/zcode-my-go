@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -20,6 +21,10 @@ type Day struct {
 	now  func() time.Time // 注入时钟（测试跨零点）；nil = time.Now
 
 	Tokens int `json:"tokens"` // 今日累计（缓存读按 0.1 计价后的整数）
+	// bySession/bySource 是归因聚合（spec 规则 89）：仅内存（重放自文
+	// 件重建）——「哪个会话/来源烧了预算」的观测面。
+	bySession map[string]int
+	bySource  map[string]int
 	// warned80/warned100 只在内存：进程重启（及翻日）后阈值可能重发
 	// 一次——可接受（预算提示是化妆性信息，宁可多提醒）。
 	warned80  bool
@@ -29,6 +34,9 @@ type Day struct {
 // entry 是一条增量记录。
 type entry struct {
 	Tokens int `json:"tokens"`
+	// 归因（spec 规则 89）：旧文件无这两键照样重放（零值 = 未归因）。
+	SessionID string `json:"session,omitempty"`
+	Source    string `json:"source,omitempty"` // main/subagent/workflow
 }
 
 // Load 重放当日记账（文件按日期命名，隔天自然从零开始）。
@@ -38,7 +46,7 @@ func Load(dataDir string) *Day {
 
 // load 是 Load 的可注入时钟形态（测试翻日）。
 func load(dataDir string, now func() time.Time) *Day {
-	d := &Day{dir: dataDir, now: now}
+	d := &Day{dir: dataDir, now: now, bySession: map[string]int{}, bySource: map[string]int{}}
 	d.rollLocked() // 依当前日期初始化 day/path
 	data, err := os.ReadFile(d.path)
 	if err != nil {
@@ -48,6 +56,8 @@ func load(dataDir string, now func() time.Time) *Day {
 		var e entry
 		if json.Unmarshal(line, &e) == nil {
 			d.Tokens += e.Tokens
+			d.bySession[e.SessionID] += e.Tokens
+			d.bySource[e.Source] += e.Tokens
 		}
 	}
 	return d
@@ -72,6 +82,8 @@ func (d *Day) rollLocked() {
 	d.day = today
 	d.path = filepath.Join(d.dir, "usage-"+today+".json")
 	d.Tokens = 0
+	d.bySession = map[string]int{}
+	d.bySource = map[string]int{}
 	d.warned80, d.warned100 = false, false
 }
 
@@ -92,13 +104,19 @@ func splitLines(data []byte) [][]byte {
 	return out
 }
 
-// Add 记一次回合增量并落盘（追加一行）。
-func (d *Day) Add(tokens int) error {
+// Add 记一次未归因增量（兼容面）。
+func (d *Day) Add(tokens int) error { return d.AddFor("", "", tokens) }
+
+// AddFor 记一次归因增量并落盘（spec 规则 89）：sessionID 空即未归
+// 因；source ∈ main/subagent/workflow。
+func (d *Day) AddFor(sessionID, source string, tokens int) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.rollLocked() // 跨零点：先翻到新日再记账
 	d.Tokens += tokens
-	line, err := json.Marshal(entry{Tokens: tokens})
+	d.bySession[sessionID] += tokens
+	d.bySource[source] += tokens
+	line, err := json.Marshal(entry{Tokens: tokens, SessionID: sessionID, Source: source})
 	if err != nil {
 		return err
 	}
@@ -144,4 +162,29 @@ func (d *Day) CheckBudget(budget int) string {
 		return "near"
 	}
 	return ""
+}
+
+// SessionTotal 是单会话的今日用量。
+type SessionTotal struct {
+	SessionID string
+	Tokens    int
+}
+
+// TopSessions 返回今日按会话聚合的用量（降序；未归因条目归 ""）。
+func (d *Day) TopSessions() []SessionTotal {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]SessionTotal, 0, len(d.bySession))
+	for id, tokens := range d.bySession {
+		out = append(out, SessionTotal{SessionID: id, Tokens: tokens})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Tokens > out[j].Tokens })
+	return out
+}
+
+// SourceTotal 返回单一来源（main/subagent/workflow）的今日用量。
+func (d *Day) SourceTotal(source string) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.bySource[source]
 }
