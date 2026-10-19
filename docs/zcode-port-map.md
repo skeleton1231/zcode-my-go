@@ -473,6 +473,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    行面 Manager.SetSessionModel（会话模型闭包替换，后续回合/压缩即时
    生效，空恢复全局）；scheduleRunner 覆盖任务模型；cron list 增列。
 
+**调度并发硬化**（spec 规则 78）：全局并发上限（同时 2 个 run——满
+   员到期任务排队不跳过，LastRun 不动下一 tick 重试）；RunNow 手动
+   触发与 tick 同源 single-flight（在跑即拒绝）。
+
 **桌面后台代理状态条**（spec 规则 62）：聊天流上方的实时状态条（四态
    标记/耗时/摘要/折叠，空不占位）；回合结束与会话打开启动 1s 轮询
    （单飞守卫、变化才回主线程、清空即退）。
