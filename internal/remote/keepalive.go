@@ -92,7 +92,13 @@ func (c *Client) keepAliveLoop() {
 		}
 		probe := c.ka.probeFn
 		if probe == nil {
-			probe = c.probe
+			// 连接快照必须持锁取：probe 的 goroutine 里裸读 c.conn 与
+			// ensureConnected 的重连换写（c.conn = conn）数据竞态
+			//（ubuntu race 构建曾逮）。快照后探测只碰局部变量。
+			c.ka.mu.Lock()
+			conn := c.conn
+			c.ka.mu.Unlock()
+			probe = func(deadline time.Duration) error { return probeConn(conn, deadline) }
 		}
 		if err := probe(deadline); err == nil {
 			c.ka.failures.Store(0)
@@ -104,12 +110,14 @@ func (c *Client) keepAliveLoop() {
 	}
 }
 
-// probe 发一次 keepalive 请求并限时等回应（超时视为失败）。
-func (c *Client) probe(deadline time.Duration) error {
+// probeConn 发一次 keepalive 请求并限时等回应（超时视为失败）。conn
+// 是调用方持锁取的快照——本函数不碰共享字段（探测 goroutine 的生命
+// 周期跨越重连窗口）。
+func probeConn(conn *ssh.Client, deadline time.Duration) error {
 	type outcome struct{ err error }
 	done := make(chan outcome, 1)
 	go func() {
-		_, _, err := c.conn.SendRequest("keepalive@openssh.com", true, nil)
+		_, _, err := conn.SendRequest("keepalive@openssh.com", true, nil)
 		done <- outcome{err}
 	}()
 	select {
