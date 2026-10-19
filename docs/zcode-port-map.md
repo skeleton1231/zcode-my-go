@@ -26,7 +26,7 @@
 | adapters/（54k：各 provider 适配） | 54k | `internal/ai`：Anthropic 兼容（Anthropic/GLM/Kimi 一家通吃）+ OpenAI Chat Completions 原生流式 + Google Gemini 原生流式（完整 functionCall 对象、functionResponse 按名配对）；settings.api 三协议切换 | ✅ 已翻译（三家协议覆盖 ZCode 全部在用方言；其余厂商均为这三家的同构适配） |
 | bootstrap/、cli/、tui/（终端宿主 81k） | 81k | `cmd/zgo`：print 模式（-p/-C、stdin 确认与提问、错误非零退出）+ 行式 REPL（/exit /compact /plan /new）+ **全屏 TUI**（-t：x/term raw mode、ANSI 备用屏、滚动转录、状态栏、输入行、流式刷新、无 TTY 降级提示） | ✅ 已翻译（终端宿主三形态齐备） |
 | tools/（ripgrep 等原生搜索依赖） | — | Go 原生 `regexp` + walk（embedded-search 的降维实现） | ✅ 等价实现 |
-| i18n/ | 1k | 界面文案中文常量（单语设计） | ✅ 等价实现 |
+| i18n/ | 1k | `internal/i18n`（zh 基准 + en 覆盖、struct 目录防漏译、ZGO_LANG/LANG 检测、settings.lang，spec 规则 94；受控 copy 面——CLI 帮助/预算文案/TUI 状态语） | ✅ 已移植 |
 | 各 *-plugin/（pdf、spreadsheets、swift-bridge…） | 8k | ZCode 中即为独立可选插件（非 core），Zgo 以 MCP 生态等价承接（任何 MCP 服务器即插即用） | ✅ 等价实现（MCP 承接） |
 
 \* core/ 为整包 104k LOC，其中被上表拆分引用。

@@ -207,3 +207,29 @@ func TestConfigTelemetry(t *testing.T) {
 		t.Fatalf("telemetry not persisted: %s", raw)
 	}
 }
+
+// TestConfigLang：lang 键三形态（spec 规则 94）——默认 auto、set 校验
+// auto/zh/en、非法值拒绝且不落盘。
+func TestConfigLang(t *testing.T) {
+	t.Setenv("ZGO_TEST_DATADIR", t.TempDir())
+	code, out := captureConfig(t, func() int { return runConfig([]string{"get", "lang"}) })
+	if code != 0 || strings.TrimSpace(out) != "auto" {
+		t.Fatalf("default lang = %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "lang", "klingon"}) }); code == 0 {
+		t.Fatal("bogus lang accepted")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "lang", "en"}) }); code != 0 {
+		t.Fatal("set en failed")
+	}
+	code, out = captureConfig(t, func() int { return runConfig([]string{"get", "lang"}) })
+	if code != 0 || strings.TrimSpace(out) != "en" {
+		t.Fatalf("after set = %q (%d)", out, code)
+	}
+	if code, out = captureConfig(t, func() int { return runConfig([]string{"list"}) }); code != 0 || !strings.Contains(out, "lang") {
+		t.Fatalf("list missing lang:\n%s", out)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "lang", "auto"}) }); code != 0 {
+		t.Fatal("restore auto failed")
+	}
+}

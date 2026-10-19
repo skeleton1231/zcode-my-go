@@ -134,7 +134,7 @@ func usageHistory(days int) int {
 			max = d.Tokens
 		}
 	}
-	fmt.Printf("近 %d 日用量（计价 token）：%s\n", days, dataDir)
+	fmt.Printf(svc.Copy().CLI.UsageDaysBrief+"\n", days, dataDir)
 	for _, d := range hist {
 		bar := ""
 		if max > 0 {
