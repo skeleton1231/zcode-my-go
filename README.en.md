@@ -94,6 +94,28 @@ MIT © 2026 skeleton1231
 - Stop/Notification hooks: a round-end hook (exit 2 blocks the wrap-up
   and feeds the output back) and a permission-wait notification hook.
 
+## v0.10.0 highlights
+
+- Auto-memory: at close, one small completion distills durable facts
+  (user preferences, project conventions, key decisions) into the
+  workspace memory; injected in future sessions, deduped daily,
+  toggleable.
+- Custom tools: `.zgo/tools/*.md` command templates ($ARGUMENTS
+  placeholder) become model-callable tools; execution rides the bash
+  channel (permission judged on the rendered command). /tools lists the
+  live tool surface.
+- @dir and @line-range mentions: @dir expands a bounded tree; @file.go:
+  120-180 carries only the relevant lines.
+- /context: one command shows the next request's composition segments
+  (system prompt, memory, skills, tool declarations, transcript).
+- Regex search: `zgo sessions search --regex` (RE2, case-sensitive,
+  (?i) to ignore).
+- Session archive: archive/unarchive is orthogonal to content — list
+  hides by default, -c skips; transcripts, search and export unchanged.
+- Scheduler hardening: a global concurrency cap (2 concurrent runs;
+  due jobs queue rather than skip) and RunNow shares the single-flight
+  guard.
+
 ## v0.8.0 highlights
 
 - Background subagents: the agent tool spawns research agents that
