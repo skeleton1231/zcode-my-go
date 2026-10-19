@@ -400,6 +400,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    义）；上限 5000 文件/100MB 超限降级；错误分层对齐（Missing 降级/
    Pruned 中止）；会话删除清库。
 
+**远程工作区快照**（spec 规则 84，83 的远程半边）：ssh:// 经 RemoteFS
+   整树拉进本地快照库；恢复镜像推回（WriteFile 覆写 + Exec rm 删快
+   照后新增——单引号包裹）；上限/错误分层与本地同源。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
