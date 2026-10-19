@@ -248,3 +248,49 @@ func TestSessionsPinCLI(t *testing.T) {
 		t.Fatal("unknown session accepted")
 	}
 }
+
+// TestSessionsRetiredRestore（spec 规则 98）：retired 列表 + restore
+// 前缀解析与恢复回活跃面。
+func TestSessionsRetiredRestore(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZGO_TEST_DATADIR", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "archive"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "archive", "20260101-old.jsonl"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := captureSessionsOut(func() int { return runSessions([]string{"retired"}) })
+	if code != 0 || !strings.Contains(out, "20260101-old.jsonl") {
+		t.Fatalf("retired = %d %q", code, out)
+	}
+	// 前缀解析恢复。
+	if code := runSessions([]string{"restore", "20260101"}); code != 0 {
+		t.Fatal("restore failed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sessions", "20260101-old.jsonl")); err != nil {
+		t.Fatal("file not back in sessions")
+	}
+	if code := runSessions([]string{"restore", "missing"}); code != 1 {
+		t.Fatalf("missing restore = %d", code)
+	}
+	if code := runSessions([]string{"restore"}); code != 2 {
+		t.Fatalf("argless restore = %d", code)
+	}
+}
+
+// captureSessionsOut 抓 runSessions 的 stdout。
+func captureSessionsOut(fn func() int) (int, string) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return -1, ""
+	}
+	old := os.Stdout
+	os.Stdout = w
+	code := fn()
+	os.Stdout = old
+	w.Close()
+	data, _ := io.ReadAll(r)
+	return code, string(data)
+}

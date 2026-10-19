@@ -19,7 +19,7 @@ import (
 //	zgo sessions search <关键词>          跨会话检索（标题/消息/工具参数）
 func runSessions(argv []string) int {
 	if len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "用法：zgo sessions <list|export|rm|search|sanitize> …")
+		fmt.Fprintln(os.Stderr, "用法：zgo sessions <list|export|rm|search|sanitize|retired|restore> …")
 		return 2
 	}
 	dataDir, err := userDataDir()
@@ -46,6 +46,10 @@ func runSessions(argv []string) int {
 		return sessionsArchive(svc, rest, true)
 	case "unarchive":
 		return sessionsArchive(svc, rest, false)
+	case "retired":
+		return sessionsRetired(svc)
+	case "restore":
+		return sessionsRestore(svc, rest)
 	case "pin":
 		return sessionsPin(svc, rest, true)
 	case "unpin":
@@ -301,4 +305,51 @@ func sessionsPin(svc *service.AgentService, args []string, on bool) int {
 		fmt.Println("已取消置顶")
 	}
 	return 0
+}
+
+// sessionsRetired 列出保留期归档目录（spec 规则 98）——与组织态
+// archive/unarchive 正交：这里是被保留期移出活跃面的文件。
+func sessionsRetired(svc *service.AgentService) int {
+	names := svc.ArchivedSessions()
+	if len(names) == 0 {
+		fmt.Println("（归档目录为空）")
+		return 0
+	}
+	for _, n := range names {
+		fmt.Println(n)
+	}
+	return 0
+}
+
+// sessionsRestore 把归档文件移回活跃面（spec 规则 98 的恢复面）。
+func sessionsRestore(svc *service.AgentService, args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "用法：zgo sessions restore <文件名|前缀>")
+		return 2
+	}
+	name, ok := resolveRetiredName(svc, args[0])
+	if !ok {
+		fmt.Fprintf(os.Stderr, "归档目录没有 %q（zgo sessions retired 查看）\n", args[0])
+		return 1
+	}
+	if err := svc.RestoreArchivedSession(name); err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	fmt.Printf("已恢复 %s 到活跃面（mtime 已刷新，不会被立即再归档）\n", name)
+	return 0
+}
+
+// resolveRetiredName 归档文件名的唯一前缀解析。
+func resolveRetiredName(svc *service.AgentService, prefix string) (string, bool) {
+	var match string
+	for _, n := range svc.ArchivedSessions() {
+		if n == prefix || strings.HasPrefix(n, prefix) {
+			if match != "" {
+				return "", false
+			}
+			match = n
+		}
+	}
+	return match, match != ""
 }
