@@ -289,6 +289,29 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/context", usage: "/context",
+		help: "显示上下文构成（系统提示/记忆/技能/工具声明/转录各占多少——spec 规则 79）",
+		run: func(env *Env, _ string) string {
+			parts := env.Svc.ContextBreakdown(env.SessionID(), env.Workspace())
+			if len(parts) == 0 {
+				return "[上下文] 会话未建立"
+			}
+			var b strings.Builder
+			total := 0
+			b.WriteString("[上下文] 下一请求的构成（字节口径，token 估算 ≈/4）：\n")
+			for _, p := range parts {
+				total += p.Bytes
+				line := "  " + p.Name + "\t" + fmt.Sprintf("%6d B", p.Bytes)
+				if p.Note != "" {
+					line += "\t" + p.Note
+				}
+				b.WriteString(line + "\n")
+			}
+			b.WriteString("  合计\t" + fmt.Sprintf("%6d B", total) + "\t（/compact 压缩转录；/context 随时复测）")
+			return b.String()
+		},
+	},
+	{
 		name: "/agents", usage: "/agents",
 		help: "列出本会话的后台子代理（状态/耗时/任务）",
 		run: func(env *Env, _ string) string {

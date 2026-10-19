@@ -632,6 +632,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    说明；空闲时照常执行并记录。计数与互斥共用 Scheduler 的锁域
    （running 集合 + active 计数）。
 
+79. /context 上下文构成观测：「token 都花哪了」一命令可见——
+   /context 列出下一请求的构成分段，与 loop 装配同源
+   （SystemStableFS/SystemVolatile/memoryFor.Section/skills·agents
+   Section/buildTools 的声明 JSON/Messages——测的即发的）：system·
+   stable（缓存前缀）、system·git（易变段）、memory（4KB 尾窗注
+   入）、skills、agents、tools（N 个工具声明）、transcript（N 条消
+   息/M 用户回合）。字节口径（token 估算 ≈/4 只做参照）；合计行附
+   /compact 提示。观测面导出 agent.Declarations（与 wire 请求同构）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

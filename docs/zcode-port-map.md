@@ -379,6 +379,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    见工具（与 loop 装配同一闭包同源）；来源分组（内置/自定义/MCP，
    按实例类型判定）；描述首句 ≤80 rune；坏定义 ⚠ 行。
 
+**/context 上下文构成观测**（spec 规则 79）：下一请求的构成分段一命
+   令可见（系统提示稳定前缀/git 摘要/记忆/技能/子代理/工具声明/转录，
+   与 loop 装配同源——测的即发的）；字节口径 + 合计与 /compact 提示。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
