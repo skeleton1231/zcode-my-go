@@ -18,6 +18,7 @@ import (
 //
 //	zgo cron list
 //	zgo cron add --schedule '*/5 * * * *' --prompt '...' --workspace path [--id name] [--model m]
+//	zgo cron add --at '每天下午3点' --prompt '...' --workspace path   （自然语言，spec 规则 95）
 //	zgo cron rm <id> | run <id> | enable <id> | disable <id>
 //
 // 管理（除 run）直接读写 jobs.json——桌面调度器每分钟热重载；run 走服务
@@ -94,8 +95,12 @@ func cronList(store *schedule.Store) int {
 		if model == "" {
 			model = "（默认）"
 		}
+		plan := j.Schedule
+		if j.At != "" { // 自然语言原文回显（spec 规则 95）
+			plan += "（" + j.At + "）"
+		}
 		fmt.Fprintf(w, "%s\t%v\t%s\t%s\t%s\t%s\t%s\n",
-			j.ID, j.Enabled, j.Schedule, nextStr, shortPath(j.Workspace), model, status)
+			j.ID, j.Enabled, plan, nextStr, shortPath(j.Workspace), model, status)
 	}
 	w.Flush()
 	return 0
@@ -104,6 +109,7 @@ func cronList(store *schedule.Store) int {
 func cronAdd(store *schedule.Store, args []string) int {
 	fs := flag.NewFlagSet("cron add", flag.ContinueOnError)
 	scheduleExpr := fs.String("schedule", "", "cron 表达式（分 时 日 月 周）")
+	at := fs.String("at", "", "自然语言调度（如 每天下午3点；与 --schedule 互斥）")
 	prompt := fs.String("prompt", "", "要运行的提示")
 	workspace := fs.String("workspace", "", "会话工作区")
 	model := fs.String("model", "", "覆盖模型（可选）")
@@ -112,9 +118,28 @@ func cronAdd(store *schedule.Store, args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *scheduleExpr == "" || strings.TrimSpace(*prompt) == "" || *workspace == "" {
-		fmt.Fprintln(os.Stderr, "需要 --schedule --prompt --workspace")
+	if *scheduleExpr != "" && *at != "" {
+		fmt.Fprintln(os.Stderr, "--at 与 --schedule 互斥——二选一")
 		return 2
+	}
+	if *scheduleExpr == "" && *at == "" {
+		fmt.Fprintln(os.Stderr, "需要 --schedule（或 --at）--prompt --workspace")
+		return 2
+	}
+	if strings.TrimSpace(*prompt) == "" || *workspace == "" {
+		fmt.Fprintln(os.Stderr, "需要 --schedule（或 --at）--prompt --workspace")
+		return 2
+	}
+	// 自然语言先翻成五字段再走同一校验/落库路径（spec 规则 95）。
+	atOrigin := ""
+	if *at != "" {
+		expr, err := schedule.ParseNatural(*at)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+		*scheduleExpr = expr
+		atOrigin = strings.TrimSpace(*at)
 	}
 	if _, _, err := schedule.ParseWindow(*window); err != nil { // add 即校验（spec 规则 64）
 		fmt.Fprintln(os.Stderr, "错误：", err)
@@ -133,7 +158,8 @@ func cronAdd(store *schedule.Store, args []string) int {
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		return 1
 	}
-	job := schedule.Job{ID: jobID, Schedule: *scheduleExpr, Prompt: strings.TrimSpace(*prompt),
+	job := schedule.Job{ID: jobID, Schedule: *scheduleExpr, At: atOrigin,
+		Prompt: strings.TrimSpace(*prompt),
 		Workspace: abs, Model: *model, Window: *window, Enabled: true}
 	if err := store.Upsert(job); err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)

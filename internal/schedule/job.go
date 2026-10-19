@@ -24,6 +24,9 @@ type Job struct {
 	Workspace   string    `json:"workspace"`
 	Model       string    `json:"model,omitempty"`
 	Window      string    `json:"window,omitempty"` // HH:MM-HH:MM（本地时区，可跨午夜）；空即不限
+	// At 是创建时的自然语言原文（spec 规则 95）：只作回显，调度仍以
+	// Schedule（五字段 cron）为准。
+	At          string    `json:"at,omitempty"`
 	Enabled     bool      `json:"enabled"`
 	LastRun     time.Time `json:"lastRun,omitempty"`
 	LastStatus  string    `json:"lastStatus,omitempty"`

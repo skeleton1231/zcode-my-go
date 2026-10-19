@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
@@ -77,3 +78,64 @@ func runCronArgs(t *testing.T, args ...string) int {
 	io.Copy(io.Discard, r) // 排空管道；表格内容不逐字断言
 	return code
 }
+
+// TestCronAddNaturalLanguage（spec 规则 95）：--at 自然语言建任务——翻
+// 译落库为五字段、list 回显原文、--at 与 --schedule 互斥、坏口语报错
+// 不落库。
+func TestCronAddNaturalLanguage(t *testing.T) {
+	dataDir := cronEnv(t)
+	ws := t.TempDir()
+
+	code := runCronArgs(t, "add", "--at", "每天下午3点",
+		"--prompt", "日报", "--workspace", ws, "--id", "nat1")
+	if code != 0 {
+		t.Fatalf("add --at failed: %d", code)
+	}
+	store := schedule.NewStore(dataDir)
+	jobs, err := store.List()
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("jobs = %v err = %v", jobs, err)
+	}
+	if jobs[0].Schedule != "0 15 * * *" {
+		t.Fatalf("schedule = %q", jobs[0].Schedule)
+	}
+	if jobs[0].At != "每天下午3点" {
+		t.Fatalf("at origin = %q", jobs[0].At)
+	}
+	// list 回显原文。
+	out := captureCronList(t, dataDir)
+	if !strings.Contains(out, "每天下午3点") {
+		t.Fatalf("list missing natural phrase:\n%s", out)
+	}
+	// 互斥与坏口语。
+	if code := runCronArgs(t, "add", "--at", "每天 3:00", "--schedule", "0 3 * * *",
+		"--prompt", "x", "--workspace", ws); code != 2 {
+		t.Fatalf("mutual exclusion = %d", code)
+	}
+	if code := runCronArgs(t, "add", "--at", "看心情",
+		"--prompt", "x", "--workspace", ws); code != 1 {
+		t.Fatalf("bad phrase = %d", code)
+	}
+	jobs, _ = store.List()
+	if len(jobs) != 1 {
+		t.Fatalf("bad phrase leaked a job: %d", len(jobs))
+	}
+}
+
+// captureCronList 抓取 cron list 的 stdout。
+func captureCronList(t *testing.T, dataDir string) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	runCron([]string{"list"})
+	os.Stdout = old
+	w.Close()
+	data, _ := io.ReadAll(r)
+	return string(data)
+}
+
+// contains 用 strings.Contains 直接内联（既有 helper 与 models.go 撞名）。
