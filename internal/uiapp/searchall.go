@@ -73,7 +73,10 @@ func (a *App) crossSearchModal(c *ui.Context, t *ui.Theme) {
 	}
 	ui.Modal(c, &a.cross.open, func() {
 		ui.Column(c).Width(560).Gap(10).Children(func() {
-			ui.Text(c, "搜索所有会话").Bold().FontSize(15)
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, iconSearch).FontSize(15).TextColor(t.TextMuted)
+				ui.Text(c, "搜索所有会话").Bold().FontSize(15)
+			})
 			ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 				ui.TextInput(c, &a.cross.query).Grow(1).
 					Placeholder("关键词（消息与工具参数）")
@@ -82,6 +85,7 @@ func (a *App) crossSearchModal(c *ui.Context, t *ui.Theme) {
 				}
 			})
 			if a.cross.running {
+				ui.Spinner(c).FontSize(12)
 				ui.Text(c, "扫描中…").TextColor(t.TextMuted).FontSize(12)
 			}
 			if a.cross.err != "" {

@@ -19,8 +19,11 @@ func (a *App) jobsModal(c *ui.Context, t *ui.Theme) {
 	ui.Modal(c, &a.jobsOpen, func() {
 		ui.Column(c).Width(520).Gap(10).Children(func() {
 			ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "定时任务").Bold().FontSize(15)
-				if ui.Button(c, "刷新").Clicked() {
+				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+					ui.Icon(c, iconClock).FontSize(15).TextColor(t.TextMuted)
+					ui.Text(c, "定时任务").Bold().FontSize(15)
+				})
+				if iconButton(c, iconRefresh, "刷新", "重新加载任务").Clicked() {
 					a.loadJobs()
 				}
 			})
@@ -48,14 +51,15 @@ func (a *App) jobRow(c *ui.Context, t *ui.Theme, j *schedule.Job) {
 	ui.Column(c).Gap(4).Padding(8).Radius(8).
 		Background(t.Surface).BorderWidth(1, 1, 1, 1).BorderColor(t.Border).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			mark := "✓"
-			color := t.Success
-			if !j.Enabled {
-				mark, color = "‖", t.TextMuted
-			} else if j.LastStatus != "" && j.LastStatus != "ok" {
-				mark, color = "✕", t.Danger
+			// 状态图标：正常 ✓（绿）、停用 ■（灰）、上次失败 ✕（红）。
+			switch {
+			case !j.Enabled:
+				ui.Icon(c, iconSquare).FontSize(13).TextColor(t.TextMuted)
+			case j.LastStatus != "" && j.LastStatus != "ok":
+				ui.Icon(c, iconCircleX).FontSize(13).TextColor(t.Danger)
+			default:
+				ui.Icon(c, iconCheck).FontSize(13).TextColor(t.Success)
 			}
-			ui.Text(c, mark).TextColor(color)
 			ui.Text(c, j.ID).Bold()
 			ui.Text(c, j.Schedule).TextColor(t.TextMuted)
 			if next := schedule.NextDue(*j, time.Now()); !next.IsZero() {
@@ -63,8 +67,9 @@ func (a *App) jobRow(c *ui.Context, t *ui.Theme, j *schedule.Job) {
 			}
 			ui.Spacer(c)
 			if a.jobRunning == j.ID {
+				ui.Spinner(c).FontSize(12)
 				ui.Text(c, "运行中…").TextColor(t.TextMuted).FontSize(12)
-			} else if ui.Button(c, "▶ 运行").Clicked() {
+			} else if textIconButton(c, iconPlay, "运行").Clicked() {
 				a.runJob(j.ID)
 			}
 			label := "停用"
@@ -74,7 +79,7 @@ func (a *App) jobRow(c *ui.Context, t *ui.Theme, j *schedule.Job) {
 			if ui.Button(c, label).Clicked() {
 				a.toggleJob(j.ID, !j.Enabled)
 			}
-			if ui.Button(c, "✕").Clicked() {
+			if iconButton(c, iconX, "删除 "+j.ID, "删除此任务").Clicked() {
 				a.removeJob(j.ID)
 			}
 		})

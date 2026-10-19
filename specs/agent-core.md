@@ -761,6 +761,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    整数累加）。呈现三面：/usage 与 zgo usage 的会话成本行（≈ $x.xx
    （模型 牌价），未知价省略）、归因段当日 $ 合计、`--days=N` 每日
    $ 列。子代理/工作流条目按其装配的实际模型计价。
+
 94. 语言与文案目录（ZCode i18n 的 Go 化）：internal/i18n——zh 基准
    （存量文案原样迁入）、en 覆盖同一面；目录是 struct 而非 map（缺译
    编译期挡住）。检测序 ZGO_LANG → LC_ALL → LC_MESSAGES → LANG（zh_
