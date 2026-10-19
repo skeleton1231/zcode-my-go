@@ -159,14 +159,30 @@ func sessionsRm(svc *service.AgentService, args []string) int {
 	return 0
 }
 
-// sessionsSearch prints cross-session hits（桌面「搜索所有会话」的 CLI 面）.
+// sessionsSearch prints cross-session hits（桌面「搜索所有会话」的 CLI 面）
+// ——首参 --regex 走正则形态（spec 规则 80：RE2、原大小写、(?i) 忽略）。
 func sessionsSearch(svc *service.AgentService, args []string) int {
+	useRegex := false
+	if len(args) > 0 && args[0] == "--regex" {
+		useRegex = true
+		args = args[1:]
+	}
 	query := strings.Join(args, " ")
 	if strings.TrimSpace(query) == "" {
-		fmt.Fprintln(os.Stderr, "用法：zgo sessions search <关键词>")
+		fmt.Fprintln(os.Stderr, "用法：zgo sessions search [--regex] <关键词|正则>")
 		return 2
 	}
-	hits := svc.SearchSessions(query)
+	var hits []service.SearchHit
+	if useRegex {
+		var err error
+		hits, err = svc.SearchSessionsRegex(query)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+	} else {
+		hits = svc.SearchSessions(query)
+	}
 	if len(hits) == 0 {
 		fmt.Println("（没有匹配的会话）")
 		return 0

@@ -3,8 +3,10 @@ package service
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -36,6 +38,7 @@ func (s *AgentService) SearchSessions(query string) []SearchHit {
 	if query == "" {
 		return nil
 	}
+	mt := substrMatcher(query)
 	sessions := s.mgr.List() // newest first
 	// 索引保鲜（spec 规则 71）：(size, mtime) 命中的会话不重读文件；
 	// 变更异步落盘（索引是加速器不是账本——写失败下次重建）。
@@ -73,7 +76,7 @@ func (s *AgentService) SearchSessions(query string) []SearchHit {
 			if e := s.searchIdx.Lookup(info.ID); e != nil {
 				found = matchSegments(e.Segments, query, info.Title)
 			} else {
-				found = scanSession(filepath.Join(s.dir(), "sessions", info.ID+".jsonl"), query, info.Title)
+				found = scanSession(filepath.Join(s.dir(), "sessions", info.ID+".jsonl"), mt, info.Title, true)
 			}
 			if len(found) == 0 {
 				return
@@ -106,7 +109,10 @@ func (s *AgentService) SearchSessions(query string) []SearchHit {
 // 件里——直接匹配会命中"点进会话找不到"的内容。扫描时同步维护重放
 // 存活集（只记序号、不装消息体，维持流式）：命中先暂存，读完整文件
 // 后按最终存活集过滤。
-func scanSession(path, query, title string) []SearchHit {
+// scanSession 流式扫一个 JSONL。mt 是命中器（子串或正则）；lower=true
+// 时 haystack 小写化（子串既往语义），正则走原大小写（要忽略大小写
+// 在模式里写 (?i)）。
+func scanSession(path string, mt matcher, title string, lower bool) []SearchHit {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -135,7 +141,7 @@ func scanSession(path, query, title string) []SearchHit {
 					ord := next
 					next++
 					alive = append(alive, ord)
-					if snippet, ok := matchSnippet(rec.Message, query); ok &&
+					if snippet, ok := matchSnippet(rec.Message, mt, lower); ok &&
 						len(candidates) < searchCandidateCap {
 						candidates = append(candidates, candidate{ord,
 							SearchHit{Title: title, Snippet: snippet}})
@@ -158,7 +164,7 @@ func scanSession(path, query, title string) []SearchHit {
 						if snippet, ok := matchSnippet(ai.Message{
 							Role:   ai.RoleAssistant,
 							Blocks: []ai.Block{{Kind: ai.BlockText, Text: rec.Summary}},
-						}, query); ok && len(candidates) < searchCandidateCap {
+						}, mt, lower); ok && len(candidates) < searchCandidateCap {
 							candidates = append(candidates, candidate{syn,
 								SearchHit{Title: title, Snippet: snippet}})
 						}
@@ -188,37 +194,66 @@ func scanSession(path, query, title string) []SearchHit {
 }
 
 // matchSnippet reports whether any text in the message matches, with a
-// window of context around the first hit.
-func matchSnippet(m ai.Message, query string) (string, bool) {
-	hay := strings.ToLower(m.Text())
-	i := strings.Index(hay, query)
-	if i < 0 {
+// window of context around the first hit. lower=true 时 haystack 小写化
+// （子串既往语义）；正则原大小写。
+func matchSnippet(m ai.Message, mt matcher, lower bool) (string, bool) {
+	hay := m.Text()
+	if lower {
+		hay = strings.ToLower(hay)
+	}
+	lo, hi, ok := mt(hay)
+	if !ok {
 		// 工具参数也参与（同会话内搜索的口径）：正在改的文件、正在跑的
 		// 命令只在 args 里。
 		for _, b := range m.Blocks {
 			if b.Kind == ai.BlockToolCall {
-				if j := strings.Index(strings.ToLower(b.Arguments), query); j >= 0 {
-					hay, i = strings.ToLower(b.Arguments), j
-					break
+				args := b.Arguments
+				if lower {
+					args = strings.ToLower(args)
+				}
+				if l2, h2, ok2 := mt(args); ok2 {
+					return snippetAround2(args, l2, h2), true
 				}
 			}
 		}
-		if i < 0 {
-			return "", false
-		}
+		return "", false
 	}
-	return snippetAround(hay, i, len(query)), true
+	return snippetAround2(hay, lo, hi), true
+}
 
+// matcher 报 hay 里首命中的 [lo,hi)（无命中 ok=false）。
+type matcher func(hay string) (lo, hi int, ok bool)
+
+// substrMatcher 是子串命中器（调用方保证 query 与 hay 同侧小写）。
+func substrMatcher(query string) matcher {
+	return func(hay string) (int, int, bool) {
+		i := strings.Index(hay, query)
+		if i < 0 {
+			return 0, 0, false
+		}
+		return i, i + len(query), true
+	}
+}
+
+// regexMatcher 是 RE2 命中器（线性——无回溯炸弹）。
+func regexMatcher(re *regexp.Regexp) matcher {
+	return func(hay string) (int, int, bool) {
+		loc := re.FindStringIndex(hay)
+		if loc == nil {
+			return 0, 0, false
+		}
+		return loc[0], loc[1], true
+	}
 }
 
 // snippetAround 截命中窗口（live 扫描与索引段共用——两路径片段逐字节
 // 一致是等价断言的锚点）。
-func snippetAround(hay string, i, qlen int) string {
-	lo := i - searchSnippetWidth
+func snippetAround2(hay string, mlo, mhi int) string {
+	lo := mlo - searchSnippetWidth
 	if lo < 0 {
 		lo = 0
 	}
-	hi := i + qlen + searchSnippetWidth
+	hi := mhi + searchSnippetWidth
 	if hi > len(hay) {
 		hi = len(hay)
 	}
@@ -252,7 +287,7 @@ func matchSegments(segs []sessionidx.Segment, query, title string) []SearchHit {
 		if n > searchCandidateCap {
 			break
 		}
-		out = append(out, SearchHit{Title: title, Snippet: snippetAround(seg.Text, i, len(query))})
+		out = append(out, SearchHit{Title: title, Snippet: snippetAround2(seg.Text, i, i+len(query))})
 		if len(out) >= searchHitPerSess {
 			break
 		}
@@ -262,3 +297,57 @@ func matchSegments(segs []sessionidx.Segment, query, title string) []SearchHit {
 
 // dir returns the sessions directory（manager 的落盘处）.
 func (s *AgentService) dir() string { return filepath.Dir(s.path) }
+
+// SearchSessionsRegex 是正则形态（spec 规则 80）：RE2（Go regexp 线
+// 性——无回溯炸弹）、原大小写（忽略大小写在模式里写 (?i)）。正则不
+// 走索引（索引面小写化——语义保真优先），全部 live 扫描；编译失败
+// 原样返回错误（调用方透出给用户自纠）。
+func (s *AgentService) SearchSessionsRegex(pattern string) ([]SearchHit, error) {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("正则无效: %w", err)
+	}
+	mt := regexMatcher(re)
+	sessions := s.mgr.List()
+	hits := make([]SearchHit, 0, searchHitCap)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, info := range sessions {
+		mu.Lock()
+		full := len(hits) >= searchHitCap
+		mu.Unlock()
+		if full {
+			break
+		}
+		wg.Add(1)
+		go func(info agent.SessionInfo) {
+			defer wg.Done()
+			found := scanSession(filepath.Join(s.dir(), "sessions", info.ID+".jsonl"), mt, info.Title, false)
+			if len(found) == 0 {
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if len(hits) >= searchHitCap {
+				return
+			}
+			room := searchHitPerSess
+			if left := searchHitCap - len(hits); left < room {
+				room = left
+			}
+			if room > len(found) {
+				room = len(found)
+			}
+			for i := 0; i < room; i++ {
+				found[i].SessionID = info.ID
+				hits = append(hits, found[i])
+			}
+		}(info)
+	}
+	wg.Wait()
+	return hits, nil
+}

@@ -641,14 +641,28 @@ dc907a4 (feat: glob and grep honor .gitignore)
    息/M 用户回合）。字节口径（token 估算 ≈/4 只做参照）；合计行附
    /compact 提示。观测面导出 agent.Declarations（与 wire 请求同构）。
 
-82. 会话归档（ZCode tasks-index 组织态的 Zgo 形态；80/81 为待合并的
-   搜索正则/行范围预留）：组织态与内容正交——归档不删内容（转录/
-   搜索/导出面不变），只影响「活跃面」。meta 行增 archived 标志
-   （SessionInfo.Archived；meta 首行重写持久——与 Rename 同路径）；
-   `zgo sessions archive|unarchive <id|前缀>`；list 默认隐藏归档
-   （--archived 只看归档、--all 全量）；`-c/--continue` 恢复跳过归
-   档会话（同工作区取最近未归档）。跨会话搜索照常搜归档内容（内容
-   可查、组织态只管列表）。
+80. 跨会话搜索正则形态：SearchSessionsRegex（zgo sessions search
+   --regex）——RE2（Go regexp 线性——无回溯炸弹）、**原大小写**
+   （忽略大小写在模式里写 (?i)；子串形态保持既往小写语义）；编译失
+   败错误透出自纠。命中器参数化（matcher：子串/正则同一段位窗逻辑
+   ——片段口径两形态一致）；**正则不走索引**（索引面小写化——语义
+   保真优先，全部 live 扫描；正则是低频路径，成本可接受）。子串形
+   态与索引路径不变。
+
+81. @文件 行范围语法：@path:lo-hi / @path:lo（单行）——大文件只
+   带相关段。1 起行窗：lo<1 clamp 1、hi 超文件尾 clamp（尾随换行产
+   的空段不算一行）；lo>hi 交换；围栏头注明实际范围（@ten.txt:8-10）；
+   窗口内容照过 60KB rune 截断与总量预算（#120 护栏自动覆盖）；同文
+   件不同窗各自展开（seen 键含窗）；无范围形态不变。数字形态由正则
+   限定，病态大数按无范围处理 Picture-free（>1<<30 拒绝）。
+
+82. 会话归档（ZCode tasks-index 组织态的 Zgo 形态）：组织态与内容
+   正交——归档不删内容（转录/搜索/导出面不变），只影响「活跃面」。
+   meta 行增 archived 标志（SessionInfo.Archived；meta 首行重写持
+   久——与 Rename 同路径）；`zgo sessions archive|unarchive <id|前
+   缀>`；list 默认隐藏归档（--archived 只看归档、--all 全量）；
+   `-c/--continue` 恢复跳过归档会话（同工作区取最近未归档）。跨会
+   话搜索照常搜归档内容（内容可查、组织态只管列表）。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |

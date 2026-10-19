@@ -176,7 +176,7 @@ func TestSearchIndexedMatchesLiveScan(t *testing.T) {
 	for _, q := range []string{"parity-deploy", "dry-run", "parity-deploy-syn", "ghost"} {
 		qq := strings.ToLower(q)
 		indexed := matchSegments(mustExtract(t, svc, id), qq, "title")
-		live := scanSession(jsonlPath(t, svc, id), qq, "title")
+		live := scanSession(jsonlPath(t, svc, id), substrMatcher(qq), "title", true)
 		if len(indexed) != len(live) {
 			t.Fatalf("q=%q: indexed %d vs live %d (%+v vs %+v)", q, len(indexed), len(live), indexed, live)
 		}
@@ -258,4 +258,44 @@ func mustExtract(t *testing.T, svc *AgentService, id string) []sessionidx.Segmen
 func jsonlPath(t *testing.T, svc *AgentService, id string) string {
 	t.Helper()
 	return filepath.Join(svc.dir(), "sessions", id+".jsonl")
+}
+
+// TestSearchSessionsRegex（spec 规则 80）：正则命中（RE2、原大小写——
+// 大写模式只匹配大写原文；(?i) 忽略）、子串模式不受影响、坏模式报错。
+func TestSearchSessionsRegex(t *testing.T) {
+	svc, _ := New(t.TempDir())
+	t.Cleanup(svc.Close)
+	id := seedSession(t, svc, t.TempDir(), "部署 deploy-2024-10 与 Deploy-2025-01 两次")
+	svc.AppendForTesting(id, ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: "回滚 deploy-2024-10-01 那次"}}})
+
+	// 数字后缀模式：两处命中（大小写混合原文里只匹配小写形态）。
+	hits, err := svc.SearchSessionsRegex(`deploy-[0-9]{4}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 || !strings.Contains(hits[0].Snippet, "deploy-") {
+		t.Fatalf("regex hits = %+v", hits)
+	}
+	// 原大小写：大写 Deploy 只有显式 (?i) 或大写模式才命中。
+	hits, err = svc.SearchSessionsRegex(`Deploy-[0-9]{4}`)
+	if err != nil || len(hits) == 0 || !strings.Contains(hits[0].Snippet, "Deploy-2025") {
+		t.Fatalf("case-sensitive regex: %+v %v", hits, err)
+	}
+	// (?i) 忽略大小写。
+	hits, err = svc.SearchSessionsRegex(`(?i)deploy-[0-9]{4}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("(?i) regex no hits")
+	}
+	// 坏模式：错误透出。
+	if _, err := svc.SearchSessionsRegex(`deploy-[`); err == nil {
+		t.Fatal("bad pattern accepted")
+	}
+	// 子串形态不受影响（回归）。
+	if got := svc.SearchSessions("deploy-2024"); len(got) == 0 {
+		t.Fatal("substring search regressed")
+	}
 }
