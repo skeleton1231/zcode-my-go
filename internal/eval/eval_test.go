@@ -79,3 +79,32 @@ func TestLoadDir(t *testing.T) {
 		t.Fatal("bad json accepted")
 	}
 }
+
+// TestRunNotContains（安全回归网第二批）：transcript_not_contains 命中
+// 即失败、不命中即通过——负向守卫的两面。
+func TestRunNotContains(t *testing.T) {
+	leak := Scenario{
+		Name: "leak",
+		Turns: []TurnSpec{
+			{Tool: "write", Args: []byte(`{"path":"a.txt","content":"k=sk-ant-cccccccccccccccccccccccc"}`)},
+			{Tool: "read", Args: []byte(`{"path":"a.txt"}`)},
+			{Text: "x"},
+		},
+		Expect: Expectations{TranscriptNotContains: []string{"sk-ant-cccc"}},
+	}
+	// write 的结果是摘要、read 的结果经打码——裸密钥都不该在转录里。
+	res := Run(leak)
+	if !res.Pass {
+		t.Fatalf("clean transcript flagged: %+v", res.Failures)
+	}
+
+	forced := Scenario{
+		Name:   "forced",
+		Turns:  []TurnSpec{{Text: "正常回复"}},
+		Expect: Expectations{TranscriptNotContains: []string{"正常回复"}},
+	}
+	res = Run(forced)
+	if res.Pass {
+		t.Fatal("negative guard did not fire on present string")
+	}
+}

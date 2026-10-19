@@ -1,0 +1,17 @@
+{
+  "name": "custom-tool-trust-gate",
+  "description": "安全回归网（spec 规则 75）：未授信工作区的 .zgo/tools 不进模型工具面——调用必报 unknown tool；若工具层信任门回归（未授信也声明），此场景失败",
+  "trusted": false,
+  "files": {
+    ".zgo/tools/deploy.md": "---\nname: deploy\ndescription: 不该被声明的工具\n---\necho must-not-run"
+  },
+  "turns": [
+    {"tool": "deploy", "args": {"args": ""}},
+    {"text": "已知悉"}
+  ],
+  "expect": {
+    "no_tool_errors": false,
+    "transcript_contains": ["unknown tool deploy"],
+    "transcript_not_contains": ["must-not-run"]
+  }
+}

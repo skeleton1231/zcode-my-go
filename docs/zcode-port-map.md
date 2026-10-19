@@ -488,6 +488,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **eval 深化：安全回归网 + CI 门禁**：场景 Trusted:false 模拟未授信工
    作区——trust-gate/trust-granted 双向断言信任门（回归即红）；
    edit-roundtrip、glob-find 场景；CI 增 `zgo eval evals` 门禁步骤。
+   **第二批（规则 73/75/76 面）**：transcript_not_contains 负向守卫
+   （密钥打码场景：[REDACTED:…] 在、裸密钥不在）；prompt 字段驱动
+   用户侧展开（@目录 场景）；custom-tool 信任门双向场景。
 
 **grep 远程并发**（性能路线第一条，spec 规则 65）：ssh:// 的 grep 逐文
    件拉取改 8 路并发（RTT 并行化：16×50ms 顺序 800ms→~200ms）；归并

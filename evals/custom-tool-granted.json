@@ -1,0 +1,15 @@
+{
+  "name": "custom-tool-granted",
+  "description": "安全回归网（spec 规则 75 的正向面）：授信工作区的 .zgo/tools 进模型工具面且可执行——$ARGUMENTS 渲染进命令、经 bash 通道真跑；与 custom-tool-trust-gate 成对（双向守卫）",
+  "files": {
+    ".zgo/tools/greet.md": "---\nname: greet\ndescription: Say hello\n---\necho hello-ct-granted $ARGUMENTS"
+  },
+  "turns": [
+    {"tool": "greet", "args": {"args": "world"}},
+    {"text": "已知悉"}
+  ],
+  "expect": {
+    "no_tool_errors": true,
+    "transcript_contains": ["hello-ct-granted"]
+  }
+}
