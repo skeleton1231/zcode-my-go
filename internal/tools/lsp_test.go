@@ -5,10 +5,12 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 func goplsToolSet(t *testing.T) ([]agent.Tool, *[]string) {
@@ -102,7 +104,11 @@ func TestGoplsEmptyOutputSemantics(t *testing.T) {
 		return "  \n", nil
 	}
 	for _, tool := range NewGoplsTools(ws, empty) {
-		res := tool.Execute(context.Background(), []byte(`{"file":"a.go","line":1,"column":1}`))
+		args := []byte(`{"file":"a.go","line":1,"column":1}`)
+		if tool.Name() == "symbol" { // spec 规则 99：查询形态不同
+			args = []byte(`{"query":"Foo"}`)
+		}
+		res := tool.Execute(context.Background(), args)
 		if res.IsError {
 			t.Fatalf("%s: %s", tool.Name(), res.Content)
 		}
@@ -133,5 +139,37 @@ func TestGoplsUnwired(t *testing.T) {
 		if !res.IsError {
 			t.Fatalf("%s executed without runner", tool.Name())
 		}
+	}
+}
+
+// TestGoplsSymbolTool（spec 规则 99）：query 透传、空 query 拒绝、空输
+// 出语义、无 location 参数不涉 jail。
+func TestGoplsSymbolTool(t *testing.T) {
+	set, calls := goplsToolSet(t)
+	var tool agent.Tool
+	for _, t2 := range set {
+		if t2.Name() == "symbol" {
+			tool = t2
+		}
+	}
+	if tool == nil {
+		t.Fatal("symbol tool missing from set")
+	}
+	res := tool.Execute(context.Background(), json.RawMessage(`{"query":"ParsePos"}`))
+	if res.IsError || res.Content != "out" {
+		t.Fatalf("execute = %+v", res)
+	}
+	if got := (*calls)[0]; got != "symbol ParsePos" {
+		t.Fatalf("call = %q", got)
+	}
+	// 空 query 拒绝。
+	if res := tool.Execute(context.Background(), json.RawMessage(`{"query":"  "}`)); !res.IsError {
+		t.Fatal("empty query accepted")
+	}
+	// 只读能力。
+	if c := tool.(interface {
+		Capability() permission.Capability
+	}).Capability(); !c.ReadOnly {
+		t.Fatal("symbol not readonly")
 	}
 }

@@ -468,6 +468,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    家族（pre/post 工具、stop/notification、session 生命周期、
    preCompact）的最后一个注入点。
 
+**gopls 符号搜索**（spec 规则 99）：symbol 工具（workspace/symbol，
+   daemon 路径 + CLI workspace_symbol 兜底）——按名模糊查全库声明点，
+   语义工具四件套补全。
+
 **@会话引用**（spec 规则 97）：`@session:<前缀>` 跨会话带上下文——
    最近 20 条对话有界摘录（30KB、预算与文件引用共享）；自引用/未解
    析原样保留。

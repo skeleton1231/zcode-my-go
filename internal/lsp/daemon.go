@@ -275,7 +275,11 @@ func daemonRunWith(ctx context.Context, m *Manager, dir string, timeout time.Dur
 			return "", err
 		}
 	}
-	// 退化：v1 子进程路径。
+	// 退化：v1 子进程路径（symbol 的 CLI 子命令名不同——gopls 是
+	// workspace_symbol）。
+	if len(args) > 0 && args[0] == "symbol" {
+		return Run(ctx, dir, timeout, append([]string{"workspace_symbol"}, args[1:]...)...)
+	}
 	return Run(ctx, dir, timeout, args...)
 }
 
@@ -303,6 +307,13 @@ func daemonQuery(ctx context.Context, m *Manager, root string, timeout time.Dura
 			return m.fileDiagnostics(cctx, root, args[1])
 		}
 		return "", false, nil // 工作区级走 CLI
+	case "symbol":
+		// 工作区符号搜索（spec 规则 99）：按名模糊查全库声明点——
+		// definition/references 之外的第四件语义工具。
+		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+			return "", true, fmt.Errorf("symbol: bad query (usage: symbol <text>)")
+		}
+		return m.symbolQuery(cctx, root, args[1])
 	default:
 		return "", false, nil
 	}
@@ -389,6 +400,71 @@ func (m *Manager) fileDiagnostics(ctx context.Context, root, file string) (strin
 		fmt.Fprintf(&b, "%s:%d:%d: %s\n", displayPath(root, abs), start.Line+1, start.Character+1, it.Message)
 	}
 	return strings.TrimRight(b.String(), "\n"), true, nil
+}
+
+// symbolQuery 发 workspace/symbol（query 模糊匹配符号名），渲染
+// 「file:line:col name kind」行（kind 是可读标签）。
+func (m *Manager) symbolQuery(ctx context.Context, root, query string) (string, bool, error) {
+	var raw json.RawMessage
+	d, err := m.callDaemon(ctx, root, "workspace/symbol", map[string]any{
+		"query": query,
+	}, &raw)
+	if err != nil {
+		return "", true, err
+	}
+	lines, err := renderSymbols(root, raw, daemonEnc(d))
+	if err != nil {
+		return "", true, err
+	}
+	return strings.Join(lines, "\n"), true, nil
+}
+
+// symbolKindLabel 把 LSP SymbolKind 数值翻成短标签（未知给数值）。
+func symbolKindLabel(kind int) string {
+	names := map[int]string{
+		1: "File", 2: "Module", 3: "Namespace", 4: "Package", 5: "Class",
+		6: "Method", 7: "Property", 8: "Field", 9: "Constructor",
+		10: "Enum", 11: "Interface", 12: "Function", 13: "Variable",
+		14: "Constant", 15: "String", 16: "Number", 17: "Boolean",
+		18: "Array", 19: "Object", 20: "Key", 21: "Null", 22: "EnumMember",
+		23: "Struct", 24: "Event", 25: "Operator", 26: "TypeParameter",
+	}
+	if n, ok := names[kind]; ok {
+		return n
+	}
+	return fmt.Sprintf("kind%d", kind)
+}
+
+// renderSymbols 解析 workspace/symbol 结果（SymbolInformation[] 或
+// DocumentSymbol[] 变体均可缺 location——只渲染带 location 的形态，
+// gopls 默认返回前者）。
+func renderSymbols(root string, raw json.RawMessage, enc string) ([]string, error) {
+	var syms []struct {
+		Name     string   `json:"name"`
+		Kind     int      `json:"kind"`
+		Location struct {
+			URI   string   `json:"uri"`
+			Range lspRange `json:"range"`
+		} `json:"location"`
+	}
+	if err := json.Unmarshal(raw, &syms); err != nil {
+		var isNull any
+		if json.Unmarshal(raw, &isNull) == nil && isNull == nil {
+			return nil, nil // 无命中
+		}
+		return nil, fmt.Errorf("lsp: symbol result shape")
+	}
+	conv := makeConverter(enc)
+	var lines []string
+	for _, sy := range syms {
+		if sy.Location.URI == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s %s %s",
+			renderLocation(root, sy.Location.URI, sy.Location.Range, conv),
+			sy.Name, symbolKindLabel(sy.Kind)))
+	}
+	return lines, nil
 }
 
 // lspRange/位置类型（0 基）。

@@ -44,13 +44,15 @@ type Gopls struct {
 	run GoplsQuery
 }
 
-// NewGoplsTools 返回 definition/references/diagnostics 三工具。run 为
-// nil 时工具执行报未接线（防御——服务层缺 gopls 时不装配本组）。
+// NewGoplsTools 返回 definition/references/diagnostics/symbol 四工具
+//（spec 规则 99 补 symbol）。run 为 nil 时工具执行报未接线（防御
+// ——服务层缺 gopls 时不装配本组）。
 func NewGoplsTools(ws Workspace, run GoplsQuery) []agent.Tool {
 	g := &Gopls{ws: ws, run: run}
 	return []agent.Tool{&goplsPositionTool{g: g, mode: "definition"},
 		&goplsPositionTool{g: g, mode: "references"},
-		&goplsDiagnosticsTool{g: g}}
+		&goplsDiagnosticsTool{g: g},
+		&goplsSymbolTool{g: g}}
 }
 
 // goplsPositionTool 是 definition/references 双形态（同为 file:line:col
@@ -143,6 +145,47 @@ func (t *goplsDiagnosticsTool) Execute(ctx context.Context, args json.RawMessage
 	return goplsResult(out, err, "diagnostics")
 }
 
+// goplsSymbolTool 是工作区符号搜索（spec 规则 99）：按名模糊查全库
+// 声明点——不知道符号在哪时先 symbol，再 definition/references。
+type goplsSymbolTool struct{ g *Gopls }
+
+func (t *goplsSymbolTool) Name() string { return "symbol" }
+
+func (t *goplsSymbolTool) Description() string {
+	return "Search the whole workspace for symbols by fuzzy name — " +
+		"finds declarations across every file without knowing where to " +
+		"look. Each hit is file:line:col name kind. Use this first, then " +
+		"definition/references on the exact position. Requires gopls."
+}
+
+func (t *goplsSymbolTool) Parameters() map[string]any {
+	return objectSchema(map[string]any{
+		"query": prop("string", "Fuzzy symbol name to search (case-insensitive)"),
+	}, "query")
+}
+
+func (t *goplsSymbolTool) Execute(ctx context.Context, args json.RawMessage) agent.ToolResult {
+	var a struct {
+		Query string `json:"query"`
+	}
+	if err := decodeArgs(args, &a); err != nil {
+		return errResult("%v", err)
+	}
+	if strings.TrimSpace(a.Query) == "" {
+		return errResult("query is required")
+	}
+	if t.g.run == nil {
+		return errResult("gopls tools not wired")
+	}
+	out, err := t.g.run(ctx, t.g.ws.Root, "symbol", a.Query)
+	return goplsResult(out, err, "symbol")
+}
+
+// Capability implements agent.Capabler: 只读查询。
+func (t *goplsSymbolTool) Capability() permission.Capability {
+	return permission.Capability{ReadOnly: true, Risk: permission.RiskLow}
+}
+
 // goplsResult 统一成型：空输出按查询语义呈现（definition 无命中是常
 // 态，references 空即无被调点，diagnostics 空即无错）；错误保可读。
 func goplsResult(out string, err error, mode string) agent.ToolResult {
@@ -155,6 +198,8 @@ func goplsResult(out string, err error, mode string) agent.ToolResult {
 			return agent.ToolResult{Content: "no definition found at that position"}
 		case "references":
 			return agent.ToolResult{Content: "no references found"}
+		case "symbol":
+			return agent.ToolResult{Content: "no symbols found"}
 		default:
 			return agent.ToolResult{Content: "no diagnostics"}
 		}
