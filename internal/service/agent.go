@@ -93,6 +93,9 @@ type settings struct {
 	Pricing map[string]pricing.Override `json:"pricing,omitempty"`
 	// Lang 是界面语言（spec 规则 94）：auto（默认，环境检测）/zh/en。
 	Lang string `json:"lang,omitempty"`
+	// SessionRetentionDays 是会话保留期（spec 规则 98）：超过 N 天未
+	// 活动的会话在启动时移入 archive/（不删——转录可恢复）；0=不限。
+	SessionRetentionDays int `json:"sessionRetentionDays,omitempty"`
 }
 
 // telemetrySettings 是遥测配置（zgo config telemetry.* 三键）。
@@ -194,6 +197,12 @@ func New(dataDir string) (*AgentService, error) {
 		tools.ProbeDiagnostics = lsp.DaemonProbe
 	}
 	s.day = usage.Load(dataDir)
+	// 保留期归档（spec 规则 98）：装载前扫一遍——过期文件移入
+	// archive/，不再进入惰性装载面（list/搜索/-c 自然收敛）。
+	if n := sweepStaleSessions(filepath.Join(dataDir, "sessions"),
+		filepath.Join(dataDir, "archive"), s.settings.SessionRetentionDays); n > 0 {
+		log.Printf("已归档 %d 个超过 %d 天未活动的会话（archive/ 目录）", n, s.settings.SessionRetentionDays)
+	}
 	mgr, err := agent.NewManager(filepath.Join(dataDir, "sessions"))
 	if err != nil {
 		return nil, err
