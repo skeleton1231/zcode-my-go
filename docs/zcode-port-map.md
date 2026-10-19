@@ -468,6 +468,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    家族（pre/post 工具、stop/notification、session 生命周期、
    preCompact）的最后一个注入点。
 
+**@会话引用**（spec 规则 97）：`@session:<前缀>` 跨会话带上下文——
+   最近 20 条对话有界摘录（30KB、预算与文件引用共享）；自引用/未解
+   析原样保留。
+
 **会话保留期**（spec 规则 98）：settings.sessionRetentionDays——启动
    扫描把 N 天未活动的会话移入 archive/（不删）；`zgo sessions
    retired/restore` 恢复面；与组织态归档正交。
