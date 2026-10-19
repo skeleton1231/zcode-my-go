@@ -417,6 +417,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    完全不可见；硬预算闸在子代理启动前同样生效（共用 hardFuseErr 判
    据）。
 
+**工作流步骤用量入账**（spec 规则 88，规则 87 的最后盲区收口）：
+   StepResult.Usage（研究/编辑步骤透传 RunSubtask 用量，DAG/顺序两路
+   穿线）；execWorkflow 启动前熔断 + 各步入账——nested loop 三入口
+   （子代理/后台/工作流）的钱全部进记账与硬预算闸。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，

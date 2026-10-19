@@ -713,6 +713,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    一判据（规则 85 的实现重构为 hardFuseErr）。workflow 步骤
    （StepResult 无用量面）暂不入账。
 
+88. 工作流步骤用量入账（规则 87 注明的最后盲区收口）：StepResult
+   增 Usage（研究/编辑步骤同走 RunSubtask——直接透传其用量；DAG 并
+   行路径与顺序路径两处穿线）；execWorkflow 启动前过 hardFuseErr
+   熔断、收尾把各步用量经 recordSubagentUsage 入当日记账。至此 nested
+   loop 的三个入口（task/dispatch、后台 agent 四件套、workflow）的
+   钱全部进当日记账与硬预算闸。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
