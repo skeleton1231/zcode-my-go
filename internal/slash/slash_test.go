@@ -489,8 +489,11 @@ func TestSlashSkills(t *testing.T) {
 	env, _ := newEnv(t)
 
 	out := captureOutSlash(t, env, "/skills")
-	if !strings.Contains(out, "未发现技能") || !strings.Contains(out, ".zgo/skills") {
-		t.Fatalf("empty listing: %q", out)
+	// 内置技能层（spec 规则 72）：空工作区也列内置三件（不是「未发现」
+	//——内置不是注入面，未授信同样可用）。放置提示只在空列表分支。
+	if !strings.Contains(out, "go-testing") || !strings.Contains(out, "skill-creator") ||
+		!strings.Contains(out, "debug-methodically") {
+		t.Fatalf("empty listing lacks builtin layer: %q", out)
 	}
 
 	ws := env.Workspace()

@@ -81,7 +81,7 @@ internal/uiapp        native UI：chatState 折叠 + App 视图 + 弹窗
 specs/                行为规格（先于代码）
 internal/checkpoint  工作区检查点与回滚（git 临时索引快照 + read-tree 恢复）
 internal/schedule    定时自动化（cron 解析/任务存储/分钟调度器，zgo cron）
-internal/skills      技能发现与加载（SKILL.md frontmatter、两层根、按名加载）
+internal/skills      技能发现与加载（SKILL.md frontmatter、三层根：工作区/全局/内置、按名加载）
 internal/clipimg    剪贴板位图读取（PNG 注册格式优先，DIB→PNG；贴图入口）
 internal/lsp        gopls 集成（三工具 + edit 诊断回灌；常驻 daemon 走 JSON-RPC，失败退 CLI 子进程）
 internal/workflow    工作流定义与运行记录持久化（saveAs/run/resume）

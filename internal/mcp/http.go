@@ -27,7 +27,7 @@ type httpTransport struct {
 	mu         sync.Mutex
 	session    string
 	handshake  func(ctx context.Context) error // 重连后的再握手（由 Server 注入）
-	reconnOnce bool                             // 防嵌套重连
+	reconnOnce bool                            // 防嵌套重连
 }
 
 // newHTTPTransport builds the transport; handshake is attached later by

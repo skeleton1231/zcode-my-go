@@ -335,6 +335,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    命令。ZCode 的 plugin 来源/别名（qualifiedName、symlink 信任边界）
    随插件生态按需承接（Zgo 以两层根 + MCP 承接）。
 
+**内置技能层**（ZCode bundled-skills / skill-creator-plugin 的 Zgo 形
+   态，spec 规则 72）：internal/skills/builtin 随二进制 go:embed 发行
+   ——skill-creator / go-testing / debug-methodically 三个起步；三层
+   根（工作区 > 全局 > 内置，同名覆盖——用户可改写内置行为）；嵌入
+   FS 与本地/远端同一 Root 面，发现/加载/注入零特判；未授信工作区同
+   样可用（内置不是注入面）。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，

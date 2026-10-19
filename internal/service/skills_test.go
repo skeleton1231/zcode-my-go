@@ -82,7 +82,58 @@ func TestSkillRootsShadowing(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := skills.Discover(roots)
-	if len(out.Skills) != 1 || out.Skills[0].Description != "工作区版" {
+	var deploy *skills.Skill
+	for i := range out.Skills {
+		if out.Skills[i].Name == "deploy" {
+			deploy = &out.Skills[i]
+		}
+	}
+	if deploy == nil || deploy.Description != "工作区版" {
 		t.Fatalf("workspace layer should shadow global: %+v", out.Skills)
+	}
+	// 内置层（spec 规则 72）：根序列末位、scope=builtin、随发现可见
+	//——同名被上层覆盖（下一条专测）。
+	last := roots[len(roots)-1]
+	if last.Scope != skills.ScopeBuiltin {
+		t.Fatalf("builtin root missing from tail: %+v", roots)
+	}
+	if !skillPresent(out, "go-testing") || !skillPresent(out, "skill-creator") ||
+		!skillPresent(out, "debug-methodically") {
+		t.Fatalf("builtin skills missing from discovery: %+v", out.Skills)
+	}
+}
+
+func skillPresent(out skills.Outcome, name string) bool {
+	for _, sk := range out.Skills {
+		if sk.Name == name && sk.Scope == skills.ScopeBuiltin {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSkillBuiltinShadowing：工作区同名技能覆盖内置层（内置是最低优
+// 先——用户可改写内置行为而不动二进制）。
+func TestSkillBuiltinShadowing(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	ws := t.TempDir()
+	if err := svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
+	plantSkill(t, ws, "go-testing", "工作区改写版")
+	roots := svc.skillRoots("sess-builtin", ws)
+	out := skills.Discover(roots)
+	var got *skills.Skill
+	for i := range out.Skills {
+		if out.Skills[i].Name == "go-testing" {
+			got = &out.Skills[i]
+		}
+	}
+	if got == nil || got.Description != "工作区改写版" || got.Scope != skills.ScopeProject {
+		t.Fatalf("builtin not shadowed by workspace: %+v", got)
 	}
 }

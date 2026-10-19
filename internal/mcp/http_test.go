@@ -19,13 +19,13 @@ import (
 // fakeRemoteMCP 是最小 Streamable HTTP MCP 服务器：JSON 响应形态（sse
 // 开关换 SSE 形态）；会话头轮换（invalidate 后旧会话 404——重连路径）。
 type fakeRemoteMCP struct {
-	mu        sync.Mutex
-	session   int
-	valid     map[string]bool
+	mu         sync.Mutex
+	session    int
+	valid      map[string]bool
 	invalidate bool
-	sawAuth   string
-	sawNotify int
-	sse       bool
+	sawAuth    string
+	sawNotify  int
+	sse        bool
 }
 
 func (f *fakeRemoteMCP) handler(w http.ResponseWriter, r *http.Request) {

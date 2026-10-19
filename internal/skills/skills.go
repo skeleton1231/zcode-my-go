@@ -153,6 +153,7 @@ func discoverRoot(root Root, selected map[string]Skill, out *Outcome) {
 		if _, dup := selected[skill.Name]; dup {
 			return
 		}
+		skill.Scope = root.Scope // 所属层随根携带（展示与优先级判定）
 		selected[skill.Name] = skill
 	}
 

@@ -1452,13 +1452,15 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 	// 信任门（spec 规则 54）：未授信的本地工作区不带其技能层（提示
 	// 注入面）；全局层不受影响。
 	if !ws.IsRemote() && !s.workspaceTrusted(workspace) {
+		// 未授信：全局层 + 内置层（内置随二进制发行，不是注入面——
+		// 信任门只挡工作区层）。
 		if home, err := os.UserHomeDir(); err == nil {
 			return []skills.Root{{
 				Base:  filepath.Join(home, ".zgo", "skills"),
 				Scope: skills.ScopeUser, FS: skills.LocalFS{},
-			}}
+			}, skills.BuiltinRoot()}
 		}
-		return nil
+		return []skills.Root{skills.BuiltinRoot()}
 	}
 	if ws.IsRemote() {
 		roots = append(roots, skills.Root{
@@ -1477,6 +1479,9 @@ func (s *AgentService) skillRoots(sessionID, workspace string) []skills.Root {
 			Scope: skills.ScopeUser, FS: skills.LocalFS{},
 		})
 	}
+	// 内置技能层（spec 规则 72）：末位最低优先——同名被工作区/全局
+	// 覆盖；嵌入内容不读盘，未授信同样可用。
+	roots = append(roots, skills.BuiltinRoot())
 	return roots
 }
 
@@ -1493,6 +1498,7 @@ func (s *AgentService) Skills(workspace string) skills.Outcome {
 				Scope: skills.ScopeUser, FS: skills.LocalFS{},
 			})
 		}
+		roots = append(roots, skills.BuiltinRoot())
 		return skills.Discover(roots)
 	}
 	project := skills.Root{
@@ -1514,6 +1520,7 @@ func (s *AgentService) Skills(workspace string) skills.Outcome {
 			Scope: skills.ScopeUser, FS: skills.LocalFS{},
 		})
 	}
+	roots = append(roots, skills.BuiltinRoot())
 	return skills.Discover(roots)
 }
 
