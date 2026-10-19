@@ -566,7 +566,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    开关 settings.redactSecrets（默认开；zgo config set——逃生口供
    生成测试夹具等需要原样输出的场景）；设置装载/rewire 时重喂（key
    轮换后旧值即失效）。用户手输消息不在打码面（用户的自觉行为，与
-   工具侧机器泄漏是两个面）。
+   工具侧机器泄漏是两个面）。**存量清洗**（收尾半边）：咽喉点只保
+   护新写入，特性上线前的历史 JSONL 仍是泄漏面——`zgo sessions
+   sanitize`（agent.SanitizeDir）逐行清洗：message 块（文本/工具参
+   数）、compaction 摘要、meta 标题过打码器，其余行（usage/
+   regenerate/未知类型/损坏行）原样字节保留；map 手术（RawMessage
+   透传未触及字段——role/kept 等不丢）；默认 dry-run 只报数，
+   --apply 原子重写（tmp + rename）；幂等（再跑零改写）；密钥面与
+   打码器同源（当前设置的精确密钥 + 模式族）。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |

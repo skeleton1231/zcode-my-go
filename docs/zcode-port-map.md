@@ -355,6 +355,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    （sk-ant/sk-/gh?_/github_pat_/AKIA/AIza/JWT）；默认开，config
    set redactSecrets 可关（逃生口）；设置装载/rewire 重喂，key 轮换
    即失效。
+   **存量清洗**：`zgo sessions sanitize`（默认 dry-run，--apply 原子
+   重写）——历史 JSONL 的三类自由文本载体同面打码，未触及行字节不动；
+   幂等；密钥面与打码器同源。
 
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+

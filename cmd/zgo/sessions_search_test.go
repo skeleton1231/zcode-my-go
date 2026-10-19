@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,5 +55,39 @@ func appendMsg(t *testing.T, dir, id string, m ai.Message) {
 	defer svc.Close()
 	if err := svc.AppendForTesting(id, m); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestSessionsSanitizeCLI（spec 规则 73）：dry-run 只报数；--apply 落盘
+// 后转录无密钥；幂等再跑报「未发现」；未知参数拒绝。
+func TestSessionsSanitizeCLI(t *testing.T) {
+	dir, ids := seedCLI(t)
+	appendMsg(t, dir, ids[0], ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: "k=sk-cli-legacy-abcdefghijklmnopqr"}}})
+
+	code, out := runSessionsCaptured(t, dir, "sanitize")
+	if code != 0 || !strings.Contains(out, "dry-run") || !strings.Contains(out, "1 行") {
+		t.Fatalf("dry-run = %d %q", code, out)
+	}
+
+	code, out = runSessionsCaptured(t, dir, "sanitize", "--apply")
+	if code != 0 || !strings.Contains(out, "已清洗 1 行") {
+		t.Fatalf("apply = %d %q", code, out)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "sessions", ids[0]+".jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "sk-cli-legacy") {
+		t.Fatal("secret survived --apply")
+	}
+
+	code, out = runSessionsCaptured(t, dir, "sanitize")
+	if code != 0 || !strings.Contains(out, "未发现密钥形态") {
+		t.Fatalf("idempotent re-run = %d %q", code, out)
+	}
+
+	if code, _ := runSessionsCaptured(t, dir, "sanitize", "--bogus"); code == 0 {
+		t.Fatal("unknown flag accepted")
 	}
 }
