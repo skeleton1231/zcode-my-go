@@ -623,6 +623,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    ≤80 rune。自定义定义的非致命问题以 ⚠ 行附尾（parseDef 记诊断
    ——缺 name/description、模板为空），坏定义跳过不拖垮清单。
 
+78. 调度并发硬化：定时任务 run 是完整 agent 会话——无上限并发既烧
+   token 也抢 provider 配额。**全局并发上限**（maxConcurrentRuns=2）：
+   满员的到期任务本轮不启动且 LastRun 不动（任务保持到期，下一
+   tick 自然重试——**排队语义而非跳过**，不记 skipped 噪音）。
+   **手动触发同源互斥**：RunNow（zgo cron run）不再绕过 single-
+   flight——该任务已在跑（无论来自 tick 还是另一次手动）即拒绝并
+   说明；空闲时照常执行并记录。计数与互斥共用 Scheduler 的锁域
+   （running 集合 + active 计数）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
