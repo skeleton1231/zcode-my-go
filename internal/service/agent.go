@@ -2030,6 +2030,12 @@ func (s *AgentService) EditAndResend(sessionID, text string, emit func(agent.Eve
 	return sess.EditAndResend(text, emit)
 }
 
+// SessionTree 返回会话谱系森林（spec 规则 103：zgo sessions tree 的
+// 数据面）。includeArchived 同规则 82 语义。
+func (s *AgentService) SessionTree(includeArchived bool) []*agent.TreeNode {
+	return s.mgr.SessionTree(includeArchived)
+}
+
 // ForkSession branches a session before its nth user message.
 func (s *AgentService) ForkSession(sessionID string, userTurn int) (agent.SessionInfo, error) {
 	sess, ok := s.mgr.Get(sessionID)

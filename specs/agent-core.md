@@ -819,6 +819,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    计数；坏文件/超限诚实标注）、自定义工具（.zgo/tools）、自定义命
    令、技能（工作区层）、子代理定义。纯读不落状态；同时显示当前授
    信态。克隆来的仓库先 preview 再决定 grant。
+（规则 102 = 审计的权限决策维度，见待并 #309。）
+103. 会话谱系：SessionInfo.ParentID（ForkAtUserTurn 落父并立即重写
+   meta 行——New 落盘时还没有父，不重写重启即丢）。Manager.SessionTree
+   组装森林：根 = 无父或父不存在（孤儿当根——父被删不丢子；环防御
+   seen 集）；同层按更新时间新到旧；归档过滤同规则 82（--all 全显）。
+   `zgo sessions tree` 缩进渲染（标题/时间/📌📦 标记）；无分叉提示。
+   谱系是组织态的第三维（归档/置顶/谱系）。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
