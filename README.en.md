@@ -94,6 +94,24 @@ MIT © 2026 skeleton1231
 - Stop/Notification hooks: a round-end hook (exit 2 blocks the wrap-up
   and feeds the output back) and a permission-wait notification hook.
 
+## v0.11.0 highlights
+
+- Snapshots everywhere: non-git workspaces and ssh:// remote sessions
+  get real checkpoints (whole-tree snapshots in the data dir, capped,
+  graceful degradation) — rewind / edit-resend / retry now restore
+  files on all three workspace kinds.
+- Budget economics: a hard fuse (opt-in) rejects new turns at the
+  budget; subagent and workflow nested-loop usage all hits the daily
+  ledger; `zgo usage` attributes spend per session and source, and
+  `--days=N` charts the trend; pin important sessions to the top.
+- Telemetry (rule 91): opt-in span tracing (turn / model / tool /
+  compact) exported to daily JSONL or OTLP/HTTP — attributes and errors
+  redacted, export failures counted and never block the agent.
+- MCP server mode (rule 92): `zgo mcp serve` exposes the tool surface
+  over stdio JSON-RPC — read-only four by default (no confirmation
+  channel), --all opts into the full set; Zcode/Claude Code/Cursor can
+  call zgo's path-jailed tools directly.
+
 ## v0.10.0 highlights
 
 - Auto-memory: at close, one small completion distills durable facts
