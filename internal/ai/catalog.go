@@ -9,6 +9,11 @@ type ModelInfo struct {
 	API           string // anthropic | openai | gemini ("" = any/unknown)
 	ContextWindow int    // input+output tokens the provider allows
 	MaxOutput     int    // the output cap requests should use
+	// In/Out/CacheRead 是 $/Mtok 牌价（spec 规则 93）：内置值是可覆盖
+	// 的近似（settings.pricing 优先）；0 = 未知——成本面跳过而不是瞎猜。
+	InPrice        float64
+	OutPrice       float64
+	CacheReadPrice float64
 }
 
 // DefaultContextWindow is the fallback for unknown models (ZCode's
@@ -20,17 +25,17 @@ const DefaultMaxOutput = 32_000
 
 var catalog = []ModelInfo{
 	// Anthropic 兼容
-	{ID: "claude-opus-4-5", API: "anthropic", ContextWindow: 200_000, MaxOutput: 32_000},
-	{ID: "claude-sonnet-4-5", API: "anthropic", ContextWindow: 200_000, MaxOutput: 32_000},
-	{ID: "claude-haiku-4-5", API: "anthropic", ContextWindow: 200_000, MaxOutput: 32_000},
+	{ID: "claude-opus-4-5", API: "anthropic", ContextWindow: 200_000, MaxOutput: 32_000, InPrice: 15, OutPrice: 75, CacheReadPrice: 1.5},
+	{ID: "claude-sonnet-4-5", API: "anthropic", ContextWindow: 200_000, MaxOutput: 32_000, InPrice: 3, OutPrice: 15, CacheReadPrice: 0.3},
+	{ID: "claude-haiku-4-5", API: "anthropic", ContextWindow: 200_000, MaxOutput: 32_000, InPrice: 1, OutPrice: 5, CacheReadPrice: 0.1},
 	{ID: "glm-5.2", API: "anthropic", ContextWindow: 200_000, MaxOutput: 32_000},
 	{ID: "glm-5.2-air", API: "anthropic", ContextWindow: 200_000, MaxOutput: 16_000},
-	{ID: "kimi-k2", API: "anthropic", ContextWindow: 256_000, MaxOutput: 32_000},
+	{ID: "kimi-k2", API: "anthropic", ContextWindow: 256_000, MaxOutput: 32_000, InPrice: 0.6, OutPrice: 2.5, CacheReadPrice: 0.1},
 	// OpenAI 兼容
 	{ID: "gpt-5.2", API: "openai", ContextWindow: 400_000, MaxOutput: 128_000},
 	{ID: "gpt-5.2-mini", API: "openai", ContextWindow: 400_000, MaxOutput: 128_000},
-	{ID: "deepseek-chat", API: "openai", ContextWindow: 128_000, MaxOutput: 16_000},
-	{ID: "deepseek-reasoner", API: "openai", ContextWindow: 128_000, MaxOutput: 32_000},
+	{ID: "deepseek-chat", API: "openai", ContextWindow: 128_000, MaxOutput: 16_000, InPrice: 0.27, OutPrice: 1.1, CacheReadPrice: 0.07},
+	{ID: "deepseek-reasoner", API: "openai", ContextWindow: 128_000, MaxOutput: 32_000, InPrice: 0.55, OutPrice: 2.19, CacheReadPrice: 0.14},
 	{ID: "qwen-max", API: "openai", ContextWindow: 131_072, MaxOutput: 16_000},
 	{ID: "qwen3-coder-plus", API: "openai", ContextWindow: 1_000_000, MaxOutput: 32_000},
 	// Gemini

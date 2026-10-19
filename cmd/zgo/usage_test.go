@@ -43,8 +43,12 @@ func TestRunUsageCLI(t *testing.T) {
 func TestUsageHistoryCLI(t *testing.T) {
 	dir := t.TempDir()
 	today := time.Now().Format("20060102")
+	// 一条带模型分量的新格式（成本列）+ 一条旧格式（规则 89 时代，
+	// 重放兼容）：sonnet 1M in = 3$，合计 150 token。
+	line1 := "{\"tokens\":120,\"session\":\"s\",\"source\":\"main\"," +
+		"\"model\":\"claude-sonnet-4-5\",\"in\":1000000}\n"
 	if err := os.WriteFile(filepath.Join(dir, "usage-"+today+".json"),
-		[]byte("{\"tokens\":120}\n"), 0o600); err != nil {
+		[]byte(line1+"{\"tokens\":30}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	old := os.Getenv("ZGO_TEST_DATADIR")
@@ -52,8 +56,8 @@ func TestUsageHistoryCLI(t *testing.T) {
 	_ = old
 
 	code, out := captureUsage(func() int { return runUsage([]string{"--days=3"}) })
-	if code != 0 || !strings.Contains(out, today) || !strings.Contains(out, "120") ||
-		!strings.Contains(out, "▮") {
+	if code != 0 || !strings.Contains(out, today) || !strings.Contains(out, "150") ||
+		!strings.Contains(out, "▮") || !strings.Contains(out, "$3.00") {
 		t.Fatalf("history = %d %q", code, out)
 	}
 	if code, _ := captureUsage(func() int { return runUsage([]string{"--days"}) }); code == 0 {
