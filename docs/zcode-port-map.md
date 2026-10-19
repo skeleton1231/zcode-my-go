@@ -463,6 +463,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    schedule.ParseNatural 翻成五字段走既有校验/落库（认不出明确报错不
    猜）；Job.At 原文回显；--at 与 --schedule 互斥。
 
+**提示钩子**（spec 规则 96）：settings.hooks.userPromptSubmit——提
+   交前见原始提示（@展开前），exit 2 拦截 / JSON stdout 改写；hook
+   家族（pre/post 工具、stop/notification、session 生命周期、
+   preCompact）的最后一个注入点。
+
 **@会话引用**（spec 规则 97）：`@session:<前缀>` 跨会话带上下文——
    最近 20 条对话有界摘录（30KB、预算与文件引用共享）；自引用/未解
    析原样保留。

@@ -36,6 +36,10 @@ type CommandHooks struct {
 	PreCompact   []CommandHook `json:"preCompact"`
 	Stop         []CommandHook `json:"stop"`         // spec 规则 68
 	Notification []CommandHook `json:"notification"` // spec 规则 68
+	// UserPromptSubmit 在用户提示进会话前运行（spec 规则 96）：
+	// exit 2 拦截（stderr 为原因）；exit 0 且 stdout 是 {"prompt":...}
+	// 则改写；其他退出码只观察。
+	UserPromptSubmit []CommandHook `json:"userPromptSubmit"`
 }
 
 // matches reports whether the hook applies to a tool.
@@ -54,9 +58,53 @@ func (h CommandHook) matches(tool string) bool {
 // HooksFromCommands wires configured commands into loop hooks.
 func HooksFromCommands(cfg CommandHooks) Hooks {
 	return Hooks{
-		BeforeToolCall: beforeFromCommands(cfg.PreToolUse),
-		AfterToolCall:  afterFromCommands(cfg.PostToolUse),
-		Stop:           stopFromCommands(cfg.Stop),
+		BeforeToolCall:   beforeFromCommands(cfg.PreToolUse),
+		AfterToolCall:    afterFromCommands(cfg.PostToolUse),
+		Stop:             stopFromCommands(cfg.Stop),
+		UserPromptSubmit: promptFromCommands(cfg.UserPromptSubmit),
+	}
+}
+
+// promptFromCommands 把 userPromptSubmit 命令接成提示钩子（spec 规则
+// 96）：exit 2 拦截（输出为原因，给用户不给模型）；exit 0 时 stdout
+// 是 {"prompt":"..."} 即改写（空串不改）；其他退出码记日志放行。
+func promptFromCommands(hooks []CommandHook) func(PromptContext) PromptResult {
+	if len(hooks) == 0 {
+		return nil
+	}
+	return func(c PromptContext) PromptResult {
+		payload, _ := json.Marshal(map[string]any{
+			"event":     "userPromptSubmit",
+			"sessionId": c.SessionID,
+			"workspace": c.Workspace,
+			"prompt":    c.Prompt,
+		})
+		for _, h := range hooks {
+			out, code, err := runHook(h.Command, payload)
+			if err != nil {
+				log.Printf("prompt hook %q: %v", h.Command, err)
+				continue
+			}
+			if code == 2 {
+				reason := strings.TrimSpace(out)
+				if reason == "" {
+					reason = "prompt blocked by hook"
+				}
+				return PromptResult{Block: true, Reason: reason}
+			}
+			if code != 0 {
+				log.Printf("prompt hook %q: exit %d: %s", h.Command, code,
+					strings.TrimSpace(out))
+				continue
+			}
+			var r struct {
+				Prompt string `json:"prompt"`
+			}
+			if json.Unmarshal([]byte(strings.TrimSpace(out)), &r) == nil && r.Prompt != "" {
+				return PromptResult{Replacement: r.Prompt}
+			}
+		}
+		return PromptResult{}
 	}
 }
 
