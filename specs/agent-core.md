@@ -693,17 +693,25 @@ dc907a4 (feat: glob and grep honor .gitignore)
    口——定时任务也烧预算）。跨天由当日记账的重放机制自然解开（新
    一天新文件）。开关与预算均落盘（重启后闸仍在）。
 
-87. 子代理用量记账与熔断（86 为待合并的会话置顶预留）：子代理
-   （task/dispatch/后台 agent 四件套）烧的钱此前**对当日记账与硬预
-   算熔断完全不可见**——回合内 nested loop 的 usage 只进临时会话随
-   运行丢弃。本规则双补：①SubtaskResult 增 Usage（loop 事件流的
-   EvMessageEnd 末值即单次运行总计；resume 形态是单次量）——服务
-   侧 runner 闭包（task/dispatch/agentRunner）逐一入账
-   recordSubagentUsage（Priced 折算直接 Add——子任务无回合边界不
-   emit 通知）；②硬预算闸在**子代理启动前**同样生效（hardFuseErr
-   提取为共用判据——task/后台 runner 返回错误、dispatch 整批错误
-   文本）。主回合入口熔断复用同一判据（规则 85 的实现重构为
-   hardFuseErr）。workflow 步骤（StepResult 无用量面）暂不入账。
+86. 会话置顶（组织态的另一半，与规则 82 归档成对）：meta 行增
+   pinned 标志（SessionInfo.Pinned；首行重写持久——与 Archive 同路
+   径）；`zgo sessions pin|unpin <id|前缀>`；**置顶组在列表最前**（组
+   内与普通组内均按更新时间新前——Manager.List 排序键升级为
+   pinned 优先 + 时间次之）；list 表格 📌 前缀标记。置顶只影响列表
+   次序——内容/搜索/恢复/导出面不变（组织态与内容正交）。归档与置
+   顶可并存（归档过滤在先——--archived 视图内置顶同样排前）。
+
+87. 子代理用量记账与熔断：子代理（task/dispatch/后台 agent 四件
+   套）烧的钱此前**对当日记账与硬预算熔断完全不可见**——回合内
+   nested loop 的 usage 只进临时会话随运行丢弃。本规则双补：①
+   SubtaskResult 增 Usage（loop 事件流的 EvMessageEnd 末值即单次运
+   行总计；resume 形态是单次量）——服务侧 runner 闭包（task/
+   dispatch/agentRunner）逐一入账 recordSubagentUsage（Priced 折算
+   直接 Add——子任务无回合边界不 emit 通知）；②硬预算闸在**子代
+   理启动前**同样生效（hardFuseErr 提取为共用判据——task/后台
+   runner 返回错误、dispatch 整批错误文本）。主回合入口熔断复用同
+   一判据（规则 85 的实现重构为 hardFuseErr）。workflow 步骤
+   （StepResult 无用量面）暂不入账。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |

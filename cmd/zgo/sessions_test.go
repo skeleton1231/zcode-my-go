@@ -208,3 +208,43 @@ func TestArchivePersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("-c should skip archived: got %+v ok=%v", cont, ok)
 	}
 }
+
+// TestSessionsPinCLI（spec 规则 86）：pin 后置顶组最前（组内时间序）；
+// unpin 复原；📌 标记；未知会话拒绝；重启持久。
+func TestSessionsPinCLI(t *testing.T) {
+	dir, ids := seedCLI(t)
+	if code, _ := runSessionsCaptured(t, dir, "pin", ids[0]); code != 0 {
+		t.Fatal("pin failed")
+	}
+	_, out := runSessionsCaptured(t, dir, "list")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	// 首数据行（表头后）必须是置顶会话（修登录样式）。
+	if len(lines) < 3 || !strings.Contains(lines[1], "修登录样式") || !strings.Contains(lines[1], "📌") {
+		t.Fatalf("pinned session not first with marker:\n%s", out)
+	}
+	if !strings.Contains(lines[2], "部署脚本排错") {
+		t.Fatalf("second session should follow:\n%s", out)
+	}
+
+	// 重启持久。
+	svc, err := service.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	infos := svc.ListSessions()
+	if len(infos) < 2 || !infos[0].Pinned || infos[1].Pinned {
+		t.Fatalf("pin flag/order lost after restart: %+v", infos)
+	}
+
+	if code, _ := runSessionsCaptured(t, dir, "unpin", ids[0]); code != 0 {
+		t.Fatal("unpin failed")
+	}
+	_, out = runSessionsCaptured(t, dir, "list")
+	if strings.Contains(out, "📌") {
+		t.Fatalf("marker survived unpin:\n%s", out)
+	}
+	if code, _ := runSessionsCaptured(t, dir, "pin", "zzz-nope"); code == 0 {
+		t.Fatal("unknown session accepted")
+	}
+}

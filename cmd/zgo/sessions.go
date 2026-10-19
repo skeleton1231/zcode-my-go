@@ -46,6 +46,10 @@ func runSessions(argv []string) int {
 		return sessionsArchive(svc, rest, true)
 	case "unarchive":
 		return sessionsArchive(svc, rest, false)
+	case "pin":
+		return sessionsPin(svc, rest, true)
+	case "unpin":
+		return sessionsPin(svc, rest, false)
 	case "search":
 		return sessionsSearch(svc, rest)
 	case "sanitize":
@@ -94,6 +98,9 @@ func sessionsList(svc *service.AgentService, rest []string) int {
 			title = string([]rune(title)[:27]) + "…"
 		}
 		usage, _ := svc.SessionUsage(s.ID)
+		if s.Pinned { // 置顶标记（spec 规则 86）
+			title = "📌 " + title
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d/%d\n",
 			shortID(s.ID), title, s.UpdatedAt.Local().Format("01-02 15:04"),
 			shortPath(s.Workspace), usage.InputTokens, usage.OutputTokens)
@@ -273,6 +280,25 @@ func sessionsArchive(svc *service.AgentService, args []string, on bool) int {
 		fmt.Println("已归档（列表/-c 恢复默认隐藏；unarchive 取消；rm 删除）")
 	} else {
 		fmt.Println("已取消归档")
+	}
+	return 0
+}
+
+// sessionsPin 置顶/取消置顶（spec 规则 86）：置顶会话在列表最前（组
+// 内仍按更新时间）——组织态与内容正交，不影响搜索/恢复/导出。
+func sessionsPin(svc *service.AgentService, args []string, on bool) int {
+	if len(args) != 1 {
+		fmt.Fprintf(os.Stderr, "用法：zgo sessions %s <id|前缀>\n", map[bool]string{true: "pin", false: "unpin"}[on])
+		return 2
+	}
+	if err := svc.SetSessionPinned(args[0], on); err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	if on {
+		fmt.Println("已置顶（列表最前）")
+	} else {
+		fmt.Println("已取消置顶")
 	}
 	return 0
 }

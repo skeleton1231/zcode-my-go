@@ -2682,3 +2682,16 @@ func (s *AgentService) recordSubagentUsage(u ai.Usage) {
 		log.Printf("subagent usage: %v", err)
 	}
 }
+
+// SetSessionPinned 切换置顶组织态（spec 规则 86）：接受 id 或唯一前
+// 缀；置顶只影响列表次序，内容/搜索/恢复面不变。
+func (s *AgentService) SetSessionPinned(idOrPrefix string, on bool) error {
+	id, ok := s.ResolveSession(idOrPrefix)
+	if !ok {
+		return fmt.Errorf("no unique session %q", idOrPrefix)
+	}
+	if !s.mgr.SetPinnedById(id, on) {
+		return fmt.Errorf("pinning session: %s", id)
+	}
+	return nil
+}
