@@ -602,3 +602,41 @@ func TestSlashAgents(t *testing.T) {
 		t.Fatalf("fold = %q", got)
 	}
 }
+
+// TestSlashTools（spec 规则 77）：清单按来源分组、内置在、未授信无
+// 自定义段、坏定义 ⚠ 行。
+func TestSlashTools(t *testing.T) {
+	env, _ := newEnv(t)
+	out := captureOutSlash(t, env, "/tools")
+	if !strings.Contains(out, "[工具]") || !strings.Contains(out, "read") || !strings.Contains(out, "bash") {
+		t.Fatalf("builtin missing:\n%s", out)
+	}
+	// 未授信：无自定义段。
+	if strings.Contains(out, "自定义") {
+		t.Fatalf("untrusted custom section shown:\n%s", out)
+	}
+
+	ws := env.Workspace()
+	if err := env.Svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(ws, ".zgo", "tools")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "deploy.md"),
+		[]byte("---\nname: deploy\ndescription: Ship it\n---\necho go"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad.md"),
+		[]byte("---\ndescription: no name\n---\necho x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out = captureOutSlash(t, env, "/tools")
+	if !strings.Contains(out, "自定义") || !strings.Contains(out, "deploy：Ship it") {
+		t.Fatalf("custom section missing:\n%s", out)
+	}
+	if !strings.Contains(out, "⚠") || !strings.Contains(out, "bad.md") {
+		t.Fatalf("diagnostics missing:\n%s", out)
+	}
+}

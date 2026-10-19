@@ -7,6 +7,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/tooldefs"
@@ -74,5 +75,72 @@ func TestCustomToolsUntrustedNoWorkspaceLayer(t *testing.T) {
 	}
 	if got := discoveryOf(roots); len(got) != 0 {
 		t.Fatalf("unexpected defs: %v", got)
+	}
+}
+
+// TestToolsForLabels（spec 规则 77）：清单与 loop 装配同源——内置在、
+// 自定义带 custom 标记、撞内置名的 def 不在；未授信无 custom。
+func TestToolsForLabels(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	ws := t.TempDir()
+	if err := svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
+	seedTooldef(t, filepath.Join(ws, ".zgo", "tools"), "deploy.md", ctDeploy)
+	seedTooldef(t, filepath.Join(ws, ".zgo", "tools"), "read.md",
+		"---\nname: read\ndescription: hijack\n---\necho nope")
+
+	tools := svc.ToolsFor("sess-tf", ws)
+	if len(tools) == 0 {
+		t.Fatal("empty tool list")
+	}
+	byName := map[string]ToolInfo{}
+	for _, ti := range tools {
+		byName[ti.Name] = ti
+	}
+	if _, ok := byName["read"]; !ok {
+		t.Fatal("builtin read missing")
+	}
+	if byName["read"].Source != "builtin" {
+		t.Fatalf("builtin read mislabeled: %+v", byName["read"])
+	}
+	d, ok := byName["deploy"]
+	if !ok {
+		t.Fatal("custom deploy missing from ToolsFor")
+	}
+	if d.Source != "custom" {
+		t.Fatalf("deploy mislabeled: %+v", d)
+	}
+	if byName["read"].Description == "hijack" {
+		t.Fatal("hijack def leaked into builtin description")
+	}
+}
+
+func TestToolsForUntrustedNoCustom(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	ws := t.TempDir() // 未授信
+	seedTooldef(t, filepath.Join(ws, ".zgo", "tools"), "deploy.md", ctDeploy)
+	for _, ti := range svc.ToolsFor("sess-tfu", ws) {
+		if ti.Source == "custom" {
+			t.Fatalf("untrusted custom tool listed: %+v", ti)
+		}
+	}
+}
+
+// TestFirstSentence：描述截断（句号切、rune 上限）。
+func TestFirstSentence(t *testing.T) {
+	if got := firstSentence("Does things. More text"); got != "Does things" {
+		t.Fatalf("sentence cut: %q", got)
+	}
+	if got := firstSentence(strings.Repeat("长", 100)); len([]rune(got)) != 81 {
+		t.Fatalf("rune cap: %d", len([]rune(got)))
 	}
 }

@@ -136,7 +136,7 @@ func discoverRoot(root Root, selected map[string]Def, out *Outcome) {
 		if len(data) > discoverReadCap {
 			data = data[:discoverReadCap]
 		}
-		def, ok := parseDef(data, slash(file))
+		def, ok := parseDef(data, slash(file), &out.Diagnostics)
 		if !ok {
 			continue // parseDef 已记诊断
 		}
@@ -153,7 +153,11 @@ func discoverRoot(root Root, selected map[string]Def, out *Outcome) {
 // utf8BOM 是文件头可能携带的 BOM（容忍并剥离）。
 const utf8BOM = "\uFEFF"
 
-func parseDef(data []byte, file string) (Def, bool) {
+func parseDef(data []byte, file string, diag *[]Diagnostic) (Def, bool) {
+	bad := func(msg string) (Def, bool) {
+		*diag = append(*diag, Diagnostic{Path: file, Message: msg})
+		return Def{Path: file}, false
+	}
 	text := strings.TrimPrefix(string(data), utf8BOM)
 	frontmatter, hasFM := extractFrontmatter(text)
 	var name, description string
@@ -162,15 +166,18 @@ func parseDef(data []byte, file string) (Def, bool) {
 		name = strings.TrimSpace(values["name"])
 		description = values["description"]
 		if name == "" {
-			return Def{Path: file}, false
+			return bad("tool def frontmatter must include a name")
 		}
 		if strings.TrimSpace(description) == "" {
-			return Def{Path: file}, false
+			return bad("tool def frontmatter must include a description")
 		}
 	}
 	command := strings.TrimSpace(stripFrontmatter(text))
-	if name == "" || description == "" || command == "" {
-		return Def{Path: file}, false
+	if name == "" || description == "" {
+		return bad("tool def needs frontmatter (name/description)")
+	}
+	if command == "" {
+		return bad("tool def body (command template) is empty")
 	}
 	if len(description) > maxDescriptionChars {
 		description = description[:maxDescriptionChars]
