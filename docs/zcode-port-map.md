@@ -462,6 +462,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    schedule.ParseNatural 翻成五字段走既有校验/落库（认不出明确报错不
    猜）；Job.At 原文回显；--at 与 --schedule 互斥。
 
+**提示钩子**（spec 规则 96）：settings.hooks.userPromptSubmit——提
+   交前见原始提示（@展开前），exit 2 拦截 / JSON stdout 改写；hook
+   家族（pre/post 工具、stop/notification、session 生命周期、
+   preCompact）的最后一个注入点。
+
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘
    要），JSONL 持久化；超限缩放重编码（stdlib 双线性，20MB 输入 /

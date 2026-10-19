@@ -1258,6 +1258,17 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	//（现有用户消息数），回滚按序号定位。
 	s.captureCheckpoint(sess, userTurnCount(sess.Messages()))
 	before := sess.UsageTotal()
+	// 提示钩子（spec 规则 96）：见原始提示（@提及展开之前），可拦截
+	//（明确报错、不进转录）或改写（替换后再展开提及）。
+	if h := agent.HooksFromCommands(s.hooksSnapshot()).UserPromptSubmit; h != nil {
+		r := h(agent.PromptContext{SessionID: sessionID, Workspace: sess.Info().Workspace, Prompt: text})
+		if r.Block {
+			return fmt.Errorf("提示被钩子拦截：%s", r.Reason)
+		}
+		if r.Replacement != "" {
+			text = r.Replacement
+		}
+	}
 	text, media = s.expandMentions(sessionID, text, media)
 	err := sess.ChatMedia(text, media, emit)
 	if err == nil {
