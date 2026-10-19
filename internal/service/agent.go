@@ -1819,7 +1819,15 @@ func (s *AgentService) execWorkflow(ctx context.Context, sessionID, workspace st
 		return outcome, err
 	}
 	outcome.RunID = rec.ID
+	// 工作流步骤用量入账 + 启动前熔断（spec 规则 88：规则 87 注明
+	// 的最后一个记账盲区——每步 nested loop 的用量此前随运行丢弃）。
+	if ferr := s.hardFuseErr(); ferr != nil {
+		return outcome, ferr
+	}
 	results, runErr := run(ctx, steps, prefill)
+	for _, r := range results {
+		s.recordSubagentUsage(r.Usage)
+	}
 	status := "completed"
 	if runErr != nil {
 		status = "failed"

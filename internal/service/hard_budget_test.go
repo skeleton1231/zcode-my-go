@@ -199,3 +199,60 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// TestWorkflowUsageRecorded（spec 规则 88）：workflow 步骤的 nested
+// loop 用量入当日记账（规则 87 的最后盲区）。
+func TestWorkflowUsageRecorded(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	svc.DisableAutoTitleForTesting()
+	svc.DisableAutoMemoryForTesting()
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &wfScriptProvider{turns: []string{"", "步骤一结论", "主回合收尾"}}
+	svc.UseProviderForTesting(func() ai.Provider { return p })
+	before, _ := svc.DailyUsage()
+	if err := svc.Chat(info.ID, "按计划执行", func(agent.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := svc.DailyUsage()
+	if after-before < 3000 {
+		t.Fatalf("workflow step usage not recorded: %d -> %d", before, after)
+	}
+}
+
+// wfScriptProvider：回合 1 模型发 workflow 调用（单步计划）→ 步骤
+// 子任务（用量 3000）→ 主循环文本收尾。
+type wfScriptProvider struct {
+	mu    int
+	turns []string
+}
+
+func (p *wfScriptProvider) Stream(ctx context.Context, req ai.Request) <-chan ai.StreamEvent {
+	p.mu++
+	n := p.mu
+	out := make(chan ai.StreamEvent, 4)
+	out <- ai.StreamEvent{Kind: ai.EvMessageStart}
+	switch n {
+	case 1:
+		out <- ai.StreamEvent{Kind: ai.EvToolCallStart, ToolCallID: "call_wf_1", ToolCallName: "workflow"}
+		out <- ai.StreamEvent{Kind: ai.EvToolCallDelta, ToolCallID: "call_wf_1",
+			ToolCallArgs: `{"steps":[{"name":"step1","kind":"research","prompt":"调查"}]}`}
+	case 2:
+		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "步骤一结论"}
+		out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn,
+			Usage: ai.Usage{InputTokens: 2000, OutputTokens: 1000}}
+		close(out)
+		return out
+	default:
+		out <- ai.StreamEvent{Kind: ai.EvTextDelta, TextDelta: "主回合收尾"}
+	}
+	out <- ai.StreamEvent{Kind: ai.EvMessageEnd, StopReason: ai.StopEndTurn}
+	close(out)
+	return out
+}

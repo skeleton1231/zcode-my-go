@@ -46,6 +46,9 @@ type StepResult struct {
 	Step   WorkflowStep
 	Text   string
 	Failed bool
+	// Usage 是该步骤 nested loop 的用量总计（spec 规则 88：工作流步
+	// 骤是规则 87 注明的最后一个记账盲区）。
+	Usage ai.Usage
 }
 
 // WorkflowConfig extends SubtaskConfig with the editable side: edit steps
@@ -237,7 +240,7 @@ func runDAG(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep, deps 
 			// 恰是注释自警的半成品风险）。失控由步骤自身的 MaxTurns 与
 			// 工具超时兜底；新派发仍被 abort/failedAt 挡住。
 			res, err := RunSubtask(context.WithoutCancel(ctx), sub, prompt)
-			finished <- completion{i, StepResult{Step: steps[i], Text: res.Text, Failed: err != nil}, err}
+			finished <- completion{i, StepResult{Step: steps[i], Text: res.Text, Failed: err != nil, Usage: res.Usage}, err}
 		}()
 	}
 
@@ -298,7 +301,7 @@ func runStep(ctx context.Context, cfg WorkflowConfig, steps []WorkflowStep, prio
 	prompt := workflowPrompt(steps, prior, i)
 	sub := subConfigFor(cfg, steps[i])
 	res, err := RunSubtask(ctx, sub, prompt)
-	return StepResult{Step: steps[i], Text: res.Text, Failed: err != nil}, err
+	return StepResult{Step: steps[i], Text: res.Text, Failed: err != nil, Usage: res.Usage}, err
 }
 
 // subConfigFor maps a step kind to its nested-loop config: research runs
