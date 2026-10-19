@@ -400,6 +400,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    义）；上限 5000 文件/100MB 超限降级；错误分层对齐（Missing 降级/
    Pruned 中止）；会话删除清库。
 
+**远程工作区快照**（spec 规则 84，83 的远程半边）：ssh:// 经 RemoteFS
+   整树拉进本地快照库；恢复镜像推回（WriteFile 覆写 + Exec rm 删快
+   照后新增——单引号包裹）；上限/错误分层与本地同源。
+
 **硬预算熔断**（spec 规则 85，软预算的止损闸）：hardBudgetStop 开启
    后今日已计价 token 达 budgetDailyTokens 即拒新回合（Chat 入口熔
    断、明确报错不进转录；cron 同闸；跨天自然解开；落盘重启仍在）。

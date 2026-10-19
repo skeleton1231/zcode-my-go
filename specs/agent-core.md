@@ -677,14 +677,21 @@ dc907a4 (feat: glob and grep honor .gitignore)
    半截快照不留（失败即清会话根——空根会让 Restore 误判）。会话
    删除清快照库（SnapshotRemoveAll，与 checkpoint refs 同步）。
 
-85. 硬预算熔断（84 为待合并的远程工作区快照预留）：budgetDailyTokens
-   此前只是软预算（80%/100% 各发一次 EvBudgetNotice 不阻断）——
-   settings.hardBudgetStop（默认关；zgo config set）开启后，今日已
-   计价 token **达预算即拒新回合**：ChatMedia 入口熔断（明确报错、
-   不进转录——止损闸在回合开始前；错误文案带解除命令）。cron 调度
-   同闸（scheduleRunner 走 Chat 入口——定时任务也烧预算）。跨天由
-   当日记账的重放机制自然解开（新一天新文件）。开关与预算均落盘
-   （重启后闸仍在）。
+84. 远程工作区快照（spec 规则 83 的远程半边）：ssh:// 会话此前完全
+   降级（连「仅回退转录」的文件半边都没有）——捕获经拨号后的
+   RemoteFS 整树拉进本地快照库（ReadFile/ReadDir 递归；单文件读失
+   败跳过不拖垮整树）；恢复是镜像推回——快照内 WriteFile 覆写、
+   快照后新增经 Exec rm -f 删除（路径单引号包裹——注入面封闭）；
+   上限/保留窗口/错误分层（Missing 降级/Pruned 中止）与本地快照
+   同源。远程路径根相对斜杠形态（RemoteFS 约定）。
+
+85. 硬预算熔断：budgetDailyTokens 此前只是软预算（80%/100% 各发一
+   次 EvBudgetNotice 不阻断）——settings.hardBudgetStop（默认关；
+   zgo config set）开启后，今日已计价 token **达预算即拒新回合**：
+   ChatMedia 入口熔断（明确报错、不进转录——止损闸在回合开始前；
+   错误文案带解除命令）。cron 调度同闸（scheduleRunner 走 Chat 入
+   口——定时任务也烧预算）。跨天由当日记账的重放机制自然解开（新
+   一天新文件）。开关与预算均落盘（重启后闸仍在）。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
