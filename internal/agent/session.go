@@ -906,6 +906,18 @@ func (m *Manager) wiringModel() func() string {
 	}
 }
 
+// SessionModel 返回会话当前解析的模型（spec 规则 93：成本按实际模
+// 型计价——会话可能被任务级模型覆盖）。
+func (m *Manager) SessionModel(id string) string {
+	m.mu.Lock()
+	s, ok := m.sessions[id]
+	m.mu.Unlock()
+	if !ok || s.model == nil {
+		return ""
+	}
+	return s.model()
+}
+
 // SetSessionModel 覆盖单个会话的模型（定时任务的任务级模型，spec 规
 // 则 60）：空串恢复全局解析。后续回合与压缩即刻生效——s.model 是每
 // 次请求的实时读取点。

@@ -5,6 +5,7 @@ package usage
 
 import (
 	"encoding/json"
+	"github.com/skeleton1231/zcode-my-go/internal/pricing"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,6 +30,14 @@ type Day struct {
 	// 一次——可接受（预算提示是化妆性信息，宁可多提醒）。
 	warned80  bool
 	warned100 bool
+	// costSegs 是模型 → 三段分量累计（spec 规则 93）：$ 折算的原料，
+	// 重放/翻日与 Tokens 同生命周期。
+	costSegs map[string]segTotals
+}
+
+// segTotals 是一个模型的输入/输出/缓存读累计。
+type segTotals struct {
+	in, out, cacheRead int64
 }
 
 // entry 是一条增量记录。
@@ -37,6 +46,12 @@ type entry struct {
 	// 归因（spec 规则 89）：旧文件无这两键照样重放（零值 = 未归因）。
 	SessionID string `json:"session,omitempty"`
 	Source    string `json:"source,omitempty"` // main/subagent/workflow
+	// 成本分量（spec 规则 93）：$ 按条目实际模型的三段牌价折算——
+	// 旧文件无这些键照样重放（成本 0，token 面不变）。
+	Model     string `json:"model,omitempty"`
+	In        int    `json:"in,omitempty"`
+	Out       int    `json:"out,omitempty"`
+	CacheRead int    `json:"cacheRead,omitempty"`
 }
 
 // Load 重放当日记账（文件按日期命名，隔天自然从零开始）。
@@ -46,7 +61,8 @@ func Load(dataDir string) *Day {
 
 // load 是 Load 的可注入时钟形态（测试翻日）。
 func load(dataDir string, now func() time.Time) *Day {
-	d := &Day{dir: dataDir, now: now, bySession: map[string]int{}, bySource: map[string]int{}}
+	d := &Day{dir: dataDir, now: now, bySession: map[string]int{}, bySource: map[string]int{},
+		costSegs: map[string]segTotals{}}
 	d.rollLocked() // 依当前日期初始化 day/path
 	data, err := os.ReadFile(d.path)
 	if err != nil {
@@ -58,6 +74,13 @@ func load(dataDir string, now func() time.Time) *Day {
 			d.Tokens += e.Tokens
 			d.bySession[e.SessionID] += e.Tokens
 			d.bySource[e.Source] += e.Tokens
+			if e.Model != "" {
+				seg := d.costSegs[e.Model]
+				seg.in += int64(e.In)
+				seg.out += int64(e.Out)
+				seg.cacheRead += int64(e.CacheRead)
+				d.costSegs[e.Model] = seg
+			}
 		}
 	}
 	return d
@@ -82,6 +105,7 @@ func (d *Day) rollLocked() {
 	d.day = today
 	d.path = filepath.Join(d.dir, "usage-"+today+".json")
 	d.Tokens = 0
+	d.costSegs = map[string]segTotals{}
 	d.bySession = map[string]int{}
 	d.bySource = map[string]int{}
 	d.warned80, d.warned100 = false, false
@@ -110,13 +134,28 @@ func (d *Day) Add(tokens int) error { return d.AddFor("", "", tokens) }
 // AddFor 记一次归因增量并落盘（spec 规则 89）：sessionID 空即未归
 // 因；source ∈ main/subagent/workflow。
 func (d *Day) AddFor(sessionID, source string, tokens int) error {
+	return d.AddSegments(sessionID, source, "", 0, 0, 0, tokens)
+}
+
+// AddSegments 记一次带成本分量的增量（spec 规则 93）：tokens 仍是计
+// 价口径（调用方 Priced 折算），in/out/cacheRead 是原始三段、model 是
+// 实际模型——日账重放时按条目模型折算 $。
+func (d *Day) AddSegments(sessionID, source, model string, in, out, cacheRead, tokens int) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.rollLocked() // 跨零点：先翻到新日再记账
 	d.Tokens += tokens
 	d.bySession[sessionID] += tokens
 	d.bySource[source] += tokens
-	line, err := json.Marshal(entry{Tokens: tokens, SessionID: sessionID, Source: source})
+	if model != "" {
+		seg := d.costSegs[model]
+		seg.in += int64(in)
+		seg.out += int64(out)
+		seg.cacheRead += int64(cacheRead)
+		d.costSegs[model] = seg
+	}
+	line, err := json.Marshal(entry{Tokens: tokens, SessionID: sessionID, Source: source,
+		Model: model, In: in, Out: out, CacheRead: cacheRead})
 	if err != nil {
 		return err
 	}
@@ -127,6 +166,29 @@ func (d *Day) AddFor(sessionID, source string, tokens int) error {
 	defer f.Close()
 	_, err = f.Write(append(line, '\n'))
 	return err
+}
+
+// CostMicro 按各模型实际牌价折算当日记账成本（微美元，spec 规则
+// 93）；t 为 nil 或模型未知时该模型贡献 0。
+func (d *Day) CostMicro(t *pricing.Table) int64 {
+	if t == nil {
+		return 0
+	}
+	d.mu.Lock()
+	segs := make(map[string]segTotals, len(d.costSegs))
+	for k, v := range d.costSegs {
+		segs[k] = v
+	}
+	d.mu.Unlock()
+	var total int64
+	for model, seg := range segs {
+		p, ok := t.Lookup(model)
+		if !ok {
+			continue
+		}
+		total += pricing.CostMicro(p, seg.in, seg.out, seg.cacheRead)
+	}
+	return total
 }
 
 // Priced 把一段用量折算为计价 token（缓存读 0.1——订阅计费口径的近
@@ -193,12 +255,14 @@ func (d *Day) SourceTotal(source string) int {
 type DaySummary struct {
 	Day    string // YYYYMMDD
 	Tokens int
+	// CostMicro 是当日成本（微美元，spec 规则 93；无牌价条目贡献 0）。
+	CostMicro int64
 }
 
 // History 重放最近 days 天的日账文件（含今日），旧到新排序。usage-*.json
 // 翻日后留在原地即历史（rollLocked 的既有语义）——只读聚合，不改 Day
 // 状态。缺日跳过（没跑就没有账）。
-func History(dataDir string, days int) []DaySummary {
+func History(dataDir string, days int, t *pricing.Table) []DaySummary {
 	if days <= 0 {
 		days = 7
 	}
@@ -212,13 +276,20 @@ func History(dataDir string, days int) []DaySummary {
 			continue
 		}
 		total := 0
+		var cost int64
 		for _, line := range splitLines(raw) {
 			var e entry
-			if json.Unmarshal(line, &e) == nil {
-				total += e.Tokens
+			if json.Unmarshal(line, &e) != nil {
+				continue
+			}
+			total += e.Tokens
+			if t != nil && e.Model != "" {
+				if p, ok := t.Lookup(e.Model); ok {
+					cost += pricing.CostMicro(p, int64(e.In), int64(e.Out), int64(e.CacheRead))
+				}
 			}
 		}
-		out = append(out, DaySummary{Day: day, Tokens: total})
+		out = append(out, DaySummary{Day: day, Tokens: total, CostMicro: cost})
 	}
 	return out
 }

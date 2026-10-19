@@ -180,7 +180,7 @@ func TestHistory(t *testing.T) {
 		}
 		f.Close()
 	}
-	hist := History(dir, 3)
+	hist := History(dir, 3, nil)
 	if len(hist) != 3 {
 		t.Fatalf("len = %d", len(hist))
 	}
@@ -194,7 +194,7 @@ func TestHistory(t *testing.T) {
 		t.Fatalf("today = %+v", hist[2])
 	}
 	// 缺日占位。
-	hist3 := History(dir, 5)
+	hist3 := History(dir, 5, nil)
 	if len(hist3) != 5 || hist3[0].Tokens != 0 {
 		t.Fatalf("5-day = %+v", hist3)
 	}

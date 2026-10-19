@@ -35,7 +35,8 @@ import (
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
-	"github.com/skeleton1231/zcode-my-go/internal/prompt"
+	"github.com/skeleton1231/zcode-my-go/internal/pricing"
+"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/redact"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
@@ -86,6 +87,9 @@ type settings struct {
 	// Telemetry 是 span 追踪（spec 规则 91）：默认关；开启后
 	// turn/model/tool/compact span 落 file（按日 JSONL）或 otlp。
 	Telemetry telemetrySettings `json:"telemetry,omitempty"`
+	// Pricing 是模型牌价覆盖（spec 规则 93）：键为模型 ID（族前缀匹
+	// 配），$/Mtok 三键——覆盖目录内置近似价。
+	Pricing map[string]pricing.Override `json:"pricing,omitempty"`
 }
 
 // telemetrySettings 是遥测配置（zgo config telemetry.* 三键）。
@@ -150,6 +154,7 @@ type AgentService struct {
 	searchIdx        *sessionidx.Index                              // 跨会话搜索索引（spec 规则 71）
 	buildTools       func(workspace, sessionID string) []agent.Tool // 工具面装配（/tools 列举同源）
 	tracer           *telemetry.Tracer                              // span 追踪（spec 规则 91；nil 关闭）
+	prices           *pricing.Table                                 // 模型牌价（spec 规则 93；含设置覆盖）
 }
 
 
@@ -172,6 +177,8 @@ func New(dataDir string) (*AgentService, error) {
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
+	// 牌价表（spec 规则 93）：目录近似价 + settings.pricing 覆盖。
+	s.prices = pricing.New(s.settings.Pricing)
 	s.syncRedaction(s.resolve())
 	// 会话记忆自动化开关（spec 规则 74）：nil = 默认开。
 	if off := s.resolve().AutoMemory; off != nil && !*off {
@@ -490,7 +497,7 @@ func (s *AgentService) rewire() {
 				return agent.SubtaskResult{}, err
 			}
 			res, err := agent.RunSubtask(ctx, cfg, prompt)
-			s.recordSubagentUsage(sessionID, "subagent", res.Usage) // 归因记账（规则 87/89）
+			s.recordSubagentUsage(sessionID, "subagent", cfg.Model, res.Usage) // 归因记账（规则 87/89/93）
 			return res, err
 		})
 		contextRead := contextReader(ws)
@@ -518,7 +525,7 @@ func (s *AgentService) rewire() {
 				System:   agent.SubtaskSystem(),
 				Tools:    tools,
 			}, prior, prompt)
-			s.recordSubagentUsage(sessionID, "subagent", res.Usage) // 归因记账（规则 87/89）
+			s.recordSubagentUsage(sessionID, "subagent", cfg.Model, res.Usage) // 归因记账（规则 87/89/93）
 			return res, hist, err
 		}
 		all = append(tools.AllW(ws, state, question), task,
@@ -556,13 +563,13 @@ func (s *AgentService) rewire() {
 				return out
 			}
 			results := agent.RunSubtasks(ctx, cfg, prompts)
-			for _, r := range results { // 归因记账（规则 87/89）
-				s.recordSubagentUsage(sessionID, "subagent", r.Usage)
+			for _, r := range results { // 归因记账（规则 87/89/93）
+				s.recordSubagentUsage(sessionID, "subagent", cfg.Model, r.Usage)
 			}
 			return results
 		}))
 		all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
-			return s.execWorkflow(ctx, sessionID, workspace, req,
+			return s.execWorkflow(ctx, sessionID, workspace, wfModel, req,
 				func(ctx context.Context, steps []agent.WorkflowStep, prefill map[int]agent.StepResult) ([]agent.StepResult, error) {
 					return agent.RunWorkflow(ctx, agent.WorkflowConfig{
 						Provider:    wfProvider(),
@@ -1251,7 +1258,7 @@ func (s *AgentService) ChatMedia(sessionID, text string, media []ai.Block, emit 
 	if err == nil {
 		// 每日预算记账（spec 规则 35）：回合增量折算入当日记账，跨阈
 		// 值发一次通知（软预算——不阻断）。
-		s.recordDailyUsage(sessionID, before, sess.UsageTotal(), emit)
+		s.recordDailyUsage(sessionID, s.mgr.SessionModel(sessionID), before, sess.UsageTotal(), emit)
 		// 首个回合成功结束后尝试自动命名（规则 21）：等值守卫在内部，
 		// 改过名的会话这里直接空手而归；WaitGroup 让 Close 收束它。
 		s.titleWG.Add(1)
@@ -1794,7 +1801,7 @@ func filterToolsByName(pool []agent.Tool, names []string) []agent.Tool {
 // execWorkflow 是 workflow 工具的执行面（spec 规则 48）：解析三种调用
 // 形态（临场步骤/按名/续跑），开跑即落盘运行记录，终态回填；saveAs 在
 // 校验通过后把定义持久化（运行失败不影响保存——定义本身仍有效）。
-func (s *AgentService) execWorkflow(ctx context.Context, sessionID, workspace string,
+func (s *AgentService) execWorkflow(ctx context.Context, sessionID, workspace, model string,
 	req tools.WorkflowRequest, run func(ctx context.Context, steps []agent.WorkflowStep, prefill map[int]agent.StepResult) ([]agent.StepResult, error)) (tools.WorkflowOutcome, error) {
 	var outcome tools.WorkflowOutcome
 	steps := req.Steps
@@ -1849,7 +1856,7 @@ func (s *AgentService) execWorkflow(ctx context.Context, sessionID, workspace st
 	}
 	results, runErr := run(ctx, steps, prefill)
 	for _, r := range results {
-		s.recordSubagentUsage(sessionID, "workflow", r.Usage) // 归因记账（规则 88/89）
+		s.recordSubagentUsage(sessionID, "workflow", model, r.Usage) // 归因记账（规则 88/89/93）
 	}
 	status := "completed"
 	if runErr != nil {
@@ -2048,6 +2055,12 @@ type UsageSummary struct {
 	// Today/TodayBudget 是当日记账与预算（0=不限，spec 规则 35）。
 	Today       int
 	TodayBudget int
+	// Model/CostMicro/CostKnown 是会话成本面（spec 规则 93）：按会话
+	// 实际模型的牌价折算累计用量；未知价时 CostKnown=false（成本行
+	// 省略——不猜）。
+	Model     string
+	CostMicro int64
+	CostKnown bool
 }
 
 // UsageSummaryOf collects a session's usage accounting for display.
@@ -2058,14 +2071,34 @@ func (s *AgentService) UsageSummaryOf(id string) (UsageSummary, error) {
 	}
 	info := sess.Info()
 	today, budget := s.DailyUsage()
-	return UsageSummary{
+	model := s.mgr.SessionModel(info.ID)
+	sum := UsageSummary{
 		SessionID:   info.ID,
 		Title:       info.Title,
 		Usage:       sess.UsageTotal(),
 		Turns:       userTurnCount(sess.Messages()),
 		Today:       today,
 		TodayBudget: budget,
-	}, nil
+		Model:       model,
+	}
+	if price, ok := s.prices.Lookup(model); ok {
+		u := sum.Usage
+		sum.CostMicro = pricing.CostMicro(price, int64(u.InputTokens),
+			int64(u.OutputTokens), int64(u.CacheReadTokens))
+		sum.CostKnown = true
+	}
+	return sum, nil
+}
+
+// UsageCostToday 返回当日记账的成本（微美元，spec 规则 93）——按日账
+// 条目的实际模型牌价折算（归因面的 $ 行）。
+func (s *AgentService) UsageCostToday() int64 {
+	return s.day.CostMicro(s.prices)
+}
+
+// UsageHistory 是近 N 日趋势（spec 规则 90+93）：token 与 $ 双口径。
+func (s *AgentService) UsageHistory(days int) []usage.DaySummary {
+	return usage.History(filepath.Dir(s.path), days, s.prices)
 }
 
 // FormatUsage renders a summary as the shared display block（/usage 与
@@ -2081,10 +2114,14 @@ func FormatUsage(u UsageSummary) string {
 	if u.TodayBudget > 0 {
 		today += fmt.Sprintf("（预算 %d）", u.TodayBudget)
 	}
-	return fmt.Sprintf("会话 %s · %s\n回合 %d\n↑ 输入      %d tokens\n↓ 输出      %d tokens\n⤒ 缓存读    %d tokens %s\n⤓ 缓存写    %d tokens\n%s",
+	out := fmt.Sprintf("会话 %s · %s\n回合 %d\n↑ 输入      %d tokens\n↓ 输出      %d tokens\n⤒ 缓存读    %d tokens %s\n⤓ 缓存写    %d tokens\n%s",
 		shortIDOf(u.SessionID), u.Title, u.Turns,
 		u.Usage.InputTokens, u.Usage.OutputTokens,
 		u.Usage.CacheReadTokens, hit, u.Usage.CacheWriteTokens, today)
+	if u.CostKnown {
+		out += fmt.Sprintf("\n≈ 成本      %s（%s 牌价）", pricing.FormatUSD(u.CostMicro), u.Model)
+	}
+	return out
 }
 
 // shortIDOf keeps the formatter self-contained（cmd 包另有同名助手）.
@@ -2328,16 +2365,16 @@ func capResourceText(text string) string {
 
 // recordDailyUsage 把本回合的用量增量折算入当日记账，跨阈值发一次通
 // 知（80%/100%，spec 规则 35）。
-func (s *AgentService) recordDailyUsage(sessionID string, before, after ai.Usage, emit func(agent.Event)) {
-	delta := usage.Priced(
-		after.InputTokens-before.InputTokens,
-		after.OutputTokens-before.OutputTokens,
-		after.CacheReadTokens-before.CacheReadTokens,
+func (s *AgentService) recordDailyUsage(sessionID, model string, before, after ai.Usage, emit func(agent.Event)) {
+	dIn := after.InputTokens - before.InputTokens
+	dOut := after.OutputTokens - before.OutputTokens
+	dCR := after.CacheReadTokens - before.CacheReadTokens
+	delta := usage.Priced(dIn, dOut, dCR,
 		after.CacheWriteTokens-before.CacheWriteTokens)
 	if delta <= 0 {
 		return
 	}
-	if err := s.day.AddFor(sessionID, "main", delta); err != nil {
+	if err := s.day.AddSegments(sessionID, "main", model, dIn, dOut, dCR, delta); err != nil {
 		log.Printf("daily usage: %v", err)
 		return
 	}
@@ -2750,12 +2787,12 @@ func (s *AgentService) hardFuseErr() error {
 // recordSubagentUsage 把子代理运行的用量折算进当日记账（spec 规则
 // 87：子代理的钱此前对记账/熔断不可见——不 emit 通知（子任务无回
 // 合边界），仅入账）。
-func (s *AgentService) recordSubagentUsage(sessionID, source string, u ai.Usage) {
+func (s *AgentService) recordSubagentUsage(sessionID, source, model string, u ai.Usage) {
 	delta := usage.Priced(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens)
 	if delta <= 0 {
 		return
 	}
-	if err := s.day.AddFor(sessionID, source, delta); err != nil {
+	if err := s.day.AddSegments(sessionID, source, model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, delta); err != nil {
 		log.Printf("%s usage: %v", source, err)
 	}
 }

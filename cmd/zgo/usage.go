@@ -5,11 +5,11 @@ package main
 
 import (
 	"fmt"
-	usagepkg "github.com/skeleton1231/zcode-my-go/internal/usage"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/skeleton1231/zcode-my-go/internal/pricing"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -68,12 +68,16 @@ func runUsage(argv []string) int {
 	}
 	fmt.Println(service.FormatUsage(summary))
 
-	// 今日归因（spec 规则 89）：哪个会话/来源烧的预算。
+	// 今日归因（spec 规则 89+93）：哪个会话/来源烧的预算（token 与 $）。
 	today, budget := svc.DailyUsage()
 	if today > 0 {
 		sess, main, sub, wf := svc.UsageAttribution()
-		fmt.Printf("今日累计 %d token（预算 %d）——来源：主循环 %d / 子代理 %d / 工作流 %d\n",
-			today, budget, main, sub, wf)
+		cost := ""
+		if c := svc.UsageCostToday(); c > 0 {
+			cost = fmt.Sprintf("，≈ %s", pricing.FormatUSD(c))
+		}
+		fmt.Printf("今日累计 %d token（预算 %d）%s——来源：主循环 %d / 子代理 %d / 工作流 %d\n",
+			today, budget, cost, main, sub, wf)
 		fmt.Println("按会话（Top 5）：")
 		for i, st := range sess {
 			if i >= 5 {
@@ -108,15 +112,22 @@ func shortIDSafe(svc *service.AgentService, id string) string {
 	return id
 }
 
-// usageHistory 打印近 N 日用量趋势（spec 规则 90）：每日总量 + 迷你
-// 条形（▮ 按最大日比例）。缺日照列 0（趋势连续性）。
+// usageHistory 打印近 N 日用量趋势（spec 规则 90+93）：每日总量 + 迷你
+// 条形（▮ 按最大日比例）+ $ 成本列（按各条目实际模型牌价；无牌价条
+// 目贡献 0）。缺日照列 0（趋势连续性）。
 func usageHistory(days int) int {
 	dataDir, err := userDataDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		return 1
 	}
-	hist := usagepkg.History(dataDir, days)
+	svc, err := service.New(dataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	defer svc.Close()
+	hist := svc.UsageHistory(days)
 	max := 0
 	for _, d := range hist {
 		if d.Tokens > max {
@@ -132,7 +143,8 @@ func usageHistory(days int) int {
 		} else {
 			bar = strings.Repeat("▯", 20)
 		}
-		fmt.Printf("  %s  %s %6d\n", d.Day, bar, d.Tokens)
+		fmt.Printf("  %s  %s %6d  %8s\n", d.Day, bar, d.Tokens,
+			pricing.FormatUSD(d.CostMicro))
 	}
 	return 0
 }

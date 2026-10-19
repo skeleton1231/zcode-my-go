@@ -453,6 +453,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    默认只读四件（无确认通道的安全默认），--all 开全量；结果打码；客
    户端↔服务端 dogfood（internal/mcp 拨号自重执行进程）双向验证。
 
+**模型牌价与成本核算**（spec 规则 93）：目录近似价 + settings.pricing
+   覆盖（internal/pricing，$/Mtok）；日账条目带模型与三段——$ 按条目
+   实际模型折算（微美元整数）；/usage 成本行、归因 $ 合计、--days 每日
+   $ 列；未知价诚实跳过。
+
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘
    要），JSONL 持久化；超限缩放重编码（stdlib 双线性，20MB 输入 /
