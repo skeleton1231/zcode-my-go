@@ -359,6 +359,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    重写）——历史 JSONL 的三类自由文本载体同面打码，未触及行字节不动；
    幂等；密钥面与打码器同源。
 
+**自定义工具**（spec 规则 75，commands/skills/agents 家族第四员）：
+   `.zgo/tools/*.md` 命令模板（$ARGUMENTS 占位）包装成模型可调用工
+   具——执行复用 bash 通道（权限按渲染后命令判定）；两层平铺同名覆
+   盖；内置名优先；未授信工作区不带其工具层（注入到执行的面）。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
