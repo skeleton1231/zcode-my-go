@@ -8,6 +8,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/telemetry"
 )
 
 // SubtaskConfig wires a nested agent run (ZCode's subagent): its own loop,
@@ -21,6 +22,11 @@ type SubtaskConfig struct {
 	MaxTokens   int
 	Permissions *permission.Service // edit 侧传入：工作流步骤同受权限门
 	Ask         func(AskRequest) AskResponse
+	// Telemetry 记录嵌套循环的 span（规则 91 扩展）：nil 关闭。
+	Telemetry *telemetry.Tracer
+	// SpanName 覆盖回合根 span 名（subagent.turn / workflow.step）；
+	// 空即默认 subagent.turn。
+	SpanName string
 }
 
 // SubtaskResult is the nested run's outcome.
@@ -70,6 +76,10 @@ func RunSubtaskSeeded(ctx context.Context, cfg SubtaskConfig, prior []ai.Message
 	}
 	turns := 0
 	var runUsage ai.Usage
+	spanName := cfg.SpanName
+	if spanName == "" {
+		spanName = "subagent.turn"
+	}
 	loop := NewLoop(LoopConfig{
 		Provider:    cfg.Provider,
 		Model:       cfg.Model,
@@ -80,6 +90,8 @@ func RunSubtaskSeeded(ctx context.Context, cfg SubtaskConfig, prior []ai.Message
 		History:     func() []ai.Message { return history },
 		Permissions: cfg.Permissions,
 		Ask:         cfg.Ask,
+		Telemetry:   cfg.Telemetry, // 规则 91 扩展：嵌套回合同产 span
+		SpanName:    spanName,
 	}, func(ev Event) {
 		if ev.Kind == EvTurnStart {
 			turns++

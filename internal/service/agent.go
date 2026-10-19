@@ -465,6 +465,7 @@ func (s *AgentService) rewire() {
 				return agent.SubtaskConfig{
 					Provider: provider(), Model: model,
 					System: agent.SubtaskSystem(), Tools: roTools,
+					Telemetry: s.tracer, // 规则 91 扩展：嵌套回合同产 span
 				}, nil
 			}
 			def, ok := agents.Find(agents.Discover(s.agentRoots(sessionID, workspace)), agentName)
@@ -479,6 +480,7 @@ func (s *AgentService) rewire() {
 			cfg := agent.SubtaskConfig{
 				Provider: provider(), Model: model,
 				System: def.System, Tools: roTools,
+				Telemetry: s.tracer, // 规则 91 扩展
 			}
 			if len(def.Tools) > 0 {
 				// 白名单只收窄不放宽：候选池 = 只读族 ∪ 会话工具集，
@@ -525,10 +527,11 @@ func (s *AgentService) rewire() {
 				return agent.SubtaskResult{}, nil, ferr
 			}
 			res, hist, err := agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
-				Provider: provider(),
-				Model:    model,
-				System:   agent.SubtaskSystem(),
-				Tools:    tools,
+				Provider:  provider(),
+				Model:     model,
+				System:    agent.SubtaskSystem(),
+				Tools:     tools,
+				Telemetry: s.tracer, // 规则 91 扩展
 			}, prior, prompt)
 			s.recordSubagentUsage(sessionID, "subagent", cfg.Model, res.Usage) // 归因记账（规则 87/89/93）
 			return res, hist, err
@@ -584,6 +587,7 @@ func (s *AgentService) rewire() {
 						Editable:    tools.AllW(ws, state, question),
 						Permissions: wfPerms,
 						Ask:         wfAsk,
+						Telemetry:   s.tracer, // 规则 91 扩展：步骤嵌套循环节点 workflow.step
 						Prefill:     prefill,
 					}, steps)
 				})

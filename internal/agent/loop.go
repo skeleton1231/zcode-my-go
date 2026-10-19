@@ -83,6 +83,9 @@ type LoopConfig struct {
 	// Telemetry records turn/model/tool spans (spec 规则 91)；nil 完全
 	// 关闭（零开销），loop 内的 nil Span 调用都安全空转。
 	Telemetry *telemetry.Tracer
+	// SpanName 是回合根 span 的名字（规则 91 扩展：嵌套循环用
+	// subagent.turn / workflow.step 区分主回合 agent.turn）；空即默认。
+	SpanName string
 	// Permissions gates tool execution (ZCode's permission service). Nil
 	// bypasses checking entirely — the v0.2 behavior — for callers that
 	// have not adopted the system yet.
@@ -129,7 +132,11 @@ func (l *Loop) Run(ctx context.Context, appendMessage func(ai.Message) error) ai
 	l.emit(Event{Kind: EvAgentStart})
 	// 回合 span（spec 规则 91）：本次运行的根，模型/工具调用都是其
 	// 子 span。nil 遥测（默认）拿到 nil Span，后续调用全部安全空转。
-	span := l.cfg.Telemetry.Start("agent.turn").
+	name := l.cfg.SpanName
+	if name == "" {
+		name = "agent.turn"
+	}
+	span := l.cfg.Telemetry.Start(name).
 		SetAttr("session.id", l.cfg.SessionID).
 		SetAttr("workspace", l.cfg.Workspace).
 		SetAttr("model", l.cfg.Model)
