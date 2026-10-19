@@ -15,8 +15,9 @@ import (
 )
 
 // mentionPattern matches @path tokens（路径字符集：字母数字下划线点斜杠
-// 反斜杠连字符；空格结束引用）。@ 单独出现不匹配。
-var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9_./\\-]+)`)
+// 反斜杠连字符；空格结束引用）。@ 单独出现不匹配。行范围语法
+// （spec 规则 81）：@path:lo-hi / @path:lo（单行）——只带相关段。
+var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9_./\\-]+(?::[0-9]+(?:-[0-9]+)?)?)`)
 
 // Mention caps：文本引用与 read 工具同上限；图片引用与附件同上限
 // （会话持久化层另有 6MB 总量兜底，issue #105）。
@@ -55,11 +56,16 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 	skipped, total := 0, 0
 	out := text
 	for _, m := range mentionPattern.FindAllStringSubmatch(text, -1) {
-		rel := filepath.ToSlash(m[1])
-		if seen[rel] {
+		rel, lo, hi := splitMentionRange(m[1])
+		dedup := rel
+		if lo > 0 {
+			// 同文件不同行窗各自展开（seen 键含窗）；无窗形态同键去重。
+			dedup = fmt.Sprintf("%s:%d-%d", rel, lo, hi)
+		}
+		if seen[dedup] {
 			continue
 		}
-		seen[rel] = true
+		seen[dedup] = true
 		data, err := tools.ReadFileIn(ws, rel)
 		if err != nil {
 			// 不是文件——目录引用（spec 规则 76）：展开有界目录树
@@ -85,6 +91,13 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 			continue
 		}
 		content := string(data)
+		header := rel
+		if lo > 0 {
+			// 行范围形态（spec 规则 81）：按 1 起行窗截取（clamp 到文件
+			// 尾；lo>hi 交换），围栏头注明范围——大文件只带相关段。
+			content, lo = sliceLines(content, lo, hi)
+			header = fmt.Sprintf("%s:%d-%d", rel, lo, lo-1+strings.Count(content, "\n")+1)
+		}
 		if r := []rune(content); len(r) > mentionTextCap {
 			// 按 rune 截断（issue #120 顺带：字节截断让中文尾部乱码）。
 			content = string(r[:mentionTextCap]) + "\n…（截断）"
@@ -100,7 +113,7 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 		// 动态围栏（issue #178）：@ 引用的 Markdown 含行首裸 ``` 会提前
 		// 闭合固定围栏——与导出/管道共用 FenceFor。
 		fence := exporthtml.FenceFor(content)
-		expansions = append(expansions, fmt.Sprintf("@%s：\n%s\n%s\n%s", rel, fence, content, fence))
+		expansions = append(expansions, fmt.Sprintf("@%s：\n%s\n%s\n%s", header, fence, content, fence))
 	}
 	if len(expansions) > 0 {
 		out = out + "\n\n" + strings.Join(expansions, "\n\n")
@@ -249,4 +262,65 @@ func renderDirTree(ws tools.Workspace, root string) (string, bool) {
 		return "", false
 	}
 	return tree, true
+}
+
+// splitMentionRange 拆 @path:lo-hi 形态：返回 (path, lo, hi)（无范围
+// 时 lo=hi=0）。单行 @path:120 即 120-120；坏范围数字按无范围处理
+// （正则已限定数字形态——这里只做解析）。
+func splitMentionRange(token string) (path string, lo, hi int) {
+	i := strings.LastIndexByte(token, ':')
+	if i < 0 {
+		return token, 0, 0
+	}
+	rng := token[i+1:]
+	parts := strings.SplitN(rng, "-", 2)
+	lo = atoi(parts[0])
+	if lo <= 0 {
+		return token, 0, 0 // 非数字尾巴：整体当路径（路径字符集不含冒号以外的数字尾形态）
+	}
+	hi = lo
+	if len(parts) == 2 {
+		hi = atoi(parts[1])
+	}
+	if hi < lo {
+		lo, hi = hi, lo
+	}
+	return token[:i], lo, hi
+}
+
+// sliceLines 取 1 起行窗 [lo, hi]（clamp：lo≥1、hi≤总行数）；返回窗
+// 内容与实际起始行（围栏头标注用）。窗口过界即整文件原样（空窗时）
+// 由调用方预算兜底。
+func sliceLines(content string, lo, hi int) (string, int) {
+	lines := strings.Split(content, "\n")
+	n := len(lines)
+	if n > 0 && lines[n-1] == "" {
+		n-- // 尾随换行产的空段不是一行
+	}
+	if lo < 1 {
+		lo = 1
+	}
+	if hi > n {
+		hi = n
+	}
+	if lo > hi {
+		return content, 1
+	}
+	return strings.Join(lines[lo-1:hi], "\n"), lo
+}
+
+// atoi 是 strconv.Atoi 的窄形态（正则已保证数字——失败返回 0 走无范
+// 围路径）。
+func atoi(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+		if n > 1<<30 {
+			return 0 // 病态大数：按无范围处理
+		}
+	}
+	return n
 }
