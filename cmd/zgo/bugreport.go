@@ -117,4 +117,4 @@ func toolchainLine(bin, why string) string {
 
 // zgoVersion 是 CLI 报告用的版本常量（与 mygo.json 同步维护——发布轮
 // 一起改；无构建期注入面，读 mygo.json 会受运行目录影响）。
-const zgoVersion = "0.11.0"
+const zgoVersion = "0.12.0"

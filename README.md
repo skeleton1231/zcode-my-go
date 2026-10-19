@@ -164,6 +164,19 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   （默认只读四件，--all 开全量）——ZCode/Claude Code/Cursor 可直接调用
   zgo 的 path-jail 工具。
 
+- **成本核算**：$/Mtok 牌价（目录近似 + settings.pricing 覆盖）——日账按
+  条目实际模型折算；/usage 成本行、归因 $ 合计、`zgo usage --days=N` 每日 $ 列。
+- **双语界面**：zh 基准 + en 覆盖（settings.lang / ZGO_LANG）；CLI 帮助、预
+  算通知与 TUI 状态语。
+- **自然语言调度**：`zgo cron add --at "每天下午3点"`——认不出明确报错不猜。
+- **提示钩子**：userPromptSubmit——提交前见原始提示，exit 2 拦截 / JSON 改写；
+  hook 家族九个注入点齐备。
+- **跨会话引用**：`@session:<前缀>` 把旧会话最近对话带进当前消息。
+- **生命周期与合规**：会话保留期到期归档（retired/restore）；工具执行审计
+  （auditLog——bash 命令等参数摘要打码落盘，zgo audit 查看）；嵌套循环保
+  留独立遥测 span。
+- **符号搜索**：symbol 工具（gopls workspace/symbol）——「不知道符号在哪」
+  先 symbol 再定位。
 ## 快速开始
 
 只依赖 Go 1.27+：
