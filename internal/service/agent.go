@@ -1063,8 +1063,8 @@ func (s *AgentService) ContinueSession(workspace string) (agent.SessionInfo, boo
 	var best agent.SessionInfo
 	found := false
 	for _, info := range s.ListSessions() {
-		if info.Workspace != workspace {
-			continue
+		if info.Workspace != workspace || info.Archived {
+			continue // 归档会话不参与 -c 恢复（spec 规则 82）
 		}
 		if !found || info.UpdatedAt.After(best.UpdatedAt) {
 			best, found = info, true
@@ -2546,4 +2546,17 @@ func firstSentence(desc string) string {
 		return string(r[:80]) + "…"
 	}
 	return desc
+}
+
+// SetSessionArchived 切换归档组织态（spec 规则 82）：接受 id 或唯一
+// 前缀；归档不删内容——转录/搜索/导出面不变，列表与 -c 恢复默认跳过。
+func (s *AgentService) SetSessionArchived(idOrPrefix string, on bool) error {
+	id, ok := s.ResolveSession(idOrPrefix)
+	if !ok {
+		return fmt.Errorf("no unique session %q", idOrPrefix)
+	}
+	if !s.mgr.SetArchivedById(id, on) {
+		return fmt.Errorf("archiving session: %s", id)
+	}
+	return nil
 }

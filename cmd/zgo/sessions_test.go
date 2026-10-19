@@ -134,3 +134,77 @@ func TestResolveSessionUniqueness(t *testing.T) {
 		t.Fatal("unknown resolved")
 	}
 }
+
+// TestSessionsArchiveCLI（spec 规则 82）：archive 后 list 默认隐藏、
+// --archived 只看归档、--all 全量；unarchive 复原；-c 恢复跳过归档。
+func TestSessionsArchiveCLI(t *testing.T) {
+	// 同秒创建的两会话共享时间戳前缀（shortID 互为前缀）——按标题断言。
+	dir, ids := seedCLI(t)
+
+	code, _ := runSessionsCaptured(t, dir, "archive", ids[0])
+	if code != 0 {
+		t.Fatal("archive failed")
+	}
+	_, out := runSessionsCaptured(t, dir, "list")
+	if strings.Contains(out, "修登录样式") || !strings.Contains(out, "部署脚本排错") {
+		t.Fatalf("default list should hide archived:\n%s", out)
+	}
+	_, out = runSessionsCaptured(t, dir, "list", "--archived")
+	if !strings.Contains(out, "修登录样式") || strings.Contains(out, "部署脚本排错") {
+		t.Fatalf("--archived should show only archived:\n%s", out)
+	}
+	_, out = runSessionsCaptured(t, dir, "list", "--all")
+	if !strings.Contains(out, "修登录样式") || !strings.Contains(out, "部署脚本排错") {
+		t.Fatalf("--all should show both:\n%s", out)
+	}
+
+	if code, _ := runSessionsCaptured(t, dir, "unarchive", ids[0]); code != 0 {
+		t.Fatal("unarchive failed")
+	}
+	_, out = runSessionsCaptured(t, dir, "list")
+	if !strings.Contains(out, "修登录样式") {
+		t.Fatalf("unarchived session missing from default list:\n%s", out)
+	}
+	if code, _ := runSessionsCaptured(t, dir, "archive", "zzz-nope"); code == 0 {
+		t.Fatal("unknown session accepted")
+	}
+}
+
+// TestArchivePersistsAcrossRestart（spec 规则 82）：归档态落盘（meta
+// 行）——新服务实例（同 dataDir）默认列表仍隐藏、-c 恢复跳过。
+func TestArchivePersistsAcrossRestart(t *testing.T) {
+	dir, ids := seedCLI(t)
+	if code, _ := runSessionsCaptured(t, dir, "archive", ids[1]); code != 0 {
+		t.Fatal("archive failed")
+	}
+
+	svc, err := service.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	// 列表态：归档标记在（信息仍可取，只是默认过滤）。
+	infos := svc.ListSessions()
+	byID := map[string]bool{}
+	for _, i := range infos {
+		byID[i.ID] = i.Archived
+	}
+	if !byID[ids[1]] || byID[ids[0]] {
+		t.Fatalf("archive flags wrong after restart: %+v", infos)
+	}
+	// -c 恢复（同工作区）跳过归档会话——ids[0] 是更早的会话但未归档。
+	// seedCLI 两条同工作区：归档了新的（ids[1]），-c 应返回 ids[0]。
+	ws := func() string {
+		for _, i := range infos {
+			if i.ID == ids[0] {
+				return i.Workspace
+			}
+		}
+		t.Fatal("ids[0] gone")
+		return ""
+	}()
+	cont, ok := svc.ContinueSession(ws)
+	if !ok || cont.ID != ids[0] {
+		t.Fatalf("-c should skip archived: got %+v ok=%v", cont, ok)
+	}
+}

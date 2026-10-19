@@ -656,6 +656,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    件不同窗各自展开（seen 键含窗）；无范围形态不变。数字形态由正则
    限定，病态大数按无范围处理 Picture-free（>1<<30 拒绝）。
 
+82. 会话归档（ZCode tasks-index 组织态的 Zgo 形态）：组织态与内容
+   正交——归档不删内容（转录/搜索/导出面不变），只影响「活跃面」。
+   meta 行增 archived 标志（SessionInfo.Archived；meta 首行重写持
+   久——与 Rename 同路径）；`zgo sessions archive|unarchive <id|前
+   缀>`；list 默认隐藏归档（--archived 只看归档、--all 全量）；
+   `-c/--continue` 恢复跳过归档会话（同工作区取最近未归档）。跨会
+   话搜索照常搜归档内容（内容可查、组织态只管列表）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
