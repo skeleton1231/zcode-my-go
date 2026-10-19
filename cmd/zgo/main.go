@@ -128,6 +128,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "models" {
 		os.Exit(runModels(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "audit" {
+		os.Exit(runAudit(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mcp" && len(os.Args) > 2 && os.Args[2] == "serve" {
 		os.Exit(runMCPServe(os.Args[3:]))
 	}

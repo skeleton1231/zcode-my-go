@@ -83,6 +83,10 @@ type LoopConfig struct {
 	// Telemetry records turn/model/tool spans (spec 规则 91)；nil 完全
 	// 关闭（零开销），loop 内的 nil Span 调用都安全空转。
 	Telemetry *telemetry.Tracer
+	// Audit observes tool executions for the compliance log (spec 规则
+	// 100)：参数摘要 + 成败 + 耗时——与遥测正交（那是性能维度）。
+	// nil 关闭；调用点拿原始参数（打码在 audit 包内统一做）。
+	Audit func(AuditEvent)
 	// SpanName 是回合根 span 的名字（规则 91 扩展：嵌套循环用
 	// subagent.turn / workflow.step 区分主回合 agent.turn）；空即默认。
 	SpanName string
@@ -94,6 +98,17 @@ type LoopConfig struct {
 	// until answered. Required when Permissions yields Ask; without it an
 	// ask is a denial on the safe side.
 	Ask func(AskRequest) AskResponse
+}
+
+// AuditEvent 是一次工具执行的审计记录面（spec 规则 100）；Args 是
+// 摘要（bash 命令全文 / 写类工具目标路径），由调用方组装。
+type AuditEvent struct {
+	SessionID string
+	Workspace string
+	Tool      string
+	Args      string
+	IsError   bool
+	Duration  time.Duration
 }
 
 // Loop runs agent turns over a transcript sink.
@@ -369,12 +384,22 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 	// 工具 span（spec 规则 91）：只记工具名与成败——参数与输出都不
 	// 进遥测（红线同规则 73：内容可能携带密钥/用户数据）。
 	span := l.turnSpan.Child("tool.call").SetAttr("tool", call.Name)
+	started := time.Now()
 	var result ToolResult
 	if stop == ai.StopLength {
 		result = ToolResult{IsError: true, Content: "error: the response hit the token " +
 			"limit before the tool arguments finished; re-issue the call in full"}
 	} else {
 		result = l.execute(ctx, turn, msg, call)
+	}
+	// 审计（spec 规则 100）：每次工具执行一条——参数摘要（bash 命令
+	// 全文/写类目标路径）+ 成败 + 耗时；打码在 audit 包内。
+	if l.cfg.Audit != nil {
+		l.cfg.Audit(AuditEvent{
+			SessionID: l.cfg.SessionID, Workspace: l.cfg.Workspace,
+			Tool: call.Name, Args: auditArgs(call),
+			IsError: result.IsError, Duration: time.Since(started),
+		})
 	}
 	span.SetAttr("is_error", fmt.Sprintf("%t", result.IsError))
 	if result.IsError {
@@ -385,6 +410,31 @@ func (l *Loop) executeOne(ctx context.Context, turn int, msg ai.Message, call ai
 	out := []ai.Block{{Kind: ai.BlockToolResult, ToolCallID: call.ID,
 		Text: result.Content, IsError: result.IsError, Diff: result.Diff}}
 	return append(out, result.Images...)
+}
+
+// auditArgs 组装审计参数摘要（spec 规则 100）：bash 记命令全文；写
+// 类工具记目标路径（内容体不记）；其余记原参数（audit 包内打码截
+// 断）。
+func auditArgs(call ai.Block) string {
+	var a map[string]any
+	if json.Unmarshal([]byte(call.Arguments), &a) != nil {
+		return call.Arguments
+	}
+	switch call.Name {
+	case "bash":
+		if c, ok := a["command"].(string); ok {
+			return c
+		}
+	case "write", "edit", "patch", "apply_patch", "read", "glob", "grep", "ls":
+		if p, ok := a["path"].(string); ok {
+			return p
+		}
+	case "webfetch":
+		if u, ok := a["url"].(string); ok {
+			return u
+		}
+	}
+	return call.Arguments
 }
 
 // shortReason 截断工具错误文本进 span（遥测只关心成败与摘要，全文可能

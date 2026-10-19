@@ -68,6 +68,7 @@ func configList(svc *service.AgentService) int {
 	fmt.Fprintf(os.Stdout, "autoMemory        %v\n", svc.AutoMemoryEnabled())
 	fmt.Fprintf(os.Stdout, "hardBudgetStop    %v\n", svc.HardBudgetStopEnabled())
 	fmt.Fprintf(os.Stdout, "lang               %s\n", svc.LangView())
+	fmt.Fprintf(os.Stdout, "auditLog           %v\n", svc.AuditLogEnabled())
 	teOn, teEx, teEp := svc.TelemetryView()
 	fmt.Fprintf(os.Stdout, "telemetry.enabled  %v\n", teOn)
 	fmt.Fprintf(os.Stdout, "telemetry.exporter %s\n", teEx)
@@ -100,6 +101,8 @@ func configGet(svc *service.AgentService, key string) int {
 		fmt.Fprintln(os.Stdout, svc.HardBudgetStopEnabled())
 	case "lang":
 		fmt.Fprintln(os.Stdout, svc.LangView())
+	case "auditLog":
+		fmt.Fprintln(os.Stdout, svc.AuditLogEnabled())
 	case "telemetry.enabled", "telemetry.exporter", "telemetry.endpoint":
 		teOn, teEx, teEp := svc.TelemetryView()
 		switch key {
@@ -210,6 +213,17 @@ func configSet(svc *service.AgentService, key, value string) int {
 			return 1
 		}
 		fmt.Fprintln(os.Stdout, "已更新", key)
+	case "auditLog":
+		on, err := strconv.ParseBool(value)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "auditLog 需要 true/false")
+			return 1
+		}
+		if err := svc.SetAuditLog(on); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stdout, "已更新 auditLog =", on)
 	case "lang":
 		if err := svc.SetLang(value); err != nil {
 			fmt.Fprintln(os.Stderr, "错误：", err)

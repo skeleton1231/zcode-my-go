@@ -28,6 +28,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
+	"github.com/skeleton1231/zcode-my-go/internal/audit"
 	"github.com/skeleton1231/zcode-my-go/internal/agents"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
@@ -96,6 +97,9 @@ type settings struct {
 	// SessionRetentionDays 是会话保留期（spec 规则 98）：超过 N 天未
 	// 活动的会话在启动时移入 archive/（不删——转录可恢复）；0=不限。
 	SessionRetentionDays int `json:"sessionRetentionDays,omitempty"`
+	// AuditLog 开工具执行审计（spec 规则 100）：默认关；开启后每次
+	// 工具执行一条 JSONL（参数摘要打码 + 成败 + 耗时）落 audit/。
+	AuditLog bool `json:"auditLog,omitempty"`
 }
 
 // telemetrySettings 是遥测配置（zgo config telemetry.* 三键）。
@@ -162,6 +166,7 @@ type AgentService struct {
 	tracer           *telemetry.Tracer                              // span 追踪（spec 规则 91；nil 关闭）
 	prices           *pricing.Table                                 // 模型牌价（spec 规则 93；含设置覆盖）
 	loc              i18n.Locale                                    // 界面语言（spec 规则 94）
+	audit            *audit.Log                                    // 工具执行审计（spec 规则 100；nil 关闭）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -430,6 +435,13 @@ func (s *AgentService) rewire() {
 	s.syncRedaction(cfg)
 	// 界面语言（spec 规则 94）：设置值优先，auto 走环境检测。
 	s.loc = i18n.Resolve(s.settings.Lang)
+	// 工具执行审计（spec 规则 100）：默认关；config set auditLog 即
+	// 时生效（rewire 每次设置变更后都会跑）。
+	if s.settings.AuditLog {
+		s.audit = audit.New(filepath.Dir(s.path))
+	} else {
+		s.audit = nil
+	}
 	// 遥测 tracer（spec 规则 91）：随设置重建（rewire 在 New 与每次
 	// 设置变更后都会跑）——config set telemetry.* 即时生效。
 	s.tracer = telemetry.New(s.settings.Telemetry.Enabled,
@@ -645,6 +657,8 @@ func (s *AgentService) rewire() {
 		// 生效（新回合用新导出器）；nil 即关闭；otlp 无 endpoint 时
 		// New 内部落回 file（本地面兜底）。
 		Telemetry: s.tracer,
+		// 审计挂点（spec 规则 100）：nil 即关闭（auditLog 未开）。
+		Audit: s.auditHook(),
 		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
 		// 随每个会话生效；配置为空时无钩子。
 		Hooks: agent.HooksFromCommands(s.settings.Hooks),
@@ -2460,6 +2474,27 @@ func (s *AgentService) FallbackModels() []string {
 	return append([]string(nil), s.settings.FallbackModels...)
 }
 
+// auditHook 构建审计闭包（spec 规则 100）：会话/工作区维度由 loop
+// 上下文补——此处只包 Entry 组装（打码截断在 audit 包内统一做）。
+func (s *AgentService) auditHook() func(agent.AuditEvent) {
+	if s.audit == nil {
+		return nil
+	}
+	return func(ev agent.AuditEvent) {
+		s.mu.Lock()
+		log := s.audit
+		s.mu.Unlock()
+		if log == nil {
+			return
+		}
+		log.Record(audit.Entry{
+			Time: time.Now(), SessionID: ev.SessionID, Workspace: ev.Workspace,
+			Tool: ev.Tool, Args: ev.Args,
+			IsError: ev.IsError, Duration: ev.Duration.Milliseconds(),
+		})
+	}
+}
+
 // Copy 返回当前语言的文案目录（spec 规则 94）——CLI/TUI 与服务层
 // 文案同源；语言随设置与环境解析，New 时定住（config set lang 后新
 // 进程生效）。
@@ -2481,6 +2516,27 @@ func (s *AgentService) SetLang(v string) error {
 	_, err := s.saveSettingsLocked(cfg)
 	s.mu.Unlock()
 	return err
+}
+
+// SetAuditLog 开关审计（spec 规则 100）：落盘 + rewire 即时生效。
+func (s *AgentService) SetAuditLog(on bool) error {
+	s.mu.Lock()
+	cfg := s.settings
+	cfg.AuditLog = on
+	_, err := s.saveSettingsLocked(cfg)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	s.rewire()
+	return nil
+}
+
+// AuditLogEnabled 报告审计开关。
+func (s *AgentService) AuditLogEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings.AuditLog
 }
 
 // LangView 返回当前语言设置（auto 表示环境检测）。

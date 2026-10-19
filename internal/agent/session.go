@@ -68,6 +68,8 @@ type Session struct {
 	ask        func(AskRequest) AskResponse
 	// telemetry 记录压缩 span（spec 规则 91）；nil 关闭。
 	telemetry *telemetry.Tracer
+	// audit 是工具执行审计挂点（spec 规则 100）；nil 关闭。
+	audit func(AuditEvent)
 }
 
 // Info returns the session's projection.
@@ -194,6 +196,7 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		ToolExecution: ParallelExecution,
 		Hooks:         s.hooks,
 		Telemetry:     s.telemetry,
+		Audit:         s.audit,
 		History:       s.Messages,
 		SessionID:     id,
 		Workspace:     workspace,
@@ -816,6 +819,8 @@ type Wiring struct {
 	// Telemetry 记录 agent span（turn/model/tool/compact，spec 规则
 	// 91）；nil 关闭（默认）。
 	Telemetry *telemetry.Tracer
+	// Audit 是工具执行审计挂点（spec 规则 100）；nil 关闭。
+	Audit func(AuditEvent)
 	// Question delivers the ask tool's questions to the user.
 	Question func(ctx context.Context, q Question) (string, error)
 	// ProjectRules loads the workspace's project rules (its .zgorules.json);
@@ -870,6 +875,7 @@ func (m *Manager) wire(s *Session) {
 	s.thinking = m.wiring.Thinking
 	s.hooks = m.wiring.Hooks
 	s.telemetry = m.wiring.Telemetry
+	s.audit = m.wiring.Audit
 	s.buildTools = m.wiring.Tools
 	if s.buildTools == nil {
 		s.buildTools = func(string, string) []Tool { return nil }

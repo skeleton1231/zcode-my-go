@@ -804,6 +804,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    跳过）；空输出=无命中。查询不定位文件，无 jail 面；只读低风险自
    动放行；输出照家族截断。语义工具四件套（definition/references/
    diagnostics/symbol）——「不知道符号在哪」先 symbol 再定位。
+100. 工具执行审计：settings.auditLog（默认关；config set 即时生效）
+   ——开启后每次工具执行一条 JSONL 落 dataDir/audit/audit-YYYYMMDD.jsonl：
+   {time, session, workspace, tool, args 摘要, isError, durationMs}。
+   参数摘要按工具取审计核心：bash 记命令全文、写类记目标路径、
+   webfetch 记 URL（内容体不记）；**过密钥打码 + 2KB 截断**（红线同规
+   则 73）。与遥测（规则 91）正交：遥测是性能维度无参数，审计是合规
+   维度有参数。`zgo audit` 最近 20 条（时间/工具/摘要/成败/耗时）；
+   --days=N 按日汇总；--on/--off 写设置键。权限决策维度暂不记
+   （gate 决策未透出——spec 如实注明，后续可扩）。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
