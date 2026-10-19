@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
@@ -18,7 +19,7 @@ import (
 //	zgo sessions search <关键词>          跨会话检索（标题/消息/工具参数）
 func runSessions(argv []string) int {
 	if len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "用法：zgo sessions <list|export|rm> …")
+		fmt.Fprintln(os.Stderr, "用法：zgo sessions <list|export|rm|search|sanitize> …")
 		return 2
 	}
 	dataDir, err := userDataDir()
@@ -43,6 +44,8 @@ func runSessions(argv []string) int {
 		return sessionsRm(svc, rest)
 	case "search":
 		return sessionsSearch(svc, rest)
+	case "sanitize":
+		return sessionsSanitize(svc, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令 %q\n", cmd)
 		return 2
@@ -164,4 +167,52 @@ func shortID(id string) string {
 		return id[:15]
 	}
 	return id
+}
+
+// sessionsSanitize 清洗存量会话 JSONL 里的密钥（spec 规则 73 的收尾
+// 半边：loop 咽喉点只保护新写入）。默认 dry-run 只报数；--apply 落盘
+// （原子重写，未命中行字节不动）。密钥面与打码器同源：当前设置的
+// 精确密钥（服务装载即喂）+ 高置信模式族。
+func sessionsSanitize(svc *service.AgentService, rest []string) int {
+	apply := false
+	for _, a := range rest {
+		switch a {
+		case "--apply":
+			apply = true
+		default:
+			fmt.Fprintf(os.Stderr, "未知参数 %q（--apply 落盘；缺省只报数）\n", a)
+			return 2
+		}
+	}
+	per, total, err := agent.SanitizeDir(svc.SessionDir(), !apply)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	if len(per) == 0 {
+		fmt.Println("（无会话可清洗）")
+		return 0
+	}
+	for name, res := range per {
+		if res.Redacted > 0 {
+			fmt.Printf("%s：%d/%d 行%s\n", name, res.Redacted, res.Lines, applyNote(apply))
+		}
+	}
+	if total == 0 {
+		fmt.Println("未发现密钥形态（精确密钥与模式族双面）——无需清洗")
+		return 0
+	}
+	if !apply {
+		fmt.Printf("共 %d 行含密钥形态（dry-run，未落盘；加 --apply 清洗）\n", total)
+	} else {
+		fmt.Printf("已清洗 %d 行\n", total)
+	}
+	return 0
+}
+
+func applyNote(apply bool) string {
+	if apply {
+		return "（已清洗）"
+	}
+	return "（含密钥形态）"
 }
