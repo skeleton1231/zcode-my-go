@@ -90,3 +90,10 @@ func (t *customTool) CapabilityForArgs(args string) permission.Capability {
 	}
 	return t.run.CapabilityForArgs(string(raw))
 }
+
+// IsCustomTool 报告工具是否来自 .zgo/tools 定义（/tools 清单的来源标
+// 记——按实例判定，撞内置名的过滤在装配面已完成）。
+func IsCustomTool(t agent.Tool) bool {
+	_, ok := t.(*customTool)
+	return ok
+}

@@ -82,3 +82,19 @@ func TestMissingRootClean(t *testing.T) {
 		t.Fatalf("missing root noisy: %+v", out)
 	}
 }
+
+// TestDiscoverDiagnostics：坏定义记 ⚠ 诊断（/tools 可见），好定义不受
+// 影响。
+func TestDiscoverDiagnostics(t *testing.T) {
+	dir := t.TempDir()
+	writeDef(t, dir, "noname.md", "---\ndescription: no name\n---\necho x")
+	writeDef(t, dir, "nobody.md", "---\nname: nobody\ndescription: d\n---\n")
+	writeDef(t, dir, "good.md", "---\nname: good\ndescription: fine\n---\necho ok")
+	out := Discover([]Root{{Base: dir, Scope: ScopeProject, FS: LocalFS{}}})
+	if len(out.Defs) != 1 || out.Defs[0].Name != "good" {
+		t.Fatalf("defs = %+v", out.Defs)
+	}
+	if len(out.Diagnostics) != 2 {
+		t.Fatalf("diagnostics = %+v (want 2)", out.Diagnostics)
+	}
+}

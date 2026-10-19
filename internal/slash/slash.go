@@ -256,6 +256,39 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/tools", usage: "/tools",
+		help: "列出本会话的模型可见工具面（内置/自定义/MCP；spec 规则 77）",
+		run: func(env *Env, _ string) string {
+			tools := env.Svc.ToolsFor(env.SessionID(), env.Workspace())
+			var b strings.Builder
+			if len(tools) == 0 {
+				return "[工具] 工具面不可用（会话未建立）"
+			}
+			b.WriteString("[工具] 本会话模型可见工具面：\n")
+			cur := ""
+			for _, t := range tools {
+				if t.Source != cur { // 来源分组（builtin 在前、custom/mcp 随装配序）
+					cur = t.Source
+					switch cur {
+					case "custom":
+						b.WriteString("  自定义（.zgo/tools）：\n")
+					case "mcp":
+						b.WriteString("  MCP 服务器：\n")
+					}
+				}
+				line := "  " + t.Name
+				if t.Description != "" {
+					line += "：" + t.Description
+				}
+				b.WriteString(line + "\n")
+			}
+			for _, d := range env.Svc.ToolDefDiagnostics(env.SessionID(), env.Workspace()) {
+				b.WriteString("  ⚠ " + d.Path + ": " + d.Message + "\n")
+			}
+			return strings.TrimRight(b.String(), "\n")
+		},
+	},
+	{
 		name: "/agents", usage: "/agents",
 		help: "列出本会话的后台子代理（状态/耗时/任务）",
 		run: func(env *Env, _ string) string {

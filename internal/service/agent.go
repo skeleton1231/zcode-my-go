@@ -114,24 +114,25 @@ type AgentService struct {
 	mcpClosed        bool                     // Close 后不再入表——在途握手完成即关闭（防进程泄漏）
 	memories         map[string]*tools.Memory // workspace-scoped long-term memory
 	memRoot          string
-	wsCache          map[string]tools.Workspace // sessionID → (possibly remote) workspace
-	wsClose          map[string]func()          // sessionID → dial cleanup
-	askMu            sync.Mutex                 // asker 单槽串行化（issue #79）
-	refreshMu        sync.Mutex                 // OAuth 刷新 single-flight（issue #136）
-	providerOverride func() ai.Provider         // e2e 注入（实例级，非全局）
-	autoTitleOn      bool                       // 首回合后自动命名（默认开）
-	autoMemoryOn     bool                       // 收尾自动记忆（默认开，spec 规则 74）
-	memFired         map[string]bool            // 记忆已发会话（每会话每进程一次）
-	memMu            sync.Mutex                 // memFired 的守卫
-	memWG            sync.WaitGroup             // 记忆 goroutine 的收束（Close 等待）
-	day              *usage.Day                 // 当日 token 记账（spec 规则 35）
-	titleWG          sync.WaitGroup             // 命名 goroutine 的收束（Close 等待）
-	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
-	idxWG            sync.WaitGroup             // 搜索索引异步落盘的收束（Close 等待）
-	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
-	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
-	trustStore       *trust.Store               // 工作区授信表（spec 规则 54）
-	searchIdx        *sessionidx.Index          // 跨会话搜索索引（spec 规则 71）
+	wsCache          map[string]tools.Workspace                     // sessionID → (possibly remote) workspace
+	wsClose          map[string]func()                              // sessionID → dial cleanup
+	askMu            sync.Mutex                                     // asker 单槽串行化（issue #79）
+	refreshMu        sync.Mutex                                     // OAuth 刷新 single-flight（issue #136）
+	providerOverride func() ai.Provider                             // e2e 注入（实例级，非全局）
+	autoTitleOn      bool                                           // 首回合后自动命名（默认开）
+	autoMemoryOn     bool                                           // 收尾自动记忆（默认开，spec 规则 74）
+	memFired         map[string]bool                                // 记忆已发会话（每会话每进程一次）
+	memMu            sync.Mutex                                     // memFired 的守卫
+	memWG            sync.WaitGroup                                 // 记忆 goroutine 的收束（Close 等待）
+	day              *usage.Day                                     // 当日 token 记账（spec 规则 35）
+	titleWG          sync.WaitGroup                                 // 命名 goroutine 的收束（Close 等待）
+	hookWG           sync.WaitGroup                                 // sessionStart 钩子的收束（Close 等待）
+	idxWG            sync.WaitGroup                                 // 搜索索引异步落盘的收束（Close 等待）
+	sched            *schedule.Scheduler                            // 定时自动化（specs/automation.md）
+	wfStore          *workflow.Store                                // 工作流定义与运行记录（spec 规则 48）
+	trustStore       *trust.Store                                   // 工作区授信表（spec 规则 54）
+	searchIdx        *sessionidx.Index                              // 跨会话搜索索引（spec 规则 71）
+	buildTools       func(workspace, sessionID string) []agent.Tool // 工具面装配（/tools 列举同源）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -390,6 +391,174 @@ func (s *AgentService) syncRedaction(cfg settings) {
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
 	s.syncRedaction(cfg)
+	// buildTools: see below (assigned before Wire).
+	s.buildTools = func(workspace, sessionID string) []agent.Tool {
+		s.mu.Lock()
+		state, ok := s.states[sessionID]
+		if !ok {
+			state = tools.NewStates()
+			s.states[sessionID] = state
+		}
+		// e2e provider 注入的持锁快照：嵌套循环（task/dispatch/
+		// workflow/后台 agent）必须与主循环同一 provider 源——直连
+		// providerFor 会让注入对子任务不生效、真实客户端带着空
+		// key 出网。
+		s.mu.Unlock()
+		ov := s.providerOverride
+		provider := func() ai.Provider {
+			if ov != nil {
+				return ov()
+			}
+			return s.providerFor(cfg)
+		}
+		model := cfg.Model
+		question := s.question
+		// 先拨号再建嵌套工具面：ssh:// 会话的子代理/工作流步骤经
+		// ReadOnlyW 用 Remote 工作区（此前字符串重建的是本地面）。
+		ws := s.workspaceFor(sessionID, workspace)
+		roTools := tools.ReadOnlyW(ws)
+		// allTools 在 task/dispatch 执行时才调用（闭包变量 all 此时已
+		// 装配完毕）——白名单过滤需要完整会话工具面。
+		var all []agent.Tool
+		allTools := func() []agent.Tool { return all }
+		// subtaskCfg 解析一次子任务装配：agentName 空走默认研究子代
+		// 理（行为与既往一致）；命中 .zgo/agents 定义则用其 persona，
+		// 工具面按白名单从会话工具集选取——白名单只收窄不放宽，词表
+		// 外的名字忽略；edit 族继承主权限门（spec 规则 51）。
+		subtaskCfg := func(agentName string) (agent.SubtaskConfig, error) {
+			if agentName == "" {
+				return agent.SubtaskConfig{
+					Provider: provider(), Model: model,
+					System: agent.SubtaskSystem(), Tools: roTools,
+				}, nil
+			}
+			def, ok := agents.Find(agents.Discover(s.agentRoots(sessionID, workspace)), agentName)
+			if !ok {
+				names := agents.Names(agents.Discover(s.agentRoots(sessionID, workspace)))
+				if len(names) == 0 {
+					names = []string{"(none defined — add .zgo/agents/*.md)"}
+				}
+				return agent.SubtaskConfig{}, fmt.Errorf(
+					"unknown agent %q; available: %s", agentName, strings.Join(names, ", "))
+			}
+			cfg := agent.SubtaskConfig{
+				Provider: provider(), Model: model,
+				System: def.System, Tools: roTools,
+			}
+			if len(def.Tools) > 0 {
+				// 白名单只收窄不放宽：候选池 = 只读族 ∪ 会话工具集，
+				// 但词表封闭（spec 规则 51）——task/dispatch/agent 等
+				// 委派工具与 bash 不在词表内，防嵌套递归与直通执行；
+				// 词表外的名字静默忽略，拼写错误的兜底是报错清单。
+				pool := append(append([]agent.Tool{}, roTools...), allTools()...)
+				cfg.Tools = filterToolsByName(pool, def.Tools)
+				cfg.Permissions = permissionFor(s, sessionID)
+			}
+			return cfg, nil
+		}
+		task := tools.NewTask(func(ctx context.Context, prompt, agentName string) (agent.SubtaskResult, error) {
+			cfg, err := subtaskCfg(agentName)
+			if err != nil {
+				return agent.SubtaskResult{}, err
+			}
+			return agent.RunSubtask(ctx, cfg, prompt)
+		})
+		contextRead := contextReader(ws)
+		// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
+		// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
+		agentRunner := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
+			// 升级提问（spec 规则 63，ZCode escalate）：后台研究代理
+			// 遇到只有用户能答的问题时经会话提问通道升级——问题带
+			// 代理标识前缀，答案回转录继续跑。
+			agentAsk := tools.NewAsk(func(ctx context.Context, q agent.Question) (string, error) {
+				return question(ctx, agent.Question{
+					Text:    "[后台代理 " + id + "] " + q.Text,
+					Options: q.Options,
+				})
+			})
+			tools := append(append([]agent.Tool{}, roTools...), agentAsk)
+			return agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
+				Provider: provider(),
+				Model:    model,
+				System:   agent.SubtaskSystem(),
+				Tools:    tools,
+			}, prior, prompt)
+		}
+		all = append(tools.AllW(ws, state, question), task,
+			tools.NewMemoryTool(s.memoryFor(workspace)),
+			tools.NewSkillTool(func() []skills.Root {
+				return s.skillRoots(sessionID, workspace)
+			}),
+			// webfetch 与工作区无关，进程级共享（缓存跨会话）。
+			tools.NewWebFetchTool(tools.WebFetcher),
+			// 后台子代理三件套 + 续话（spec 规则 50/51）。
+			tools.NewAgentTool(state.Agents, agentRunner),
+			tools.NewAgentOutputTool(state.Agents),
+			tools.NewAgentStopTool(state.Agents),
+			tools.NewAgentSendTool(state.Agents, agentRunner))
+		wfProvider := provider
+		wfModel := cfg.Model
+		wfPerms := permissionFor(s, sessionID)
+		wfAsk := s.ask
+		all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string, agentName string) []agent.SubtaskResult {
+			cfg, err := subtaskCfg(agentName)
+			if err != nil {
+				// 整批失败同型：每个条目一份错误文本（RunSubtasks 的
+				// 单条失败语义——不拖垮别的 dispatch 调用）。
+				out := make([]agent.SubtaskResult, len(prompts))
+				for i := range out {
+					out[i] = agent.SubtaskResult{Text: "error: " + err.Error()}
+				}
+				return out
+			}
+			return agent.RunSubtasks(ctx, cfg, prompts)
+		}))
+		all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
+			return s.execWorkflow(ctx, sessionID, workspace, req,
+				func(ctx context.Context, steps []agent.WorkflowStep, prefill map[int]agent.StepResult) ([]agent.StepResult, error) {
+					return agent.RunWorkflow(ctx, agent.WorkflowConfig{
+						Provider:    wfProvider(),
+						Model:       wfModel,
+						System:      prompt.SystemFS(workspace, contextRead),
+						ReadOnly:    roTools,
+						Editable:    tools.AllW(ws, state, question),
+						Permissions: wfPerms,
+						Ask:         wfAsk,
+						Prefill:     prefill,
+					}, steps)
+				})
+		}))
+		for _, server := range s.mcpServers() {
+			all = append(all, mcp.AgentTools(server)...)
+		}
+		// gopls 三工具（spec 规则 67/69）：仅本地工作区 + PATH 有
+		// gopls 时声明（ssh:// 文件不在本地盘，wasm 无子进程）——
+		// 模型可见面随环境稳定收窄，doctor 引导安装。查询走常驻
+		// daemon（每根一进程、崩溃透明重启、失败退 CLI）。
+		if !ws.IsRemote() && lsp.Available() {
+			all = append(all, tools.NewGoplsTools(ws,
+				func(ctx context.Context, dir string, args ...string) (string, error) {
+					return lsp.DaemonRun(ctx, dir, lsp.QueryTimeout, args...)
+				})...)
+		}
+		// 自定义工具（spec 规则 75）：.zgo/tools 命令模板包装成模
+		// 型可调用工具——工作区层过信任门（tooldefRoots 内）；内
+		// 置名优先，撞名的 def 不声明。
+		if defs := tooldefs.Discover(s.tooldefRoots(sessionID, workspace)).Defs; len(defs) > 0 {
+			names := map[string]bool{}
+			for _, t := range all {
+				names[t.Name()] = true
+			}
+			var free []tooldefs.Def
+			for _, d := range defs {
+				if !names[d.Name] {
+					free = append(free, d)
+				}
+			}
+			all = append(all, tools.NewCustomTools(free, ws, state.Jobs)...)
+		}
+		return all
+	}
 	s.mgr.Wire(agent.Wiring{
 		Provider: func() ai.Provider {
 			if s.providerOverride != nil {
@@ -402,173 +571,7 @@ func (s *AgentService) rewire() {
 		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
 		// 随每个会话生效；配置为空时无钩子。
 		Hooks: agent.HooksFromCommands(s.settings.Hooks),
-		Tools: func(workspace, sessionID string) []agent.Tool {
-			s.mu.Lock()
-			state, ok := s.states[sessionID]
-			if !ok {
-				state = tools.NewStates()
-				s.states[sessionID] = state
-			}
-			// e2e provider 注入的持锁快照：嵌套循环（task/dispatch/
-			// workflow/后台 agent）必须与主循环同一 provider 源——直连
-			// providerFor 会让注入对子任务不生效、真实客户端带着空
-			// key 出网。
-			s.mu.Unlock()
-			ov := s.providerOverride
-			provider := func() ai.Provider {
-				if ov != nil {
-					return ov()
-				}
-				return s.providerFor(cfg)
-			}
-			model := cfg.Model
-			question := s.question
-			// 先拨号再建嵌套工具面：ssh:// 会话的子代理/工作流步骤经
-			// ReadOnlyW 用 Remote 工作区（此前字符串重建的是本地面）。
-			ws := s.workspaceFor(sessionID, workspace)
-			roTools := tools.ReadOnlyW(ws)
-			// allTools 在 task/dispatch 执行时才调用（闭包变量 all 此时已
-			// 装配完毕）——白名单过滤需要完整会话工具面。
-			var all []agent.Tool
-			allTools := func() []agent.Tool { return all }
-			// subtaskCfg 解析一次子任务装配：agentName 空走默认研究子代
-			// 理（行为与既往一致）；命中 .zgo/agents 定义则用其 persona，
-			// 工具面按白名单从会话工具集选取——白名单只收窄不放宽，词表
-			// 外的名字忽略；edit 族继承主权限门（spec 规则 51）。
-			subtaskCfg := func(agentName string) (agent.SubtaskConfig, error) {
-				if agentName == "" {
-					return agent.SubtaskConfig{
-						Provider: provider(), Model: model,
-						System: agent.SubtaskSystem(), Tools: roTools,
-					}, nil
-				}
-				def, ok := agents.Find(agents.Discover(s.agentRoots(sessionID, workspace)), agentName)
-				if !ok {
-					names := agents.Names(agents.Discover(s.agentRoots(sessionID, workspace)))
-					if len(names) == 0 {
-						names = []string{"(none defined — add .zgo/agents/*.md)"}
-					}
-					return agent.SubtaskConfig{}, fmt.Errorf(
-						"unknown agent %q; available: %s", agentName, strings.Join(names, ", "))
-				}
-				cfg := agent.SubtaskConfig{
-					Provider: provider(), Model: model,
-					System: def.System, Tools: roTools,
-				}
-				if len(def.Tools) > 0 {
-					// 白名单只收窄不放宽：候选池 = 只读族 ∪ 会话工具集，
-					// 但词表封闭（spec 规则 51）——task/dispatch/agent 等
-					// 委派工具与 bash 不在词表内，防嵌套递归与直通执行；
-					// 词表外的名字静默忽略，拼写错误的兜底是报错清单。
-					pool := append(append([]agent.Tool{}, roTools...), allTools()...)
-					cfg.Tools = filterToolsByName(pool, def.Tools)
-					cfg.Permissions = permissionFor(s, sessionID)
-				}
-				return cfg, nil
-			}
-			task := tools.NewTask(func(ctx context.Context, prompt, agentName string) (agent.SubtaskResult, error) {
-				cfg, err := subtaskCfg(agentName)
-				if err != nil {
-					return agent.SubtaskResult{}, err
-				}
-				return agent.RunSubtask(ctx, cfg, prompt)
-			})
-			contextRead := contextReader(ws)
-			// agentRunner 是后台子代理的运行器（spec 规则 50/51）：
-			// prior 为空即全新任务，非空即续跑（历史由注册表提供）。
-			agentRunner := func(ctx context.Context, id, prompt string, prior []ai.Message) (agent.SubtaskResult, []ai.Message, error) {
-				// 升级提问（spec 规则 63，ZCode escalate）：后台研究代理
-				// 遇到只有用户能答的问题时经会话提问通道升级——问题带
-				// 代理标识前缀，答案回转录继续跑。
-				agentAsk := tools.NewAsk(func(ctx context.Context, q agent.Question) (string, error) {
-					return question(ctx, agent.Question{
-						Text:    "[后台代理 " + id + "] " + q.Text,
-						Options: q.Options,
-					})
-				})
-				tools := append(append([]agent.Tool{}, roTools...), agentAsk)
-				return agent.RunSubtaskSeeded(ctx, agent.SubtaskConfig{
-					Provider: provider(),
-					Model:    model,
-					System:   agent.SubtaskSystem(),
-					Tools:    tools,
-				}, prior, prompt)
-			}
-			all = append(tools.AllW(ws, state, question), task,
-				tools.NewMemoryTool(s.memoryFor(workspace)),
-				tools.NewSkillTool(func() []skills.Root {
-					return s.skillRoots(sessionID, workspace)
-				}),
-				// webfetch 与工作区无关，进程级共享（缓存跨会话）。
-				tools.NewWebFetchTool(tools.WebFetcher),
-				// 后台子代理三件套 + 续话（spec 规则 50/51）。
-				tools.NewAgentTool(state.Agents, agentRunner),
-				tools.NewAgentOutputTool(state.Agents),
-				tools.NewAgentStopTool(state.Agents),
-				tools.NewAgentSendTool(state.Agents, agentRunner))
-			wfProvider := provider
-			wfModel := cfg.Model
-			wfPerms := permissionFor(s, sessionID)
-			wfAsk := s.ask
-			all = append(all, tools.NewDispatch(func(ctx context.Context, prompts []string, agentName string) []agent.SubtaskResult {
-				cfg, err := subtaskCfg(agentName)
-				if err != nil {
-					// 整批失败同型：每个条目一份错误文本（RunSubtasks 的
-					// 单条失败语义——不拖垮别的 dispatch 调用）。
-					out := make([]agent.SubtaskResult, len(prompts))
-					for i := range out {
-						out[i] = agent.SubtaskResult{Text: "error: " + err.Error()}
-					}
-					return out
-				}
-				return agent.RunSubtasks(ctx, cfg, prompts)
-			}))
-			all = append(all, tools.NewWorkflow(func(ctx context.Context, req tools.WorkflowRequest) (tools.WorkflowOutcome, error) {
-				return s.execWorkflow(ctx, sessionID, workspace, req,
-					func(ctx context.Context, steps []agent.WorkflowStep, prefill map[int]agent.StepResult) ([]agent.StepResult, error) {
-						return agent.RunWorkflow(ctx, agent.WorkflowConfig{
-							Provider:    wfProvider(),
-							Model:       wfModel,
-							System:      prompt.SystemFS(workspace, contextRead),
-							ReadOnly:    roTools,
-							Editable:    tools.AllW(ws, state, question),
-							Permissions: wfPerms,
-							Ask:         wfAsk,
-							Prefill:     prefill,
-						}, steps)
-					})
-			}))
-			for _, server := range s.mcpServers() {
-				all = append(all, mcp.AgentTools(server)...)
-			}
-			// gopls 三工具（spec 规则 67/69）：仅本地工作区 + PATH 有
-			// gopls 时声明（ssh:// 文件不在本地盘，wasm 无子进程）——
-			// 模型可见面随环境稳定收窄，doctor 引导安装。查询走常驻
-			// daemon（每根一进程、崩溃透明重启、失败退 CLI）。
-			if !ws.IsRemote() && lsp.Available() {
-				all = append(all, tools.NewGoplsTools(ws,
-					func(ctx context.Context, dir string, args ...string) (string, error) {
-						return lsp.DaemonRun(ctx, dir, lsp.QueryTimeout, args...)
-					})...)
-			}
-			// 自定义工具（spec 规则 75）：.zgo/tools 命令模板包装成模
-			// 型可调用工具——工作区层过信任门（tooldefRoots 内）；内
-			// 置名优先，撞名的 def 不声明。
-			if defs := tooldefs.Discover(s.tooldefRoots(sessionID, workspace)).Defs; len(defs) > 0 {
-				names := map[string]bool{}
-				for _, t := range all {
-					names[t.Name()] = true
-				}
-				var free []tooldefs.Def
-				for _, d := range defs {
-					if !names[d.Name] {
-						free = append(free, d)
-					}
-				}
-				all = append(all, tools.NewCustomTools(free, ws, state.Jobs)...)
-			}
-			return all
-		},
+		Tools: s.buildTools,
 		System: func(workspace, sessionID string) string {
 			sys := prompt.SystemFS(workspace, contextReader(s.workspaceFor(sessionID, workspace))) +
 				s.memoryFor(workspace).Section()
@@ -2497,3 +2500,50 @@ func (s *AgentService) DisableAutoMemoryForTesting() { s.autoMemoryOn = false }
 
 // AutoMemoryEnabled 报告收尾自动记忆开关（spec 规则 74；缺省 = 开）。
 func (s *AgentService) AutoMemoryEnabled() bool { return s.autoMemoryOn }
+
+// ToolInfo 是 /tools 清单的一行（spec 规则 77）：名称 + 一句描述 +
+// 来源（builtin/custom/mcp）。
+type ToolInfo struct {
+	Name        string
+	Description string
+	Source      string
+}
+
+// ToolsFor 列出会话的模型可见工具面（与 loop 装配同一闭包——列出的
+// 就是模型看到的）。描述取首句截断。
+func (s *AgentService) ToolsFor(sessionID, workspace string) []ToolInfo {
+	if s.buildTools == nil {
+		return nil
+	}
+	var out []ToolInfo
+	for _, t := range s.buildTools(workspace, sessionID) {
+		if t == nil {
+			continue
+		}
+		src := "builtin"
+		switch {
+		case tools.IsCustomTool(t):
+			src = "custom"
+		case strings.HasPrefix(t.Name(), "mcp_"):
+			src = "mcp"
+		}
+		out = append(out, ToolInfo{Name: t.Name(), Description: firstSentence(t.Description()), Source: src})
+	}
+	return out
+}
+
+// ToolDefDiagnostics 返回自定义工具定义的非致命问题（/tools 的 ⚠ 行）。
+func (s *AgentService) ToolDefDiagnostics(sessionID, workspace string) []tooldefs.Diagnostic {
+	return tooldefs.Discover(s.tooldefRoots(sessionID, workspace)).Diagnostics
+}
+
+// firstSentence 截描述首句（句号/换行前，≤80 rune）。
+func firstSentence(desc string) string {
+	if i := strings.IndexAny(desc, ".\n。"); i > 0 {
+		desc = desc[:i]
+	}
+	if r := []rune(desc); len(r) > 80 {
+		return string(r[:80]) + "…"
+	}
+	return desc
+}

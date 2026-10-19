@@ -375,6 +375,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    为有界目录树（深度 3/条目 400/单树 32KB，超限截断标注）；目录尾
    斜杠+两层缩进；与文本引用共享总量预算；SSH 远程同构。
 
+**/tools 工具面清单**（spec 规则 77）：终端一命令列出本会话模型可
+   见工具（与 loop 装配同一闭包同源）；来源分组（内置/自定义/MCP，
+   按实例类型判定）；描述首句 ≤80 rune；坏定义 ⚠ 行。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
