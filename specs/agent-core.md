@@ -530,6 +530,17 @@ dc907a4 (feat: glob and grep honor .gitignore)
    Files 显式失效再拉（不依赖服务端文件监视器，磁盘改动即刻可见）；
    全工作区 check（无 LSP 等价）与未知子命令留 CLI 路径。服务端主
    动请求（workspace/configuration 等）必须回应——否则握手挂起。
+
+71. 跨会话搜索索引（ZCode task-index 的 Zgo 形态）：internal/
+   sessionidx——把每个会话 JSONL 的重放态有效文本抽成小写 haystack
+   段（每消息：文本拼接段在前、工具调用参数段在后——与 matchSnippet
+   的匹配优先序一致），持久化 dataDir/search-index.json（原子写、
+   版本不符/损坏自愈为空重建）。查询走索引段（不读文件不解析
+   JSON），未入索引的会话（单会话 corpus 超 1MB / 总量超 64MB / 文
+   件损坏）退回 live 流式扫描——两路径消费同一抽取语义，命中与片
+   段按构造等价（等价断言锚点）。保鲜：(size, mtime) 命中不重读；
+   rewind/追加改 size 即触发重抽；会话删除剪条目。落盘异步（索引
+   是加速器不是账本——写失败下次重建）。
 ## 状态所有者
 
 | 状态          | 所有者                        | 说明                          |

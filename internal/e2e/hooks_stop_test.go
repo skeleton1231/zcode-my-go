@@ -48,7 +48,7 @@ func newWithHooks(t *testing.T, dataDir string, turns ...Turn) *Harness {
 }
 
 // TestE2EStopHookBlocksThenContinues：回合自然收尾被 stop 钩子阻止一次
-//（helper 首跑 exit 2、落标记文件后放行），续跑消息进转录、第二回合执
+// （helper 首跑 exit 2、落标记文件后放行），续跑消息进转录、第二回合执
 // 行后自然结束（共两次 provider 请求）。
 func TestE2EStopHookBlocksThenContinues(t *testing.T) {
 	dataDir := t.TempDir()

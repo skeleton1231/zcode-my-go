@@ -75,6 +75,7 @@ internal/tools        内置工具：read/write/edit/bash/grep/glob/ls/apply_pat
                       agent 四件套（后台子代理 spawn/output/stop/send 续话）
                       todo/ask/memory/task/dispatch/workflow
 internal/prompt       系统提示（环境、git、项目上下文文件）
+internal/sessionidx  跨会话搜索索引（重放态文本段 + mtime/size 增量 + 超限退扫描）
 internal/service      AgentService：UI 唯一入口（设置、会话、Chat 回调、
                       权限/提问通道、压缩入口）
 internal/uiapp        native UI：chatState 折叠 + App 视图 + 弹窗

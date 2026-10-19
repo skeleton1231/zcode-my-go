@@ -36,6 +36,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
+	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 	"github.com/skeleton1231/zcode-my-go/internal/trust"
@@ -114,9 +115,11 @@ type AgentService struct {
 	day              *usage.Day                 // 当日 token 记账（spec 规则 35）
 	titleWG          sync.WaitGroup             // 命名 goroutine 的收束（Close 等待）
 	hookWG           sync.WaitGroup             // sessionStart 钩子的收束（Close 等待）
+	idxWG            sync.WaitGroup             // 搜索索引异步落盘的收束（Close 等待）
 	sched            *schedule.Scheduler        // 定时自动化（specs/automation.md）
 	wfStore          *workflow.Store            // 工作流定义与运行记录（spec 规则 48）
 	trustStore       *trust.Store               // 工作区授信表（spec 规则 54）
+	searchIdx        *sessionidx.Index          // 跨会话搜索索引（spec 规则 71）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -131,6 +134,7 @@ func New(dataDir string) (*AgentService, error) {
 		autoTitleOn: true,
 		wfStore:     workflow.NewStore(dataDir),
 		trustStore:  trust.NewStore(dataDir),
+		searchIdx:   sessionidx.Load(filepath.Join(dataDir, "search-index.json")),
 	}
 	if err := s.loadSettings(); err != nil {
 		return nil, err
@@ -314,6 +318,9 @@ func (s *AgentService) Close() {
 	// 命名 goroutine 可能在写会话 meta——先等它落地（最长一次 15s 补
 	// 全超时），否则退出竞态会让 TempDir 清理/退出路径看到半写状态。
 	s.titleWG.Wait()
+	// 索引异步落盘同理收束（spec 规则 71）——goroutine 活过 TempDir
+	// 清理会复活文件（#160 同族教训）。
+	s.idxWG.Wait()
 	// sessionStart 钩子由 Close 收束（spec 规则 24）：外部命令可达 10s
 	// 超时，退出前等它跑完，避免钩子进程活过服务。
 	s.hookWG.Wait()

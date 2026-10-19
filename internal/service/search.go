@@ -10,6 +10,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
 )
 
 // 跨会话搜索（ZCode task-index 的轻量落地）：流式扫 JSONL，不整态装载。
@@ -36,6 +37,21 @@ func (s *AgentService) SearchSessions(query string) []SearchHit {
 		return nil
 	}
 	sessions := s.mgr.List() // newest first
+	// 索引保鲜（spec 规则 71）：(size, mtime) 命中的会话不重读文件；
+	// 变更异步落盘（索引是加速器不是账本——写失败下次重建）。
+	ids := make([]string, len(sessions))
+	for i, info := range sessions {
+		ids[i] = info.ID
+	}
+	if s.searchIdx.Refresh(ids, filepath.Join(s.dir(), "sessions")) {
+		// 异步落盘须被 Close 收束（spec 规则 71）——goroutine 活过
+		// TempDir 清理会复活文件（#160 同族教训）。
+		s.idxWG.Add(1)
+		go func() {
+			defer s.idxWG.Done()
+			_ = s.searchIdx.Save()
+		}()
+	}
 	hits := make([]SearchHit, 0, searchHitCap)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -51,7 +67,14 @@ func (s *AgentService) SearchSessions(query string) []SearchHit {
 		wg.Add(1)
 		go func(info agent.SessionInfo) {
 			defer wg.Done()
-			found := scanSession(filepath.Join(s.dir(), "sessions", info.ID+".jsonl"), query, info.Title)
+			var found []SearchHit
+			// 索引优先（O(1) 查段）；未命中（超限/损坏/缺失）退 live 扫描
+			//——两条路径消费同一抽取语义，结果按构造等价。
+			if e := s.searchIdx.Lookup(info.ID); e != nil {
+				found = matchSegments(e.Segments, query, info.Title)
+			} else {
+				found = scanSession(filepath.Join(s.dir(), "sessions", info.ID+".jsonl"), query, info.Title)
+			}
 			if len(found) == 0 {
 				return
 			}
@@ -184,11 +207,18 @@ func matchSnippet(m ai.Message, query string) (string, bool) {
 			return "", false
 		}
 	}
+	return snippetAround(hay, i, len(query)), true
+
+}
+
+// snippetAround 截命中窗口（live 扫描与索引段共用——两路径片段逐字节
+// 一致是等价断言的锚点）。
+func snippetAround(hay string, i, qlen int) string {
 	lo := i - searchSnippetWidth
 	if lo < 0 {
 		lo = 0
 	}
-	hi := i + len(query) + searchSnippetWidth
+	hi := i + qlen + searchSnippetWidth
 	if hi > len(hay) {
 		hi = len(hay)
 	}
@@ -199,7 +229,35 @@ func matchSnippet(m ai.Message, query string) (string, bool) {
 	if hi < len(hay) {
 		snippet += "…"
 	}
-	return snippet, true
+	return snippet
+}
+
+// matchSegments 在索引段上复刻 scanSession 的命中语义：按段序（=文件
+// 序）扫，消息的首个命中段定片段（matchSnippet 优先序——文本拼接段
+// 在前、工具参数段在后），同消息其余段跳过；候选上限与每会话产出同
+// 活路径（段已只含重放态存活消息，无 alive 过滤步骤）。
+func matchSegments(segs []sessionidx.Segment, query, title string) []SearchHit {
+	var out []SearchHit
+	const none = -1 << 30
+	lastOrd := none
+	for n, seg := range segs {
+		if seg.Ord == lastOrd {
+			continue // 该消息已入候选（首段即定片段）
+		}
+		i := strings.Index(seg.Text, query)
+		if i < 0 {
+			continue
+		}
+		lastOrd = seg.Ord
+		if n > searchCandidateCap {
+			break
+		}
+		out = append(out, SearchHit{Title: title, Snippet: snippetAround(seg.Text, i, len(query))})
+		if len(out) >= searchHitPerSess {
+			break
+		}
+	}
+	return out
 }
 
 // dir returns the sessions directory（manager 的落盘处）.

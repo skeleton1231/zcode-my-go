@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
 )
 
 func seedSession(t *testing.T, svc *AgentService, ws, text string) string {
@@ -153,4 +154,108 @@ func TestSearchSkipsCompactedPrefix(t *testing.T) {
 	if hits := svc.SearchSessions("压缩后的新问题"); len(hits) != 1 {
 		t.Fatalf("post-compaction content missing: %+v", hits)
 	}
+}
+
+// TestSearchIndexedMatchesLiveScan（spec 规则 71 的等价锚点）：同一转
+// 录，索引路径与 live 扫描路径的命中（含片段）必须逐字节一致——含
+// toolcall 参数命中、regenerate/compaction 重放语义、多次命中取前 N。
+func TestSearchIndexedMatchesLiveScan(t *testing.T) {
+	svc, _ := New(t.TempDir())
+	t.Cleanup(svc.Close)
+	id := seedSession(t, svc, t.TempDir(), "等价锚点会话")
+	writeJSONL(t, svc, id,
+		msgLine("user", "等价锚点会话"),
+		msgLine("assistant", "谈及 deploy 的旧回答 parity-deploy-dead"),
+		msgLine("assistant", `{"blocks":[{"type":"toolCall","name":"bash","arguments":"{\"cmd\":\"deploy --dry-run\"}"}],"role":"assistant"}`),
+		`{"type":"regenerate","kept":2}`,
+		msgLine("assistant", "新的 deploy 结论 parity-deploy-live 之一"),
+		msgLine("assistant", "新的 deploy 结论 parity-deploy-live 之二"),
+		`{"type":"compaction","summary":"历史里 deploy 的摘要 parity-deploy-syn","kept":2}`,
+		msgLine("assistant", "压缩后 deploy 的回答 parity-deploy-final"),
+	)
+	for _, q := range []string{"parity-deploy", "dry-run", "parity-deploy-syn", "ghost"} {
+		qq := strings.ToLower(q)
+		indexed := matchSegments(mustExtract(t, svc, id), qq, "title")
+		live := scanSession(jsonlPath(t, svc, id), qq, "title")
+		if len(indexed) != len(live) {
+			t.Fatalf("q=%q: indexed %d vs live %d (%+v vs %+v)", q, len(indexed), len(live), indexed, live)
+		}
+		for i := range indexed {
+			if indexed[i].Snippet != live[i].Snippet {
+				t.Fatalf("q=%q hit %d snippet mismatch:\n idx=%q\nlive=%q", q, i, indexed[i].Snippet, live[i].Snippet)
+			}
+		}
+	}
+}
+
+// TestSearchIndexIncrementalAcrossQueries：第二次查询零文件重读
+// （(size, mtime) 保鲜）；追加后增量重抽且新旧内容都可命中。
+func TestSearchIndexIncrementalAcrossQueries(t *testing.T) {
+	dir := t.TempDir()
+	svc, _ := New(dir)
+	t.Cleanup(svc.Close)
+	id := seedSession(t, svc, t.TempDir(), "增量会话 alpha-marker")
+	if hits := svc.SearchSessions("alpha-marker"); len(hits) != 1 {
+		t.Fatalf("first query hits = %+v", hits)
+	}
+	reads := svc.searchIdx.Reads()
+	if hits := svc.SearchSessions("alpha-marker"); len(hits) != 1 {
+		t.Fatalf("second query hits = %+v", hits)
+	}
+	if svc.searchIdx.Reads() != reads {
+		t.Fatalf("unchanged re-query re-read files: %d -> %d", reads, svc.searchIdx.Reads())
+	}
+	// 追加：增量重抽，新旧都在。
+	svc.AppendForTesting(id, ai.Message{Role: ai.RoleUser,
+		Blocks: []ai.Block{{Kind: ai.BlockText, Text: "追加了 beta-marker"}}})
+	if hits := svc.SearchSessions("beta-marker"); len(hits) != 1 {
+		t.Fatalf("appended content missing: %+v", hits)
+	}
+	if hits := svc.SearchSessions("alpha-marker"); len(hits) != 1 {
+		t.Fatalf("old content lost after append: %+v", hits)
+	}
+	if svc.searchIdx.Reads() != reads+1 {
+		t.Fatalf("append should re-read exactly once: %d -> %d", reads, svc.searchIdx.Reads())
+	}
+}
+
+// TestSearchIndexSurvivesRestart：新服务实例同 dataDir 载入快照，第
+// 一次查询即零重读（索引持久化的意义所在）。
+func TestSearchIndexSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	svc1, _ := New(dir)
+	id := seedSession(t, svc1, t.TempDir(), "重启存活会话 restart-marker")
+	if hits := svc1.SearchSessions("restart-marker"); len(hits) != 1 {
+		t.Fatalf("seed query hits = %+v", hits)
+	}
+	// 生产路径的落盘是异步的（查询不等写盘）——测试里显式检查点，
+	// 免去与重启的竞态。
+	if err := svc1.searchIdx.Save(); err != nil {
+		t.Fatal(err)
+	}
+	svc1.Close()
+
+	svc2, _ := New(dir)
+	t.Cleanup(svc2.Close)
+	if hits := svc2.SearchSessions("restart-marker"); len(hits) != 1 || hits[0].SessionID != id {
+		t.Fatalf("restart query hits = %+v (want session %s)", hits, id)
+	}
+	if svc2.searchIdx.Reads() != 0 {
+		t.Fatalf("restart re-read files: %d (want 0 — snapshot should be fresh)", svc2.searchIdx.Reads())
+	}
+}
+
+// mustExtract/jsonlPath 是等价断言的取材帮手。
+func mustExtract(t *testing.T, svc *AgentService, id string) []sessionidx.Segment {
+	t.Helper()
+	segs, over, err := sessionidx.Extract(jsonlPath(t, svc, id))
+	if err != nil || over {
+		t.Fatalf("extract: %v over=%v", err, over)
+	}
+	return segs
+}
+
+func jsonlPath(t *testing.T, svc *AgentService, id string) string {
+	t.Helper()
+	return filepath.Join(svc.dir(), "sessions", id+".jsonl")
 }
