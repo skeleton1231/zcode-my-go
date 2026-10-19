@@ -199,9 +199,12 @@ var commands = []command{
 		},
 	},
 	{
-		name: "/perms", usage: "/perms",
-		help: "本会话累计的「总是允许」权限规则（随会话结束消散）",
-		run: func(env *Env, _ string) string {
+		name: "/perms", usage: "/perms [export]",
+		help: "本会话累计的「总是允许」权限规则；export 固化成 .zgorules.json 建议",
+		run: func(env *Env, args string) string {
+			if strings.TrimSpace(args) == "export" {
+				return permsExport(env)
+			}
 			rules := env.Svc.SessionPermissionRules(env.SessionID())
 			if len(rules) == 0 {
 				return "[权限] 本会话还没有「总是允许」规则——权限询问时回答 a（总是允许）会按工具/路径积累，随会话结束消散"
@@ -853,4 +856,18 @@ func hostOf(baseURL string) string {
 		baseURL = baseURL[:i]
 	}
 	return baseURL
+}
+
+// permsExport 把会话「总是允许」规则渲染成 .zgorules.json 建议
+//（spec 规则 105）：会话规则随会话消散，固化成项目规则（审阅后落盘
+// 工作区根）才能跨会话。输出带说明头 + 纯 JSON 体。
+func permsExport(env *Env) string {
+	text, err := env.Svc.SuggestProjectRules(env.SessionID())
+	if err != nil {
+		return "[权限] 固化失败：" + err.Error()
+	}
+	if text == "" {
+		return "[权限] 本会话还没有「总是允许」规则可固化"
+	}
+	return "[权限] 审阅后把以下内容存为工作区根的 .zgorules.json（授信工作区生效）：\n" + text
 }
