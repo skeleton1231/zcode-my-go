@@ -835,6 +835,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    保守拒绝）、bypass（权限系统未启用）；空 = 无权限决策路径（未知
    工具 / hook 拦截 / token 截断）。决策经 gate → execute → executeOne
    返回值穿线（并行批次无共享字段竞态）。
+（规则 103 = 会话谱系，见待并 #310。）
+104. 多模型对比：`zgo compare <问题> [--profiles=a,b]`——同一问题并行
+   问 N 个 profile（不选即全部；迁移保证至少有 default），并排呈现答
+   案 + token 用量 + $ 成本（牌价口径同规则 93）+ 耗时。每侧是一次单
+   请求：无工具、无转录、MaxTokens 封顶 2048（对比是短答，不是跑任
+   务）、120s 兜底超时；失败的侧如实带错误（不拖垮别的侧）。profile
+   provider 经构建缝装配（profileProviderFor——测试注入；不经
+   providerOverride 注入面）。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
