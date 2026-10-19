@@ -553,7 +553,20 @@ dc907a4 (feat: glob and grep honor .gitignore)
    进制。内置层不是注入面（内容随产品发行不读盘）：未授信工作区同
    样可用（信任门只挡工作区层）；发现/加载/系统提示注入走既有管道
    零特判（嵌入 FS 与本地/远端同一 Root 面）。
-## 状态所有者
+
+73. 工具输出密钥打码：红线「API key 不进会话 JSONL/不在界面回显」
+   此前只在 bugreport 侧成立——模型跑 env/cat/read 时密钥会原样进入
+   工具结果并落转录与导出。internal/redact 在 agent loop 的工具结果
+   出咽喉点（execute 的 emit 前）统一打码：事件、wire、JSONL、导出、
+   搜索索引全链路一处收敛；模型侧看到 [REDACTED:…] 不损失自纠。匹
+   配两层：精确优先（运行时已知密钥——活动 key、全部剖面 key、
+   OAuth 双 token，长者优先防前缀吞掉；短于 8 字符跳过——零误报）；
+   模式族只收高置信命名前缀（OpenAI/Anthropic sk-、GitHub gh?_/
+   github_pat_、AWS AKIA、Google AIza、JWT 三段），宁可漏不可错。
+   开关 settings.redactSecrets（默认开；zgo config set——逃生口供
+   生成测试夹具等需要原样输出的场景）；设置装载/rewire 时重喂（key
+   轮换后旧值即失效）。用户手输消息不在打码面（用户的自觉行为，与
+   工具侧机器泄漏是两个面）。
 
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |

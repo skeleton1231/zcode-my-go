@@ -35,6 +35,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/lsp"
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
 	"github.com/skeleton1231/zcode-my-go/internal/prompt"
+	"github.com/skeleton1231/zcode-my-go/internal/redact"
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 	"github.com/skeleton1231/zcode-my-go/internal/sessionidx"
 	"github.com/skeleton1231/zcode-my-go/internal/skills"
@@ -69,6 +70,9 @@ type settings struct {
 	// FallbackModels 是模型兜底链（spec 规则 56）：主模型可重试失败
 	// （429/过载）时按序降级重发。
 	FallbackModels []string `json:"fallbackModels"`
+	// RedactSecrets 开关工具输出的密钥打码（spec 规则 73；nil = 默认
+	// 开——逃生口供需要原样输出的场景，如生成测试夹具）。
+	RedactSecrets *bool `json:"redactSecrets,omitempty"`
 }
 
 // profile 是一个命名 API 剖面。
@@ -139,6 +143,7 @@ func New(dataDir string) (*AgentService, error) {
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
+	s.syncRedaction(s.resolve())
 	// edit/write 诊断回灌（spec 规则 67/69）：gopls 在位即接线（daemon
 	// 版——编辑后显式失效再拉取，busy/缺位退 CLI 子进程），缺位静默
 	// 跳过（回执无尾部，行为与既往一致）。
@@ -349,9 +354,23 @@ func (s *AgentService) Close() {
 	lsp.Default.CloseAll()
 }
 
+// syncRedaction 把设置里的密钥喂给打码器（spec 规则 73）：活动 key、
+// 全部剖面 key、OAuth 双 token——精确匹配零误报；开关随配置。key 轮
+// 换后 Set 重置，旧值即失效。
+func (s *AgentService) syncRedaction(cfg settings) {
+	redact.SetEnabled(cfg.RedactSecrets == nil || *cfg.RedactSecrets)
+	secrets := []string{cfg.APIKey}
+	for _, p := range cfg.Profiles {
+		secrets = append(secrets, p.APIKey)
+	}
+	secrets = append(secrets, cfg.OAuth.AccessToken, cfg.OAuth.RefreshToken)
+	redact.Set(secrets...)
+}
+
 // rewire installs the current settings into the manager. Callers hold s.mu.
 func (s *AgentService) rewire() {
 	cfg := s.resolve()
+	s.syncRedaction(cfg)
 	s.mgr.Wire(agent.Wiring{
 		Provider: func() ai.Provider {
 			if s.providerOverride != nil {
@@ -2348,4 +2367,28 @@ func validCommandName(name string) bool {
 		}
 	}
 	return true
+}
+
+// RedactionEnabled 报告密钥打码开关（spec 规则 73；settings 缺省 = 开）。
+func (s *AgentService) RedactionEnabled() bool {
+	return redact.Enabled()
+}
+
+// SetRedaction 切换工具输出的密钥打码并落盘热生效（rewire 经
+// syncRedaction 同步开关与密钥集合）。
+func (s *AgentService) SetRedaction(on bool) error {
+	s.mu.Lock()
+	s.settings.RedactSecrets = &on
+	_, err := s.saveSettingsLocked(s.settings)
+	s.mu.Unlock()
+	if err == nil {
+		s.rewire()
+	}
+	return err
+}
+
+// SessionDir 返回会话 JSONL 的落盘目录（诊断/测试观测面；AGENTS.md 的
+// 密钥红线让「直接查转录文件」成为常规验证手段）。
+func (s *AgentService) SessionDir() string {
+	return filepath.Join(s.dir(), "sessions")
 }

@@ -96,3 +96,25 @@ func TestConfigFallbackModels(t *testing.T) {
 		t.Fatalf("after clear = %v", got)
 	}
 }
+
+// TestConfigRedactSecrets（spec 规则 73）：get/set/非法值三态——开关
+// 落盘热生效（服务侧 syncRedaction 已有专测，此处只验 CLI 面）。
+func TestConfigRedactSecrets(t *testing.T) {
+	code, out := captureConfig(t, func() int { return runConfig([]string{"get", "redactSecrets"}) })
+	if code != 0 || strings.TrimSpace(out) != "true" {
+		t.Fatalf("default should be on: %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "redactSecrets", "false"}) }); code != 0 {
+		t.Fatal("set false failed")
+	}
+	code, out = captureConfig(t, func() int { return runConfig([]string{"get", "redactSecrets"}) })
+	if code != 0 || strings.TrimSpace(out) != "false" {
+		t.Fatalf("after set: %q (%d)", out, code)
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "redactSecrets", "maybe"}) }); code == 0 {
+		t.Fatal("non-bool accepted")
+	}
+	if code, _ := captureConfig(t, func() int { return runConfig([]string{"set", "redactSecrets", "true"}) }); code != 0 {
+		t.Fatal("restore true failed")
+	}
+}
