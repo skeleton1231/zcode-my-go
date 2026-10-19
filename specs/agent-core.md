@@ -685,6 +685,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    上限/保留窗口/错误分层（Missing 降级/Pruned 中止）与本地快照
    同源。远程路径根相对斜杠形态（RemoteFS 约定）。
 
+85. 硬预算熔断：budgetDailyTokens 此前只是软预算（80%/100% 各发一
+   次 EvBudgetNotice 不阻断）——settings.hardBudgetStop（默认关；
+   zgo config set）开启后，今日已计价 token **达预算即拒新回合**：
+   ChatMedia 入口熔断（明确报错、不进转录——止损闸在回合开始前；
+   错误文案带解除命令）。cron 调度同闸（scheduleRunner 走 Chat 入
+   口——定时任务也烧预算）。跨天由当日记账的重放机制自然解开（新
+   一天新文件）。开关与预算均落盘（重启后闸仍在）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |

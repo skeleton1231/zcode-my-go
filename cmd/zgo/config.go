@@ -66,6 +66,7 @@ func configList(svc *service.AgentService) int {
 	fmt.Fprintf(os.Stdout, "fallbackModels %s\n", strings.Join(svc.FallbackModels(), ", "))
 	fmt.Fprintf(os.Stdout, "redactSecrets     %v\n", svc.RedactionEnabled())
 	fmt.Fprintf(os.Stdout, "autoMemory        %v\n", svc.AutoMemoryEnabled())
+	fmt.Fprintf(os.Stdout, "hardBudgetStop    %v\n", svc.HardBudgetStopEnabled())
 	return 0
 }
 
@@ -90,6 +91,8 @@ func configGet(svc *service.AgentService, key string) int {
 		fmt.Fprintln(os.Stdout, svc.RedactionEnabled())
 	case "autoMemory":
 		fmt.Fprintln(os.Stdout, svc.AutoMemoryEnabled())
+	case "hardBudgetStop":
+		fmt.Fprintln(os.Stdout, svc.HardBudgetStopEnabled())
 	default:
 		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets/autoMemory）\n", key)
 		return 1
@@ -157,6 +160,17 @@ func configSet(svc *service.AgentService, key, value string) int {
 			return 1
 		}
 		fmt.Fprintln(os.Stdout, "已更新 autoMemory =", on)
+	case "hardBudgetStop":
+		on, err := strconv.ParseBool(value)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "hardBudgetStop 需要 true/false")
+			return 1
+		}
+		if err := svc.SetHardBudgetStop(on); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+		fmt.Println("已更新 hardBudgetStop =", on)
 	case "fallbackModels":
 		var models []string
 		for _, m := range strings.Split(value, ",") {
