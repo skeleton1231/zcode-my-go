@@ -5,12 +5,31 @@ package main
 
 import (
 	"fmt"
+	usagepkg "github.com/skeleton1231/zcode-my-go/internal/usage"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
 func runUsage(argv []string) int {
+	// --days N：近 N 日趋势（spec 规则 90）——只读历史账，不需要会话。
+	days := 0
+	var rest []string
+	for _, a := range argv {
+		if strings.HasPrefix(a, "--days") && a != "--days" {
+			if n, err := strconv.Atoi(strings.TrimPrefix(a, "--days=")); err == nil {
+				days = n
+				continue
+			}
+		}
+		rest = append(rest, a)
+	}
+	argv = rest
+	if days > 0 {
+		return usageHistory(days)
+	}
 	dataDir, err := userDataDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
@@ -87,4 +106,33 @@ func shortIDSafe(svc *service.AgentService, id string) string {
 		}
 	}
 	return id
+}
+
+// usageHistory 打印近 N 日用量趋势（spec 规则 90）：每日总量 + 迷你
+// 条形（▮ 按最大日比例）。缺日照列 0（趋势连续性）。
+func usageHistory(days int) int {
+	dataDir, err := userDataDir()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	hist := usagepkg.History(dataDir, days)
+	max := 0
+	for _, d := range hist {
+		if d.Tokens > max {
+			max = d.Tokens
+		}
+	}
+	fmt.Printf("近 %d 日用量（计价 token）：%s\n", days, dataDir)
+	for _, d := range hist {
+		bar := ""
+		if max > 0 {
+			n := d.Tokens * 20 / max
+			bar = strings.Repeat("▮", n) + strings.Repeat("▯", 20-n)
+		} else {
+			bar = strings.Repeat("▯", 20)
+		}
+		fmt.Printf("  %s  %s %6d\n", d.Day, bar, d.Tokens)
+	}
+	return 0
 }

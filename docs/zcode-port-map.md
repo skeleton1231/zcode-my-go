@@ -436,6 +436,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    错误页带摘录自纠）+ 15 分钟 TTL 缓存（进程级共享）。权限：预批准文
    档站清单（ZCode 同款，路径前缀防 %2f 绕过）只读放行，其余主机询问。
 
+**用量历史趋势**（spec 规则 90，89 的时间轴半边）：usage-*.json 翻
+   日即历史——History(dataDir, N) 只读重放近 N 日（缺日照列 0）；
+   `zgo usage --days=N` 每日总量 + ▮▯ 条形。
+
 **read 读图片（多模态工具结果，spec 规则 47）**：read 对 png/jpeg/gif/
    webp 返回 BlockImage——紧跟工具结果块进同一消息（Content 仍是摘
    要），JSONL 持久化；超限缩放重编码（stdlib 双线性，20MB 输入 /

@@ -188,3 +188,37 @@ func (d *Day) SourceTotal(source string) int {
 	defer d.mu.Unlock()
 	return d.bySource[source]
 }
+
+// DaySummary 是历史某日的用量摘要（spec 规则 90）。
+type DaySummary struct {
+	Day    string // YYYYMMDD
+	Tokens int
+}
+
+// History 重放最近 days 天的日账文件（含今日），旧到新排序。usage-*.json
+// 翻日后留在原地即历史（rollLocked 的既有语义）——只读聚合，不改 Day
+// 状态。缺日跳过（没跑就没有账）。
+func History(dataDir string, days int) []DaySummary {
+	if days <= 0 {
+		days = 7
+	}
+	var out []DaySummary
+	today := time.Now()
+	for i := days - 1; i >= 0; i-- {
+		day := today.AddDate(0, 0, -i).Format("20060102")
+		raw, err := os.ReadFile(filepath.Join(dataDir, "usage-"+day+".json"))
+		if err != nil {
+			out = append(out, DaySummary{Day: day}) // 缺日照列（趋势连续性）
+			continue
+		}
+		total := 0
+		for _, line := range splitLines(raw) {
+			var e entry
+			if json.Unmarshal(line, &e) == nil {
+				total += e.Tokens
+			}
+		}
+		out = append(out, DaySummary{Day: day, Tokens: total})
+	}
+	return out
+}
