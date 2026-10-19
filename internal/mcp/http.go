@@ -27,7 +27,7 @@ type httpTransport struct {
 	mu         sync.Mutex
 	session    string
 	handshake  func(ctx context.Context) error // 重连后的再握手（由 Server 注入）
-	reconnOnce bool                             // 防嵌套重连
+	reconnOnce bool                            // 防嵌套重连
 }
 
 // newHTTPTransport builds the transport; handshake is attached later by
@@ -141,7 +141,7 @@ func (t *httpTransport) post(ctx context.Context, body []byte, notify bool) (jso
 }
 
 // firstSSEData 解析 SSE 事件流：跳过注释/心跳/通知，返回首个「响应」
-//（有 id 无 method 的 data 载荷）；流提前结束报错。
+// （有 id 无 method 的 data 载荷）；流提前结束报错。
 func firstSSEData(r io.Reader) (json.RawMessage, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8<<20)
