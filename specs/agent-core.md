@@ -813,6 +813,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    维度有参数。`zgo audit` 最近 20 条（时间/工具/摘要/成败/耗时）；
    --days=N 按日汇总；--on/--off 写设置键。权限决策维度暂不记
    （gate 决策未透出——spec 如实注明，后续可扩）。
+101. 信任前预览：`zgo trust preview <路径>`——授信前一次性列出该工
+   作区的全部注入面（规则 53 信任门拦截的五层）：.zgorules.json 的
+   权限规则（allow 按工具计数，"*" 单独标注为最大提权面；ask/deny
+   计数；坏文件/超限诚实标注）、自定义工具（.zgo/tools）、自定义命
+   令、技能（工作区层）、子代理定义。纯读不落状态；同时显示当前授
+   信态。克隆来的仓库先 preview 再决定 grant。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
