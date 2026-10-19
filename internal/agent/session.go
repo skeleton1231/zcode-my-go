@@ -19,6 +19,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/telemetry"
 )
 
 // RunState of a session.
@@ -65,6 +66,8 @@ type Session struct {
 	buildTools func(workspace, sessionID string) []Tool
 	system     func(workspace, sessionID string) string
 	ask        func(AskRequest) AskResponse
+	// telemetry 记录压缩 span（spec 规则 91）；nil 关闭。
+	telemetry *telemetry.Tracer
 }
 
 // Info returns the session's projection.
@@ -190,6 +193,7 @@ func (s *Session) run(ctx context.Context, workspace, id string, modelInfo ai.Mo
 		// 让批处理真正提速。
 		ToolExecution: ParallelExecution,
 		Hooks:         s.hooks,
+		Telemetry:     s.telemetry,
 		History:       s.Messages,
 		SessionID:     id,
 		Workspace:     workspace,
@@ -809,6 +813,9 @@ type Wiring struct {
 	// Hooks observe and shape every tool call (settings 配置的外部命令
 	// 钩子经 HooksFromCommands 装配)；nil 无钩子。
 	Hooks Hooks
+	// Telemetry 记录 agent span（turn/model/tool/compact，spec 规则
+	// 91）；nil 关闭（默认）。
+	Telemetry *telemetry.Tracer
 	// Question delivers the ask tool's questions to the user.
 	Question func(ctx context.Context, q Question) (string, error)
 	// ProjectRules loads the workspace's project rules (its .zgorules.json);
@@ -862,6 +869,7 @@ func (m *Manager) wire(s *Session) {
 	s.model = m.wiringModel()
 	s.thinking = m.wiring.Thinking
 	s.hooks = m.wiring.Hooks
+	s.telemetry = m.wiring.Telemetry
 	s.buildTools = m.wiring.Tools
 	if s.buildTools == nil {
 		s.buildTools = func(string, string) []Tool { return nil }
