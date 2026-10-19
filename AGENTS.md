@@ -69,6 +69,7 @@ cmd/zgo               终端三形态：print(-p)、REPL、全屏 TUI(-t)
 internal/ai           LLM provider 抽象（Anthropic 兼容流式）
 internal/agent        agent loop、事件、会话与 JSONL 持久化、子代理、工作流
 internal/agents       自定义子代理定义（.zgo/agents/*.md 发现与 persona）
+internal/tooldefs    自定义工具定义（.zgo/tools/*.md 命令模板 → 模型可调用工具，spec 规则 75）
 internal/agent/permission  权限系统（ZCode permission/ 翻译）
 internal/agent/compact    上下文压缩（ZCode compact/ 翻译）
 
