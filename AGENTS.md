@@ -75,6 +75,7 @@ internal/tools        内置工具：read/write/edit/bash/grep/glob/ls/apply_pat
                       agent 四件套（后台子代理 spawn/output/stop/send 续话）
                       todo/ask/memory/task/dispatch/workflow
 internal/prompt       系统提示（环境、git、项目上下文文件）
+internal/redact      工具输出密钥打码（精确密钥+高置信模式族，loop 咽喉点统一过）
 internal/sessionidx  跨会话搜索索引（重放态文本段 + mtime/size 增量 + 超限退扫描）
 internal/service      AgentService：UI 唯一入口（设置、会话、Chat 回调、
                       权限/提问通道、压缩入口）
@@ -104,7 +105,7 @@ mygo.json             打包配置（name/identifier/version/out）
 - 工具的文件访问必须过 path jail（`tools.Workspace`）；越界即错误。
 - 工具输出必须截断；新增工具要定义输出上限。
 - 错误显式处理：不吞错、不用超时掩盖同步问题。
-- API key 只经设置文件与内存，不进日志、不进 git、不进会话 JSONL、不在界面回显。
+- API key 只经设置文件与内存，不进日志、不进 git、不进会话 JSONL、不在界面回显（工具输出过 internal/redact 打码，spec 规则 73）。
 - 事件协议（`agent.Event`）只加不改：新增字段可选，不重命名不删除。
 - 视图测试用 `ui.NewTester`（无窗口）；改动 `uiapp` 视图后跑
   `go test ./internal/uiapp/`。

@@ -15,6 +15,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/redact"
 )
 
 // DefaultMaxTurns caps tool-calling turns per user message, so a looping
@@ -287,6 +288,12 @@ func (l *Loop) execute(ctx context.Context, turn int, msg ai.Message, call ai.Bl
 		}
 		result = l.afterHook(msg, call, result)
 	}
+
+	// 密钥打码（spec 规则 73）：工具结果的唯一出咽喉点——事件、wire、
+	// JSONL、导出、搜索索引全链路在这一处同步收敛；模型侧看到
+	// [REDACTED:…] 也不损失自纠能力（知道是敏感值即可）。
+	result.Content = redact.String(result.Content)
+	result.Diff = redact.String(result.Diff)
 
 	l.emit(Event{Kind: EvToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name,
 		IsError: result.IsError, ResultContent: result.Content, Diff: result.Diff, TurnIndex: turn})

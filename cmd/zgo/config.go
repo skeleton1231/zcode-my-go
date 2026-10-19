@@ -64,6 +64,7 @@ func configList(svc *service.AgentService) int {
 	fmt.Fprintf(os.Stdout, "apiKey            %s\n", v.KeyHint)
 	fmt.Fprintf(os.Stdout, "budgetDailyTokens %d\n", svc.DailyUsageBudget())
 	fmt.Fprintf(os.Stdout, "fallbackModels %s\n", strings.Join(svc.FallbackModels(), ", "))
+	fmt.Fprintf(os.Stdout, "redactSecrets     %v\n", svc.RedactionEnabled())
 	return 0
 }
 
@@ -84,8 +85,10 @@ func configGet(svc *service.AgentService, key string) int {
 		fmt.Fprintln(os.Stdout, svc.DailyUsageBudget())
 	case "fallbackModels":
 		fmt.Fprintln(os.Stdout, strings.Join(svc.FallbackModels(), ","))
+	case "redactSecrets":
+		fmt.Fprintln(os.Stdout, svc.RedactionEnabled())
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels）\n", key)
+		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets）\n", key)
 		return 1
 	}
 	return 0
@@ -129,6 +132,17 @@ func configSet(svc *service.AgentService, key, value string) int {
 			return 1
 		}
 		fmt.Fprintln(os.Stdout, "已更新 budgetDailyTokens =", n)
+	case "redactSecrets":
+		on, err := strconv.ParseBool(value)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "redactSecrets 需要 true/false")
+			return 1
+		}
+		if err := svc.SetRedaction(on); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stdout, "已更新 redactSecrets =", on)
 	case "fallbackModels":
 		var models []string
 		for _, m := range strings.Split(value, ",") {
@@ -146,7 +160,7 @@ func configSet(svc *service.AgentService, key, value string) int {
 			fmt.Fprintln(os.Stdout, "已更新 fallbackModels =", strings.Join(models, ", "))
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels）\n", key)
+		fmt.Fprintf(os.Stderr, "未知键 %q（model/api/baseUrl/thinking/apiKey/budgetDailyTokens/fallbackModels/redactSecrets）\n", key)
 		return 1
 	}
 	return 0

@@ -349,6 +349,13 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    FS 与本地/远端同一 Root 面，发现/加载/注入零特判；未授信工作区同
    样可用（内置不是注入面）。
 
+**工具输出密钥打码**（spec 规则 73）：internal/redact——agent loop
+   的工具结果出咽喉点统一打码（事件/wire/JSONL/导出/搜索索引一处收
+   敛）；精确密钥（活动+剖面+OAuth，长者优先）+ 高置信模式族
+   （sk-ant/sk-/gh?_/github_pat_/AKIA/AIza/JWT）；默认开，config
+   set redactSecrets 可关（逃生口）；设置装载/rewire 重喂，key 轮换
+   即失效。
+
 **webfetch 工具**（ZCode core/tool WebFetch 的移植，spec 规则 46）：
    internal/webfetch——URL 归一（无凭据、http→https、公网主机）+
    逐跳 egress 守卫（SSRF：字面量私网/环回/链路本地/CGNAT/保留段全拒，
