@@ -1296,6 +1296,16 @@ func excerptRunes(s string, n int) string {
 func (s *AgentService) captureCheckpoint(sess *agent.Session, seq int) {
 	info := sess.Info()
 	if strings.HasPrefix(info.Workspace, "ssh://") {
+		// 远程快照（spec 规则 84）：ssh:// 此前完全降级——经拨号后的
+		// RemoteFS 拉整树进本地快照库；超限同样降级。
+		ws := s.workspaceFor(info.ID, info.Workspace)
+		if ws.Remote == nil {
+			return
+		}
+		if err := checkpoint.SnapshotCaptureRemote(s.dir(), ws.Remote, info.ID, seq); err != nil &&
+			!errors.Is(err, checkpoint.ErrTooLarge) {
+			log.Printf("remote snapshot capture: %v", err)
+		}
 		return
 	}
 	if err := checkpoint.Capture(info.Workspace, info.ID, seq); err != nil {
@@ -1317,6 +1327,22 @@ func (s *AgentService) captureCheckpoint(sess *agent.Session, seq int) {
 func (s *AgentService) restoreCheckpoint(sess *agent.Session, seq int) error {
 	info := sess.Info()
 	if strings.HasPrefix(info.Workspace, "ssh://") {
+		// 远程快照（spec 规则 84）：错误分层与本地同源——旧会话降级、
+		// 修剪中止。
+		ws := s.workspaceFor(info.ID, info.Workspace)
+		if ws.Remote == nil {
+			return nil
+		}
+		rerr := checkpoint.SnapshotRestoreRemote(s.dir(), ws.Remote, info.ID, seq)
+		if errors.Is(rerr, checkpoint.ErrSnapshotMissing) {
+			return nil
+		}
+		if errors.Is(rerr, checkpoint.ErrSnapshotPruned) {
+			return fmt.Errorf("该回合的快照已修剪（保留最近 %d 回合），文件未回退——为避免对话与文件分裂已中止回退；可回退更近的回合", checkpoint.Retention)
+		}
+		if rerr != nil {
+			return fmt.Errorf("restoring remote snapshot: %w", rerr)
+		}
 		return nil
 	}
 	err := checkpoint.Restore(info.Workspace, info.ID, seq)

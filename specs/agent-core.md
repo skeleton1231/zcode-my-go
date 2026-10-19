@@ -677,6 +677,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    半截快照不留（失败即清会话根——空根会让 Restore 误判）。会话
    删除清快照库（SnapshotRemoveAll，与 checkpoint refs 同步）。
 
+84. 远程工作区快照（spec 规则 83 的远程半边）：ssh:// 会话此前完全
+   降级（连「仅回退转录」的文件半边都没有）——捕获经拨号后的
+   RemoteFS 整树拉进本地快照库（ReadFile/ReadDir 递归；单文件读失
+   败跳过不拖垮整树）；恢复是镜像推回——快照内 WriteFile 覆写、
+   快照后新增经 Exec rm -f 删除（路径单引号包裹——注入面封闭）；
+   上限/保留窗口/错误分层（Missing 降级/Pruned 中止）与本地快照
+   同源。远程路径根相对斜杠形态（RemoteFS 约定）。
+
 | 状态          | 所有者                        | 说明                          |
 | ------------- | ----------------------------- | ----------------------------- |
 | 消息历史      | `agent.Session`               | 唯一写入路径是 loop 的 append |
