@@ -64,6 +64,36 @@ settings file).
 
 MIT © 2026 skeleton1231
 
+## v0.9.0 highlights
+
+- gopls semantic tools: definition / references / diagnostics with
+  symbol precision (same-named methods, comments and strings do not
+  match); edit/write receipts carry immediate diagnostics back to the
+  model. A resident daemon speaks LSP JSON-RPC (initialize paid once);
+  crashes restart transparently, failures fall back to the gopls CLI.
+- Cross-session search index: replay-effective text segments persisted
+  with (size, mtime) freshness — queries stop re-parsing every JSONL;
+  oversized or corrupt sessions fall back to the streamed scan with
+  byte-identical results.
+- Secret redaction, closed loop: tool outputs pass a redactor at the
+  loop's single choke point (events, wire, JSONL, exports and the search
+  index all converge there); exact known keys plus high-confidence
+  pattern families. `zgo sessions sanitize` scrubs legacy transcripts
+  (dry-run by default, --apply rewrites atomically).
+- Custom subagents: `.zgo/agents/*.md` personas; task/dispatch accept an
+  agent argument (whitelist narrows the tool surface).
+- Built-in skills: skill-creator / go-testing / debug-methodically ship
+  embedded in the binary; workspace > user > builtin, same name
+  overrides.
+- MCP dual transport: stdio and Streamable HTTP (2025-03 spec) for
+  remote servers; startup no longer waits out handshakes.
+- Provider profiles: /provider switches named API profiles (multi-
+  account / multi-endpoint) under one redaction boundary.
+- Clipboard paste: Ctrl+V drops screenshots straight into the composer
+  (DIB→PNG).
+- Stop/Notification hooks: a round-end hook (exit 2 blocks the wrap-up
+  and feeds the output back) and a permission-wait notification hook.
+
 ## v0.8.0 highlights
 
 - Background subagents: the agent tool spawns research agents that

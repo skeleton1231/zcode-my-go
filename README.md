@@ -124,6 +124,25 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   ——免手编 settings.json，写盘热重载。
 - **问题报告**：`zgo bugreport` 生成脱敏自包含报告（可直接附 issue）。
 - **会话导出即分享**：HTML / Markdown 自包含导出（无上传服务——个人 agent
+- **gopls 语义工具**：definition / references / diagnostics（符号语义，
+  同名文本不误报）；编辑回执即时诊断回灌；常驻 daemon（LSP JSON-RPC，
+  冷启摊平，失败退 CLI 子进程）。
+- **跨会话搜索索引**：重放态文本段持久化 + (size, mtime) 增量保鲜——查询
+  不再逐行解析全部 JSONL；超限/损坏退 live 扫描（结果等价）。
+- **密钥打码闭环**：工具输出过打码器（事件/wire/JSONL/导出一处收敛）——精确
+  密钥 + 高置信模式族双面；`zgo sessions sanitize` 清洗历史转录（dry-run
+  预览，--apply 原子重写）。
+- **自定义子代理**：`.zgo/agents/*.md` 定义 persona；task/dispatch 的 agent
+  参数命中即走（白名单收窄工具面）。
+- **内置技能层**：skill-creator / go-testing / debug-methodically 随二进制发行；
+  工作区 > 全局 > 内置三层，同名即覆盖。
+- **MCP 双传输**：stdio 与 Streamable HTTP（2025-03 规范）——远端服务器免本地
+  子进程；启动异步（不再等握手）。
+- **provider 剖面**：`/provider` 一键切换多 API 账号/端点（命名剖面，key 同一条
+  脱敏边界）。
+- **剪贴板贴图**：composer Ctrl+V 直接贴截图（DIB→PNG）。
+- **Stop/Notification 钩子**：回合收尾钩子（exit 2 阻止收尾续跑）与权限询问
+  通知挂点。
   的分享物就是导出文件本身）。
 
 ## 快速开始
