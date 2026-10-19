@@ -476,6 +476,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    次工具执行一条 JSONL（参数摘要打码 + 成败 + 耗时）；zgo audit 查
    看；与遥测（性能维度）正交的合规维度。
 
+**信任前预览**（spec 规则 101）：`zgo trust preview <路径>`——授信前
+   列出全部注入面（权限规则 allow 计数、* 标注、自定义工具/命令/技
+   能/子代理）；纯读；信任门（规则 53）的决策面。
+
 **审计的权限决策维度**（spec 规则 102）：审计条目带 decision 标签
    （rule:/capability/ask:granted(-always)/ask:denied/deny:/bypass）——
    规则 100 注明的缺口收口；zgo audit 行内 <> 呈现。

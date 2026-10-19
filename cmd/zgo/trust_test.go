@@ -1,7 +1,9 @@
 package main
 
 import (
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -60,4 +62,41 @@ func captureTrustCLI(t *testing.T, args ...string) (int, string) {
 	buf := make([]byte, 8192)
 	n, _ := r.Read(buf)
 	return code, string(buf[:n])
+}
+
+// TestTrustPreviewCLI（spec 规则 101）：preview 渲染注入面——allow 分
+// 工具计数、* 单独标注、四层清单、缺参退出码 2。
+func TestTrustPreviewCLI(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZGO_TEST_DATADIR", dir)
+	ws := t.TempDir()
+	os.MkdirAll(filepath.Join(ws, ".zgo/tools"), 0o755)
+	os.WriteFile(filepath.Join(ws, ".zgo/tools/deploy.md"), []byte("# x"), 0o644)
+	os.WriteFile(filepath.Join(ws, ".zgorules.json"),
+		[]byte(`{"version":1,"rules":[{"tool":"bash","args":"git *","behavior":"allow"},{"tool":"*","behavior":"allow"}]}`), 0o644)
+
+	code, out := captureTrustOut(func() int { return runTrust([]string{"preview", ws}) })
+	if code != 0 {
+		t.Fatalf("preview = %d", code)
+	}
+	for _, want := range []string{"未授信", "allow bash", "allow *", "全工具放行", "deploy"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("preview missing %q:\n%s", want, out)
+		}
+	}
+	if code, _ := captureTrustOut(func() int { return runTrust([]string{"preview"}) }); code != 2 {
+		t.Fatalf("argless preview = %d", code)
+	}
+}
+
+// captureTrustOut 抓 runTrust 的 stdout。
+func captureTrustOut(fn func() int) (int, string) {
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	code := fn()
+	os.Stdout = old
+	w.Close()
+	data, _ := io.ReadAll(r)
+	return code, string(data)
 }
