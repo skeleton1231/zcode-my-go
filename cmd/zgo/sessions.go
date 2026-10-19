@@ -19,7 +19,7 @@ import (
 //	zgo sessions search <关键词>          跨会话检索（标题/消息/工具参数）
 func runSessions(argv []string) int {
 	if len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "用法：zgo sessions <list|export|rm|search|sanitize|retired|restore> …")
+		fmt.Fprintln(os.Stderr, "用法：zgo sessions <list|tree|export|rm|search|sanitize|retired|restore> …")
 		return 2
 	}
 	dataDir, err := userDataDir()
@@ -46,6 +46,8 @@ func runSessions(argv []string) int {
 		return sessionsArchive(svc, rest, true)
 	case "unarchive":
 		return sessionsArchive(svc, rest, false)
+	case "tree":
+		return sessionsTree(svc, rest)
 	case "retired":
 		return sessionsRetired(svc)
 	case "restore":
@@ -352,4 +354,43 @@ func resolveRetiredName(svc *service.AgentService, prefix string) (string, bool)
 		}
 	}
 	return match, match != ""
+}
+
+// sessionsTree 渲染会话谱系（spec 规则 103）：缩进树——根 + 分叉后
+// 代；无谱系时退回平铺提示。
+func sessionsTree(svc *service.AgentService, args []string) int {
+	all := len(args) > 0 && args[0] == "--all"
+	roots := svc.SessionTree(all)
+	if len(roots) == 0 {
+		fmt.Println("（无会话）")
+		return 0
+	}
+	forks := 0
+	var walk func(n *agent.TreeNode, depth int)
+	walk = func(n *agent.TreeNode, depth int) {
+		title := n.Info.Title
+		if title == "" {
+			title = "（未命名）"
+		}
+		mark := ""
+		if n.Info.Pinned {
+			mark = " 📌"
+		}
+		if n.Info.Archived {
+			mark += " 📦"
+		}
+		fmt.Printf("%s%s %s · %s%s\n", strings.Repeat("  ", depth),
+			shortPath(n.Info.ID), title, n.Info.UpdatedAt.Format("01-02 15:04"), mark)
+		forks += len(n.Children)
+		for _, c := range n.Children {
+			walk(c, depth+1)
+		}
+	}
+	for _, r := range roots {
+		walk(r, 0)
+	}
+	if forks == 0 {
+		fmt.Println("（无分叉——/fork 或桌面分叉后在此显示谱系）")
+	}
+	return 0
 }

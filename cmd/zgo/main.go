@@ -128,6 +128,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "models" {
 		os.Exit(runModels(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "compare" {
+		os.Exit(runCompare(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "audit" {
 		os.Exit(runAudit(os.Args[2:]))
 	}

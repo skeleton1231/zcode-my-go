@@ -819,6 +819,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    计数；坏文件/超限诚实标注）、自定义工具（.zgo/tools）、自定义命
    令、技能（工作区层）、子代理定义。纯读不落状态；同时显示当前授
    信态。克隆来的仓库先 preview 再决定 grant。
+（规则 102 = 审计的权限决策维度，见待并 #309。）
+103. 会话谱系：SessionInfo.ParentID（ForkAtUserTurn 落父并立即重写
+   meta 行——New 落盘时还没有父，不重写重启即丢）。Manager.SessionTree
+   组装森林：根 = 无父或父不存在（孤儿当根——父被删不丢子；环防御
+   seen 集）；同层按更新时间新到旧；归档过滤同规则 82（--all 全显）。
+   `zgo sessions tree` 缩进渲染（标题/时间/📌📦 标记）；无分叉提示。
+   谱系是组织态的第三维（归档/置顶/谱系）。
 
 102. 审计的权限决策维度（规则 100 注明的缺口收口）：审计条目带
    decision 标签——rule:<id>（项目/会话规则放行）、capability（只读
@@ -828,6 +835,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    保守拒绝）、bypass（权限系统未启用）；空 = 无权限决策路径（未知
    工具 / hook 拦截 / token 截断）。决策经 gate → execute → executeOne
    返回值穿线（并行批次无共享字段竞态）。
+（规则 103 = 会话谱系，见待并 #310。）
+104. 多模型对比：`zgo compare <问题> [--profiles=a,b]`——同一问题并行
+   问 N 个 profile（不选即全部；迁移保证至少有 default），并排呈现答
+   案 + token 用量 + $ 成本（牌价口径同规则 93）+ 耗时。每侧是一次单
+   请求：无工具、无转录、MaxTokens 封顶 2048（对比是短答，不是跑任
+   务）、120s 兜底超时；失败的侧如实带错误（不拖垮别的侧）。profile
+   provider 经构建缝装配（profileProviderFor——测试注入；不经
+   providerOverride 注入面）。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒
