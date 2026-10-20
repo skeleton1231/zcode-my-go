@@ -1,0 +1,17 @@
+{
+  "name": "grep-hit",
+  "description": "grep 命中：多文件种子里按关键词找行，转录带文件与行内容",
+  "files": {
+    "a/main.go": "package main\n// TODO-fixme: 第一步",
+    "b/util.go": "package b\n// TODO-fixme: 第二步",
+    "c/other.md": "无关内容"
+  },
+  "turns": [
+    {"tool": "grep", "args": {"pattern": "TODO-fixme"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "transcript_contains": ["main.go", "util.go", "TODO-fixme"],
+    "no_tool_errors": true
+  }
+}

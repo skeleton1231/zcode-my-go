@@ -960,6 +960,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    加引号且排除元字符；POSIX `HEAD^` 用 `HEAD~1` 等价）；`-` 开头
    rev 拒绝（选项位不安全）。输出/预算/失败语义与本地一致——@ 家
    族四形态本地/远程全量同构。
+127. eval 场景回归网第三批：evals/ 补 11 个 CI 门禁场景——path jail
+   越界报错、read 超 2000 行截断标记（续读 offset 提示 + 越界行不
+   泄漏的负向断言）、write-read 往返、grep 多文件命中、apply_patch
+   多文件段、todo write/read 回环、memory write/read 回环、bash 跨平
+   台基线（echo 标记——Windows 走 PowerShell）、ls 列表、@ 行窗
+   （规则 81）与 @ 目录树（规则 76）的场景面。全部离线（脚本
+   provider）；zgo eval evals 全绿是 CI 门禁的一部分。
 
 
 125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模

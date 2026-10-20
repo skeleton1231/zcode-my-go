@@ -1,0 +1,12 @@
+{
+  "name": "bash-echo-baseline",
+  "description": "bash 基线：跨平台命令执行与输出回传（Windows 走 PowerShell）",
+  "turns": [
+    {"tool": "bash", "args": {"command": "echo zgo-eval-marker"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "transcript_contains": ["zgo-eval-marker"],
+    "no_tool_errors": true
+  }
+}

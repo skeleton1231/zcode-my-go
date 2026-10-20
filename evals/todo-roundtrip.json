@@ -1,0 +1,18 @@
+{
+  "name": "todo-roundtrip",
+  "description": "todo 计划面：write 落盘后 read 回读一致",
+  "turns": [
+    {"tool": "todo", "args": {"op": "write", "tasks": [
+      {"content": "梳理需求", "status": "done"},
+      {"content": "写实现", "status": "in_progress"},
+      {"content": "补测试", "status": "pending"}
+    ]}},
+    {"tool": "todo", "args": {"op": "read"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "transcript_contains": ["梳理需求", "写实现", "补测试"],
+    "no_tool_errors": true,
+    "event_count": {"tool_execution_end": 2}
+  }
+}

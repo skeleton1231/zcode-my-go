@@ -1,0 +1,14 @@
+{
+  "name": "write-read-roundtrip",
+  "description": "write-read 往返：新文件落盘后读回内容逐字一致",
+  "turns": [
+    {"tool": "write", "args": {"path": "out/report.md", "content": "# 报告\n第一行结论：一切正常"}},
+    {"tool": "read", "args": {"path": "out/report.md"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "file_contains": {"out/report.md": "第一行结论：一切正常"},
+    "transcript_contains": ["一切正常"],
+    "no_tool_errors": true
+  }
+}

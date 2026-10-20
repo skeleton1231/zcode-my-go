@@ -1,0 +1,16 @@
+{
+  "name": "mention-dir-tree",
+  "description": "@ 目录引用：@src/ 展开有界目录树（spec 规则 76 的场景面）",
+  "files": {
+    "src/a.go": "package src",
+    "src/sub/b.go": "package sub"
+  },
+  "prompt": "看 @src",
+  "turns": [
+    {"text": "已看"}
+  ],
+  "expect": {
+    "transcript_contains": ["目录树", "a.go"],
+    "no_tool_errors": true
+  }
+}

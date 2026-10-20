@@ -1,0 +1,16 @@
+{
+  "name": "ls-listing",
+  "description": "ls 列目录：条目与文件类型标记可见",
+  "files": {
+    "top.txt": "内容",
+    "nested/deep.txt": "深层"
+  },
+  "turns": [
+    {"tool": "ls", "args": {"path": "."}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "transcript_contains": ["top.txt", "nested"],
+    "no_tool_errors": true
+  }
+}

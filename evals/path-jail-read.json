@@ -1,0 +1,14 @@
+{
+  "name": "path-jail-read",
+  "description": "path jail 基线：read 越界必须报错（工具结果带 error，不静默）",
+  "files": {"inside.txt": "内容"},
+  "turns": [
+    {"tool": "read", "args": {"path": "../../outside.txt"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "transcript_contains": ["error"],
+    "transcript_not_contains": ["内容-of-越界读取"],
+    "file_contains": {"inside.txt": "内容"}
+  }
+}
