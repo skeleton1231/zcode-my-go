@@ -583,6 +583,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    合多 Chat / asker deny / budget 种设置）+ 三门禁场景——ask 拒绝
    流、预算通知、auto-compact 触发三条引擎深路径钉进 CI。
 
+**附加目录的项目规则并入**（spec 规则 131，128 的权限面补全）：
+   /add-dir 时该目录 .zgorules.json 只并入 allow 规则（扩权面不收
+   紧；adddir: 前缀可辨来源，随会话消散）。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 

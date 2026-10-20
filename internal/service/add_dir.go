@@ -9,6 +9,8 @@ package service
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 )
 
 // maxExtraDirs 附加目录上限（防无上限扩权面——一次会话不该挂一堆根）。
@@ -51,6 +53,18 @@ func (s *AgentService) AddWorkspaceDir(sessionID, dir string) ([]string, error) 
 	}
 	ws.Extra = append(ws.Extra, abs)
 	s.wsCache[sessionID] = ws
+	// 该目录的项目规则并入（spec 规则 131）：只收 allow——附加目录是
+	// 用户显式授信的扩权面，不是收紧面（deny/ask 不进；要收紧写在主
+	// 工作区规则里）。入会话规则（会话作用域，随会话消散），ID 加
+	// adddir: 前缀——/perms why 与 /perms 清单可辨来源。
+	if perm := s.mgr.SessionPermissions(sessionID); perm != nil {
+		for _, r := range loadProjectRules(abs).Rules {
+			if r.Behavior == permission.Allow {
+				r.ID = "adddir:" + r.ID
+				perm.GrantSession(r)
+			}
+		}
+	}
 	return ws.Extra, nil
 }
 
