@@ -48,6 +48,7 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 	"github.com/skeleton1231/zcode-my-go/internal/trust"
 	"github.com/skeleton1231/zcode-my-go/internal/usage"
+	"github.com/skeleton1231/zcode-my-go/internal/websearch"
 	"github.com/skeleton1231/zcode-my-go/internal/workflow"
 )
 
@@ -100,6 +101,16 @@ type settings struct {
 	// AuditLog 开工具执行审计（spec 规则 100）：默认关；开启后每次
 	// 工具执行一条 JSONL（参数摘要打码 + 成败 + 耗时）落 audit/。
 	AuditLog bool `json:"auditLog,omitempty"`
+	// Search 是 websearch 工具的后端（spec 规则 121）：provider 默认
+	// ddg（无 key）；brave 走 Brave API——braveKey 与 apiKey 同一条
+	// 脱敏边界（不进日志/JSONL/界面回显）。
+	Search searchSettings `json:"search,omitempty"`
+}
+
+// searchSettings 是搜索后端配置（settings.json 的 search 段）。
+type searchSettings struct {
+	Provider string `json:"provider"` // ddg（默认/空）| brave
+	BraveKey string `json:"braveKey,omitempty"`
 }
 
 // telemetrySettings 是遥测配置（zgo config telemetry.* 三键）。
@@ -564,6 +575,12 @@ func (s *AgentService) rewire() {
 			}),
 			// webfetch 与工作区无关，进程级共享（缓存跨会话）。
 			tools.NewWebFetchTool(tools.WebFetcher),
+			// websearch（spec 规则 121）：后端随 settings 即时读取——
+			// provider/key 改配置下回合生效。
+			tools.NewWebSearchTool(func() *websearch.Searcher {
+				cfg := s.resolve()
+				return &websearch.Searcher{Provider: cfg.Search.Provider, BraveKey: cfg.Search.BraveKey}
+			}),
 			// 后台子代理三件套 + 续话（spec 规则 50/51）。
 			tools.NewAgentTool(state.Agents, agentRunner),
 			tools.NewAgentOutputTool(state.Agents),

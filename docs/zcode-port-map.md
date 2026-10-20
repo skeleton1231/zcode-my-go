@@ -539,6 +539,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **eval 结构化报告**（spec 规则 120）：zgo eval --json——stdout 纯
    JSON（total/passed/failed + 逐场景结果）；文本模式不变。
 
+**WebSearch 工具**（spec 规则 121）：websearch——固定端点搜索后端
+   （默认 DDG html 无 key；settings.search 可切 Brave+key，脱敏边界
+   同 apiKey），命中列表文本化、不回访 URL（无 SSRF 面）；CC 工具族
+   web 侧收口（深挖走 webfetch）。
+
 **eval judge 评分**（spec 规则 122）：expect.judge {rubric, min}——
    确定性断言过后交评分模型（service.OneShot 活动 provider）打 1-5
    分，< min 即失败；转录结构化截断渲染、只回 JSON、解析不出如实报
