@@ -1,0 +1,13 @@
+{
+  "name": "memory-roundtrip",
+  "description": "工作区记忆：memory write 后 read 回读（长期记忆面）",
+  "turns": [
+    {"tool": "memory", "args": {"op": "write", "content": "本项目偏好中文注释"}},
+    {"tool": "memory", "args": {"op": "read"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "transcript_contains": ["本项目偏好中文注释"],
+    "no_tool_errors": true
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "apply-patch-multi",
+  "description": "apply_patch 多文件段：一次补丁改两个文件，终态双双正确",
+  "files": {
+    "one.txt": "alpha\nbeta\n",
+    "two.txt": "gamma\n"
+  },
+  "turns": [
+    {"tool": "apply_patch", "args": {"patch": "*** Begin Patch\n*** Update File: one.txt\n@@\n-alpha\n+ALPHA\n*** Update File: two.txt\n@@\n-gamma\n+GAMMA\n*** End Patch"}},
+    {"text": "完成"}
+  ],
+  "expect": {
+    "file_contains": {"one.txt": "ALPHA", "two.txt": "GAMMA"},
+    "no_tool_errors": true
+  }
+}

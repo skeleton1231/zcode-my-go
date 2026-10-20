@@ -1,0 +1,13 @@
+{
+  "name": "mention-line-range",
+  "description": "@ 引用行窗：@file:2-3 只带相关段（spec 规则 81 的场景面）",
+  "files": {"notes.md": "# 标题\n第二行要点\n第三行要点\n第四行无关"},
+  "prompt": "看 @notes.md:2-3",
+  "turns": [
+    {"text": "已看"}
+  ],
+  "expect": {
+    "transcript_contains": ["第二行要点", "第三行要点"],
+    "no_tool_errors": true
+  }
+}
