@@ -948,6 +948,19 @@ dc907a4 (feat: glob and grep honor .gitignore)
    argv，不构成注入面）；rune 截断 60KB、预算/条数与文件引用共享；
    非 git 工作区/未知 rev/SSH 远程工作区原样保留（同 @session 未解
    析语义）。
+125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模
+   型清单（anthropic GET /v1/models、openai GET /models（BaseURL 含
+   /v1）、gemini GET /v1beta/models 只收 generateContent 条目；15s/
+   1MB/500 条上限），未知 id 落 dataDir/models.json 覆盖层（启动载入
+   参与目录查询）；同名内置优先——覆盖层只补未知 id（上下文/输出按
+   默认口径，牌价未知不计成本）；列表以 † 标注。
+126. @git 引用的 SSH 远程形态：ssh:// 工作区经远端 Exec 在会话根执
+   行同一只读 git 子命令（跨 shell 安全形态：rev 字符集无引号/空格/
+   `^`——Windows 远端默认 cmd.exe，单引号不剥、`^` 是转义符，故不
+   加引号且排除元字符；POSIX `HEAD^` 用 `HEAD~1` 等价）；`-` 开头
+   rev 拒绝（选项位不安全）。输出/预算/失败语义与本地一致——@ 家
+   族四形态本地/远程全量同构。
+
 
 125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模
    型清单（anthropic GET /v1/models、openai GET /models（BaseURL 含

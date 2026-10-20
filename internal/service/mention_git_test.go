@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/skeleton1231/zcode-my-go/internal/remotetest"
 )
 
 // gitRepoEnv 在临时目录建两提交的 git 仓库并开会话。
@@ -109,5 +111,62 @@ func TestGitMentionDedup(t *testing.T) {
 	text, _ := svc.expandMentions(id, "先看 @git:HEAD 再看 @git:HEAD", nil)
 	if n := strings.Count(text, "（提交/差异）："); n != 1 {
 		t.Fatalf("expansions = %d:\n%s", n, text)
+	}
+}
+
+// TestGitMentionSSHRemote：@git 在 ssh:// 工作区经远端 Exec 执行同一
+// 只读命令（spec 规则 126）——进程内 SSH 服务器真实跑 git（Windows 远
+// 端是 cmd /c：不加引号、无 ^ 的命令串才是跨 shell 形态）。
+func TestGitMentionSSHRemote(t *testing.T) {
+	srv := remotetest.Start(t)
+	t.Setenv("ZGO_SSH_KEY", srv.KeyPEM)
+	host := srv.Address[:strings.LastIndexByte(srv.Address, ':')]
+	port := srv.Address[strings.LastIndexByte(srv.Address, ':')+1:]
+	// 远端磁盘根先建成 git 仓库（服务器服务真实文件系统）。
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = srv.Root
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	if err := os.WriteFile(filepath.Join(srv.Root, "r.txt"), []byte("remote line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-q", "-m", "remote commit")
+
+	target := "ssh://tester@" + host + ":" + port + "/" + filepath.ToSlash(srv.Root)
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	info, err := svc.NewSession(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := svc.expandMentions(info.ID, "远端看 @git:HEAD", nil)
+	for _, want := range []string{"@git:HEAD（提交/差异）：", "remote commit", "r.txt"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestGitMentionCaretNotInRev：^ 是 cmd.exe 远端的转义符——不进 rev
+// 字符集：@git:HEAD^ 的 rev 解析为 HEAD（^ 只是终止符，不注入命令）。
+func TestGitMentionCaretNotInRev(t *testing.T) {
+	m := gitMentionPattern.FindStringSubmatch("看 @git:HEAD^ 了")
+	if m == nil || m[1] != "HEAD" {
+		t.Fatalf("rev = %+v（^ 应终止 rev，不进入）", m)
+	}
+	if m := gitMentionPattern.FindStringSubmatch("@git:HEAD~2"); m == nil || m[1] != "HEAD~2" {
+		t.Fatalf("HEAD~2 should match: %+v", m)
 	}
 }
