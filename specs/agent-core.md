@@ -860,6 +860,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    延到窗口开启点（与 fireDue 补跑语义一致——LastRun 不动、窗口一开
    即跑，推演如实呈现补跑点）；跨午夜窗口的开点即 start 本身；
    disabled/坏计划零结果。相对时长一并打印。
+109. 导出元数据头：HTML/Markdown 导出在既有头行（模型/工作区/时
+   间）之下附元数据行——token 用量（↑↓⤒三段）、$ 成本（牌价已知
+   时；未知省略）、谱系链（根 → … → 本会话，按 ParentID 上溯、环
+   防御 10 层、标题空用 ID 前 8 位；根会话无谱系行）。模型取会话实
+   际解析值（含任务级/工作区级覆盖，非全局快照）。旧调用（无 meta）
+   输出不变——MetaLines 零值不渲染。fork 是新账本：用量不继承根
+   （谱系才继承）。
 
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有

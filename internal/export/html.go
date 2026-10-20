@@ -32,6 +32,9 @@ type Page struct {
 	Workspace string
 	When      string
 	Entries   []Entry
+	// Meta 是导出头扩展（spec 规则 109）：零值字段不渲染——旧调用
+	// 方（只给标题/模型/工作区）输出不变。
+	MetaLines []string
 }
 
 var pageTmpl = template.Must(template.New("page").Parse(`<!DOCTYPE html>
@@ -79,6 +82,7 @@ details.tool pre { margin:0; padding:10px 12px; border-top:1px solid var(--borde
 <header>
   <h1>{{.Title}}</h1>
   <div class="meta">模型 {{.Model}} · 工作区 {{.Workspace}} · 导出于 {{.When}}</div>
+  {{range .MetaLines}}<div class="meta">{{.}}</div>{{end}}
 </header>
 {{range .Entries}}
   {{if eq .Role "user"}}<div class="entry user"><div class="bubble">{{.Text}}</div>{{range .Images}}<img class="attach" src="{{.}}" alt="图片附件">{{end}}</div>
@@ -93,9 +97,16 @@ details.tool pre { margin:0; padding:10px 12px; border-top:1px solid var(--borde
 // HTML renders the transcript. Assistant text keeps its fenced code
 // blocks; everything else is escaped by html/template.
 func HTML(messages []ai.Message, title, model, workspace string) string {
+	return HTMLWithMeta(messages, title, model, workspace, nil)
+}
+
+// HTMLWithMeta 在导出头附元数据行（spec 规则 109：用量/$ 成本/回合
+// 数/谱系链——合规分享物一屏可见）。meta 为 nil 时与 HTML 等价。
+func HTMLWithMeta(messages []ai.Message, title, model, workspace string, meta []string) string {
 	page := Page{
 		Title: title, Model: model, Workspace: workspace,
 		When: time.Now().Format("2006-01-02 15:04"),
+		MetaLines: meta,
 	}
 	var pendingTools []Entry
 	// 工具名/参数按 ID 从 assistant 的 ToolCall 块建映射（issue #73：
