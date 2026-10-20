@@ -867,6 +867,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    际解析值（含任务级/工作区级覆盖，非全局快照）。旧调用（无 meta）
    输出不变——MetaLines 零值不渲染。fork 是新账本：用量不继承根
    （谱系才继承）。
+（规则 110 = bash 工作目录参数，见待并 #320。）
+111. MCP 服务端 prompts 面：`zgo mcp serve` 暴露技能层为 MCP
+   prompts——prompts/list（技能名 + 描述，空描述回落 WhenToUse）与
+   prompts/get（SKILL.md 正文，user 消息形态返回）。根取工作区
+   .zgo/skills + 全局 ~/.zgo/skills（内置层不含——随二进制发行的
+   内容对远端客户端无新信息）；未知名报错；未接 prompts 的服务（库
+   面默认）两个方法 404。resources 面暂缺（spec 如实注明，可后续补
+   ——候选源：工作区记忆）。
 
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有

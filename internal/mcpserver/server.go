@@ -15,6 +15,7 @@ import (
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/redact"
+	"github.com/skeleton1231/zcode-my-go/internal/skills"
 )
 
 // ProtocolVersion 与客户端侧一致（2024-11-05）。
@@ -47,15 +48,26 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// Server serves a fixed tool set over one stdio connection.
+// Server serves a fixed tool set over one stdio connection. skills 可
+// 选提供 MCP prompts 面（spec 规则 111：技能层作为 prompts/list 与
+// prompts/get 暴露——发现名与描述，正文按需取）。
 type Server struct {
-	tools []agent.Tool
-	out   io.Writer
+	tools  []agent.Tool
+	skills func() []skills.Skill
+	body   func(name string) (string, bool)
+	out    io.Writer
 }
 
 // New builds a server for the given tools; responses go to out.
 func New(tools []agent.Tool, out io.Writer) *Server {
 	return &Server{tools: tools, out: out}
+}
+
+// WithPrompts 接入 prompts 面：list 返回技能清单，body 按名取正文
+// （返回 ok=false 报 unknown prompt）。
+func (s *Server) WithPrompts(list func() []skills.Skill, body func(name string) (string, bool)) *Server {
+	s.skills, s.body = list, body
+	return s
 }
 
 // Serve reads newline-delimited JSON-RPC requests until EOF (or ctx ends).
@@ -108,6 +120,44 @@ func (s *Server) dispatch(ctx context.Context, req rpcRequest) {
 		result = map[string]any{"tools": list}
 	case "tools/call":
 		result, rerr = s.call(ctx, req.Params)
+	case "prompts/list":
+		if s.skills == nil {
+			rerr = &rpcError{Code: codeMethodNotFound, Message: "prompts not enabled"}
+			break
+		}
+		list := []map[string]any{}
+		for _, sk := range s.skills() {
+			desc := sk.Description
+			if desc == "" {
+				desc = sk.WhenToUse
+			}
+			list = append(list, map[string]any{"name": sk.Name, "description": desc})
+		}
+		result = map[string]any{"prompts": list}
+	case "prompts/get":
+		if s.skills == nil || s.body == nil {
+			rerr = &rpcError{Code: codeMethodNotFound, Message: "prompts not enabled"}
+			break
+		}
+		var p struct {
+			Name string `json:"name"`
+		}
+		if len(req.Params) == 0 || json.Unmarshal(req.Params, &p) != nil || p.Name == "" {
+			rerr = &rpcError{Code: codeInvalidParams, Message: "prompts/get needs {name}"}
+			break
+		}
+		text, ok := s.body(p.Name)
+		if !ok {
+			rerr = &rpcError{Code: codeInvalidParams, Message: "unknown prompt: " + p.Name}
+			break
+		}
+		result = map[string]any{
+			"description": p.Name,
+			"messages": []map[string]any{{
+				"role":    "user",
+				"content": map[string]any{"type": "text", "text": text},
+			}},
+		}
 	default:
 		rerr = &rpcError{Code: codeMethodNotFound,
 			Message: fmt.Sprintf("method not found: %s", req.Method)}

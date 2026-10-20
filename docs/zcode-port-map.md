@@ -506,6 +506,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **cron 预演**（spec 规则 108）：`zgo cron next <id> [--count N]`——
    推演未来触发序列（时间窗顺延/跨午夜/补跑点如实呈现）。
 
+**MCP 服务端 prompts 面**（spec 规则 111）：zgo mcp serve 暴露技能
+   层为 MCP prompts（list/get；工作区+全局根）；服务端故事补到 prompts
+   ——resources 暂缺如实注明。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 

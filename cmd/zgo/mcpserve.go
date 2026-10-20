@@ -9,9 +9,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/mcpserver"
+	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
@@ -31,11 +33,46 @@ func runMCPServe(argv []string) int {
 	}
 	mcpserver.SetVersion(zgoVersion)
 	srv := mcpserver.New(buildMCPTools(tools.Workspace{Root: wd}, all), os.Stdout)
+	// prompts 面（spec 规则 111）：工作区 + 全局技能作为 MCP prompts
+	//（内置层不含——随二进制发行的内容对远端客户端无新信息）。
+	wsRoots := skillsRootsFor(wd)
+	srv = srv.WithPrompts(
+		func() []skills.Skill {
+			return skills.Discover(wsRoots).Skills
+		},
+		func(name string) (string, bool) {
+			for _, sk := range skills.Discover(wsRoots).Skills {
+				if sk.Name == name {
+					data, err := os.ReadFile(sk.Path)
+					if err != nil {
+						return "", false
+					}
+					return string(data), true
+				}
+			}
+			return "", false
+		})
 	if err := srv.Serve(context.Background(), os.Stdin); err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		return 1
 	}
 	return 0
+}
+
+// skillsRootsFor 服务端 prompts 面的技能根（工作区 + 全局）。
+func skillsRootsFor(wd string) []skills.Root {
+	var roots []skills.Root
+	roots = append(roots, skills.Root{
+		Base:  filepath.Join(wd, ".zgo", "skills"),
+		Scope: skills.ScopeProject, FS: skills.LocalFS{},
+	})
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, skills.Root{
+			Base:  filepath.Join(home, ".zgo", "skills"),
+			Scope: skills.ScopeUser, FS: skills.LocalFS{},
+		})
+	}
+	return roots
 }
 
 // buildMCPTools 组装服务端工具面：默认只读（read/grep/glob/ls，
