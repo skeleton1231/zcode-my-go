@@ -948,6 +948,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    argv，不构成注入面）；rune 截断 60KB、预算/条数与文件引用共享；
    非 git 工作区/未知 rev/SSH 远程工作区原样保留（同 @session 未解
    析语义）。
+
 125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模
    型清单（anthropic GET /v1/models、openai GET /models（BaseURL 含
    /v1）、gemini GET /v1beta/models 只收 generateContent 条目；15s/
