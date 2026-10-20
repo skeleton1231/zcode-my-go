@@ -243,7 +243,7 @@ func (s *Scheduler) Start() {
 
 // RecordForTesting 直接落一条运行历史（CLI 测试铺数据；不经 fire）。
 func (s *Scheduler) RecordForTesting(id, status, summary string, at time.Time) {
-	s.recordWithTime(id, status, summary, at)
+	s.recordWithTime(id, status, summary, at, "test")
 }
 
 // SetClock injects the time source（测试注入固定时钟）。Start 的循环
@@ -345,7 +345,7 @@ func (s *Scheduler) fire(ctx context.Context, job Job) {
 		if err != nil {
 			status = "error: " + err.Error()
 		}
-		s.recordWithTime(job.ID, status, summary, started)
+		s.recordWithTime(job.ID, status, summary, started, "tick")
 	}()
 }
 
@@ -372,15 +372,15 @@ func (s *Scheduler) RunNow(ctx context.Context, job Job) (string, error) {
 	if err != nil {
 		status = "error: " + err.Error()
 	}
-	s.recordWithTime(job.ID, status, summary, s.clock())
+	s.recordWithTime(job.ID, status, summary, s.clock(), "manual")
 	return summary, err
 }
 
 func (s *Scheduler) record(id, status, summary string) {
-	s.recordWithTime(id, status, summary, s.now())
+	s.recordWithTime(id, status, summary, s.now(), "tick")
 }
 
-func (s *Scheduler) recordWithTime(id, status, summary string, at time.Time) {
+func (s *Scheduler) recordWithTime(id, status, summary string, at time.Time, source string) {
 	// 按 rune 截断（issue #117：字节截断让中文摘要在上限处乱码——同类
 	// 第 4 例，#12/#40/#99 均已 rune 安全化）。
 	if r := []rune(summary); len(r) > SummaryCap {
@@ -388,7 +388,7 @@ func (s *Scheduler) recordWithTime(id, status, summary string, at time.Time) {
 	}
 	trimmed := strings.TrimSpace(summary)
 	// 运行历史（spec 规则 118）：与 LastStatus 同源同刻追加。
-	appendRun(s.dir, id, RunEntry{Time: at, Status: status, Summary: trimmed})
+	appendRun(s.dir, id, RunEntry{Time: at, Status: status, Summary: trimmed, Source: source})
 	_ = s.store.Update(func(jobs []Job) []Job {
 		for i := range jobs {
 			if jobs[i].ID == id {

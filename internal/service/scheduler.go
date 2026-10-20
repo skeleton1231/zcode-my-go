@@ -125,3 +125,12 @@ func (s *AgentService) RunJobNow(ctx context.Context, id string) (string, error)
 	}
 	return "", fmt.Errorf("no job %s", id)
 }
+
+// RunDueOnce 单轮到期检查（zgo cron serve --once，spec 规则 123）：到
+// 期任务同步等跑完（含运行历史落盘）再返回——系统定时器形态（Windows
+// 任务计划/systemd timer 每分钟拉起）的执行面，无需常驻进程。
+func (s *AgentService) RunDueOnce(ctx context.Context) {
+	sched := schedule.NewScheduler(s.JobStore(), scheduleRunner{s})
+	sched.FireDue(ctx)
+	sched.Stop() // 排空在飞 run 与 record 落盘（issue #134 的手动 tick 语义）
+}

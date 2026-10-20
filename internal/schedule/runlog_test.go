@@ -20,9 +20,9 @@ func TestRunHistoryAppendedAndRead(t *testing.T) {
 		return "第 " + time.Now().Format("04") + " 次结论", nil
 	}))
 	base := time.Date(2026, 10, 19, 3, 0, 0, 0, time.Local)
-	sch.recordWithTime("hist", "ok", "结论一", base)
-	sch.recordWithTime("hist", "ok", "结论二", base.Add(time.Hour))
-	sch.recordWithTime("hist", "error: 网络抖动", "", base.Add(2*time.Hour))
+	sch.recordWithTime("hist", "ok", "结论一", base, "test")
+	sch.recordWithTime("hist", "ok", "结论二", base.Add(time.Hour), "test")
+	sch.recordWithTime("hist", "error: 网络抖动", "", base.Add(2*time.Hour), "test")
 
 	entries := RunHistory(dir, "hist", 10)
 	if len(entries) != 3 {
@@ -46,7 +46,7 @@ func TestRunHistoryRingTrim(t *testing.T) {
 	sch := NewScheduler(store, stubRunner(func(ctx context.Context, j Job) (string, error) { return "", nil }))
 	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.Local)
 	for i := 0; i < runLogMax+30; i++ {
-		sch.recordWithTime("ring", "ok", "r", base.Add(time.Duration(i)*time.Minute))
+		sch.recordWithTime("ring", "ok", "r", base.Add(time.Duration(i)*time.Minute), "test")
 	}
 	entries := RunHistory(dir, "ring", 1000)
 	if len(entries) != runLogMax {
