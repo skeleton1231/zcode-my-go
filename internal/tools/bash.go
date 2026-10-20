@@ -100,21 +100,29 @@ func (b *Bash) absorbCwd(out string) string {
 }
 
 // underRoot 报告 dir 是否在工作区根内（大小写与 8.3 短名归一后）。
+// 附加工作目录（spec 规则 128）同权：cd 可以进入任一根。
 func (b *Bash) underRoot(dir string) bool {
 	if b.ws.IsRemote() {
 		root := strings.TrimSuffix(b.ws.Root, "/")
 		return strings.HasPrefix(strings.ToLower(strings.TrimSuffix(dir, "/")), strings.ToLower(root+"/")) || strings.EqualFold(strings.TrimSuffix(dir, "/"), root)
 	}
-	root, err := filepath.Abs(b.ws.Root)
-	if err != nil {
-		return false
+	roots := []string{b.ws.Root}
+	roots = append(roots, b.ws.Extra...)
+	for _, root := range roots {
+		r, err := filepath.Abs(root)
+		if err != nil {
+			continue
+		}
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return false
+		}
+		rel, err := filepath.Rel(winpath.Long(r), winpath.Long(abs))
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
 	}
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return false
-	}
-	rel, err := filepath.Rel(winpath.Long(root), winpath.Long(abs))
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return false
 }
 
 // NewBash builds the bash tool.

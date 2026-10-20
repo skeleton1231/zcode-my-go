@@ -967,6 +967,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    台基线（echo 标记——Windows 走 PowerShell）、ls 列表、@ 行窗
    （规则 81）与 @ 目录树（规则 76）的场景面。全部离线（脚本
    provider）；zgo eval evals 全绿是 CI 门禁的一部分。
+128. 附加工作目录：`/add-dir <路径>`（REPL/TUI）把额外目录并入本会话
+   的 path jail——Workspace.Extra 多根判定（词法 + symlink 真实路径
+   复查按所属根各自做，多根不放宽逃逸语义）；相对路径仍只落 Root；
+   bash 的 cwd 粘滞可进任一根。上限 8 个、幂等去重；显式用户动作即
+   本会话对该目录的授权（与授信门同源的同意语义）；会话作用域不落
+   盘（重启回单根）；SSH 远程会话 v1 不支持（Remote 单根）。
 
 
 125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模

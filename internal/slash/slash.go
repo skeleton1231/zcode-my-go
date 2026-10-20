@@ -520,6 +520,20 @@ var commands = []command{
 		},
 	},
 	{
+		name: "/add-dir", usage: "/add-dir <路径>",
+		help: "附加工作目录——并入本会话的文件访问边界（spec 规则 128）",
+		run: func(env *Env, args string) string {
+			if args == "" {
+				return "用法：/add-dir <绝对路径或相对当前目录的路径>（最多 8 个）"
+			}
+			dirs, err := env.Svc.AddWorkspaceDir(env.SessionID(), args)
+			if err != nil {
+				return err.Error()
+			}
+			return fmt.Sprintf("[add-dir] 已并入，当前根 %d 个", len(dirs))
+		},
+	},
+	{
 		name: "/login", usage: "/login",
 		help: "订阅登录（浏览器 OAuth，Claude Pro/Max）",
 		run: func(env *Env, _ string) string {
