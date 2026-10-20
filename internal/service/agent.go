@@ -2296,6 +2296,27 @@ func (s *AgentService) lineageTitles(info agent.SessionInfo) []string {
 	return chain
 }
 
+// SkillBody 按名读技能正文（spec 规则 115 的 zgo skills show 数据
+// 面）：遍历发现根，Path 命中该根前缀即经其 FS 读（内置层是 embed
+// FS——os.ReadFile 读不到）。截断 32KB 与 CLI 展示同口径。
+func (s *AgentService) SkillBody(workspace, name string) (string, bool) {
+	roots := s.skillRoots("", workspace)
+	for _, root := range roots {
+		out := skills.Discover([]skills.Root{root})
+		for _, sk := range out.Skills {
+			if sk.Name != name {
+				continue
+			}
+			content, _, _, err := skills.LoadSkill(root, sk, 32<<10)
+			if err != nil {
+				return "", false
+			}
+			return content, true
+		}
+	}
+	return "", false
+}
+
 // AgentJobStates 返回会话的后台子代理快照（e2e 等待终态、后续 UI 面
 // 同源）。
 func (s *AgentService) AgentJobStates(sessionID string) []tools.AgentJobView {
