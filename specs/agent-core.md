@@ -935,6 +935,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    败（失败行带分数与评语）；解析不出 JSON 或 score 越界如实报错，
    不猜。judge 需已配置 provider——未注入/未配置时带 judge 的场景
    明确失败（CI 门禁场景不用 judge）。
+123. cron serve 常驻/单轮形态：`zgo cron serve`——前台常驻（分钟
+   tick 同桌面调度器，Ctrl+C 优雅停：等在飞任务收尾）；`--once` 单
+   轮到期检查（service.RunDueOnce——到期任务同步跑完含运行历史落盘
+   再返回）。系统定时器（Windows 任务计划/systemd timer）周期拉起
+   --once 即得无人值守调度，不必守进程。运行历史照常（source=tick/
+   manual 落史——此前字段死置）；管理面（list/add/…）与桌面热重载
+   共用 jobs.json。
 
 
 

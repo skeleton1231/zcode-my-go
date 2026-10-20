@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,12 +22,13 @@ import (
 //	zgo cron add --schedule '*/5 * * * *' --prompt '...' --workspace path [--id name] [--model m]
 //	zgo cron add --at '每天下午3点' --prompt '...' --workspace path   （自然语言，spec 规则 95）
 //	zgo cron rm <id> | run <id> | enable <id> | disable <id>
+//	zgo cron serve [--once]                                     （常驻/单轮调度，spec 规则 123）
 //
 // 管理（除 run）直接读写 jobs.json——桌面调度器每分钟热重载；run 走服务
 // 的一次立即执行。
 func runCron(argv []string) int {
 	if len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "用法：zgo cron <list|add|rm|run|enable|disable> …")
+		fmt.Fprintln(os.Stderr, "用法：zgo cron <list|add|rm|run|enable|disable|serve> …")
 		return 2
 	}
 	cmd, rest := argv[0], argv[1:]
@@ -64,10 +66,47 @@ func runCron(argv []string) int {
 		})
 	case "run":
 		return cronRun(dataDir, rest)
+	case "serve":
+		return cronServe(dataDir, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令 %q\n", cmd)
 		return 2
 	}
+}
+
+// cronServe 是调度的常驻/单轮形态（spec 规则 123）：默认前台常驻（每分
+// 钟 tick，Ctrl+C 停止）；--once 跑完当前到期任务即退——系统定时器
+//（Windows 任务计划/systemd timer）周期拉起 --once 即得无人值守调度，
+// 不必守进程。运行历史照常落 job-logs（zgo cron log 查看）。
+func cronServe(dataDir string, argv []string) int {
+	once := false
+	for _, a := range argv {
+		if a == "--once" {
+			once = true
+			continue
+		}
+		fmt.Fprintln(os.Stderr, "用法：zgo cron serve [--once]")
+		return 2
+	}
+	svc, err := service.New(dataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	defer svc.Close()
+	if once {
+		svc.RunDueOnce(context.Background())
+		return 0
+	}
+	svc.StartScheduler()
+	fmt.Println("调度已启动（每分钟检查到期任务；Ctrl+C 停止）")
+	// 信号触发优雅退出：先停调度（等在飞任务收尾），Close 收束其余。
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	<-ctx.Done()
+	svc.StopScheduler()
+	fmt.Println("调度已停止")
+	return 0
 }
 
 func cronList(store *schedule.Store) int {
