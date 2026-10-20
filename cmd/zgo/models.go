@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ func runModels(argv []string) int {
 	fs := flag.NewFlagSet("models", flag.ContinueOnError)
 	api := fs.String("api", "", "按协议过滤（anthropic/openai/gemini）")
 	check := fs.String("check", "", "校验一个模型 ID")
+	refresh := fs.Bool("refresh", false, "按活动剖面拉端点模型清单，合并进目录（spec 规则 125）")
 	if err := fs.Parse(argv); err != nil {
 		return 2
 	}
@@ -53,6 +55,20 @@ func runModels(argv []string) int {
 		return 1
 	}
 	defer svc.Close()
+	if *refresh {
+		// 在线刷新（spec 规则 125）：拉活动剖面端点的模型清单，未知
+		// id 进覆盖层（内置条目带牌价/窗口，同名优先）。
+		fetched, added, err := svc.RefreshModels(context.Background())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "刷新失败：", err)
+			return 1
+		}
+		fmt.Printf("已刷新：端点返回 %d 个模型，%d 个新进目录（其余与内置同名，保留内置牌价/窗口）\n",
+			fetched, added)
+		if added == 0 {
+			return 0
+		}
+	}
 	configured := svc.GetSettings().Model
 
 	apis := []string{"anthropic", "openai", "gemini"}
@@ -76,12 +92,40 @@ func runModels(argv []string) int {
 			}
 			fmt.Fprintf(w, "%s\t%s\t%d\t%d%s\n", m.ID, a, m.ContextWindow, m.MaxOutput, mark)
 		}
+		// 覆盖层（spec 规则 125）：在线刷新进来的未知 id——清单 API 不
+		// 带窗口/牌价，按默认口径标注。
+		overlay := ai.CatalogOverlay()
+		sort.Slice(overlay, func(i, j int) bool { return overlay[i].ID < overlay[j].ID })
+		for _, m := range overlay {
+			if m.API != a {
+				continue
+			}
+			mark := "†"
+			if m.ID == configured {
+				mark += " ← 当前"
+			}
+			fmt.Fprintf(w, "%s\t%s\t%d\t%d%s\n", m.ID, m.API, ai.DefaultContextWindow, ai.DefaultMaxOutput, mark)
+		}
 	}
 	w.Flush()
 	if configured != "" && !ai.KnownModel(configured) {
-		fmt.Printf("\n⚠ 当前模型 %s 不在目录中：上下文窗口按 %d 估算\n", configured, ai.DefaultContextWindow)
+		fmt.Printf("\n⚠ 当前模型 %s 不在目录中：上下文窗口按 %d 估算（zgo models --refresh 可拉端点清单）\n", configured, ai.DefaultContextWindow)
+	} else if anyOverlay(apis) {
+		fmt.Println("\n† = 在线刷新补充（上下文/输出按默认估算，牌价未知）")
 	}
 	return 0
+}
+
+// anyOverlay 报告展示面是否含覆盖层条目（决定是否打 † 注脚）。
+func anyOverlay(apis []string) bool {
+	for _, m := range ai.CatalogOverlay() {
+		for _, a := range apis {
+			if m.API == a {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // modelsCheck validates one model id offline（不发包）.
@@ -98,32 +142,13 @@ func modelsCheck(id string) int {
 	return 0
 }
 
-// lookupModel resolves via the catalog's own fallback（LookupModel 对未知
-// ID 造默认值，这里要区分「在目录」与「不在」）.
+// lookupModel resolves via KnownModel + LookupModel（覆盖层参与判定，
+// spec 规则 125——刷新过的 id 不再报未知）.
 func lookupModel(id string) (ai.ModelInfo, bool) {
-	for _, m := range ai.CatalogModels("anthropic") {
-		if strings.EqualFold(m.ID, id) {
-			return m, true
-		}
+	if !ai.KnownModel(id) {
+		return ai.ModelInfo{}, false
 	}
-	for _, m := range ai.CatalogModels("openai") {
-		if strings.EqualFold(m.ID, id) {
-			return m, true
-		}
-	}
-	for _, m := range ai.CatalogModels("gemini") {
-		if strings.EqualFold(m.ID, id) {
-			return m, true
-		}
-	}
-	// 家族前缀（带日期后缀的变体）。
-	lower := strings.ToLower(id)
-	for _, m := range append(append(ai.CatalogModels("anthropic"), ai.CatalogModels("openai")...), ai.CatalogModels("gemini")...) {
-		if strings.HasPrefix(lower, strings.ToLower(m.ID)) {
-			return m, true
-		}
-	}
-	return ai.ModelInfo{}, false
+	return ai.LookupModel(id), true
 }
 
 func contains(list []string, v string) bool {

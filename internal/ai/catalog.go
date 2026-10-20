@@ -44,7 +44,9 @@ var catalog = []ModelInfo{
 }
 
 // LookupModel finds a catalog entry by id (case-insensitive, suffix
-// variants like dates fall back to the family entry).
+// variants like dates fall back to the family entry). 查询顺序：内置目录
+// （带牌价/窗口）→ 在线刷新覆盖层（spec 规则 125，只补内置没有的
+// id）→ 默认值兜底。
 func LookupModel(id string) ModelInfo {
 	id = strings.ToLower(strings.TrimSpace(id))
 	for _, m := range catalog {
@@ -64,12 +66,17 @@ func LookupModel(id string) ModelInfo {
 	if best.ID != "" {
 		return best
 	}
+	if m, ok := overlayLookup(id); ok { // 覆盖层：刷新进来的未知 id（前缀同语义）
+		m.ID = id
+		return m
+	}
 	return ModelInfo{ID: id, ContextWindow: DefaultContextWindow, MaxOutput: DefaultMaxOutput}
 }
 
 // KnownModel 报告 id 是否为目录模型或其家族变体（带日期后缀等）。
 // 静态校验有本质限制：glm-5.2x 与合法日期后缀在前缀上不可区分，
 // 但完全无家族前缀的拼写错误（如 cloude）可捕获（issue #61）。
+// 覆盖层（spec 规则 125）同样参与判定——刷新过的 id 不再报未知。
 func KnownModel(id string) bool {
 	id = strings.ToLower(strings.TrimSpace(id))
 	if id == "" {
@@ -80,7 +87,7 @@ func KnownModel(id string) bool {
 			return true
 		}
 	}
-	return false
+	return overlayKnown(id)
 }
 
 // CatalogModels lists suggested models for one API dialect.

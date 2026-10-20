@@ -201,6 +201,9 @@ func New(dataDir string) (*AgentService, error) {
 	}
 	// 牌价表（spec 规则 93）：目录近似价 + settings.pricing 覆盖。
 	s.prices = pricing.New(s.settings.Pricing)
+	// 模型目录覆盖层（spec 规则 125）：models --refresh 的持久化结果
+	// 参与目录查询（缺文件/损坏 = 静默空层）。
+	s.loadModelOverlay()
 	s.syncRedaction(s.resolve())
 	// 会话记忆自动化开关（spec 规则 74）：nil = 默认开。
 	if off := s.resolve().AutoMemory; off != nil && !*off {
