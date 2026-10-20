@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/schedule"
 )
@@ -175,4 +176,32 @@ func captureCronOut(fn func() int) (int, string) {
 	w.Close()
 	data, _ := io.ReadAll(r)
 	return code, string(data)
+}
+
+// TestCronLogCLI（spec 规则 118）：log 查询渲染 + --limit + 退出码。
+func TestCronLogCLI(t *testing.T) {
+	dataDir := cronEnv(t)
+	ws := t.TempDir()
+	store := schedule.NewStore(dataDir)
+	store.Upsert(schedule.Job{ID: "j", Schedule: "0 3 * * *", Prompt: "p", Workspace: ws, Enabled: true})
+	// 铺两条历史。
+	sch := schedule.NewScheduler(store, nil)
+	base := time.Date(2026, 10, 19, 3, 0, 0, 0, time.Local)
+	sch.RecordForTesting("j", "ok", "结论一", base)
+	sch.RecordForTesting("j", "error: 网络", "", base.Add(time.Hour))
+
+	code, out := captureCronOut(func() int { return runCron([]string{"log", "j"}) })
+	if code != 0 || !strings.Contains(out, "ok") || !strings.Contains(out, "ERR") || !strings.Contains(out, "结论一") {
+		t.Fatalf("log = %d\n%s", code, out)
+	}
+	code, out = captureCronOut(func() int { return runCron([]string{"log", "j", "--limit=1"}) })
+	if code != 0 || strings.Contains(out, "结论一") {
+		t.Fatalf("limit = %d\n%s", code, out)
+	}
+	if code := runCron([]string{"log"}); code != 2 {
+		t.Fatalf("argless = %d", code)
+	}
+	if code := runCron([]string{"log", "missing"}); code != 1 {
+		t.Fatalf("missing = %d", code)
+	}
 }

@@ -44,6 +44,8 @@ func runCron(argv []string) int {
 		return cronAdd(store, rest)
 	case "next":
 		return cronNext(store, rest)
+	case "log":
+		return cronLog(store, rest)
 	case "rm":
 		return cronMutation(store, rest, func(id string) error {
 			ok, err := store.Remove(id)
@@ -276,4 +278,67 @@ func cronNext(store *schedule.Store, args []string) int {
 		fmt.Printf("%d. %s（%s 后）\n", i+1, t.Format("2006-01-02 15:04 Mon"), rel)
 	}
 	return 0
+}
+
+// cronLog 查任务运行历史（spec 规则 118）：zgo cron log <id> [--limit N]
+// （默认 20，新到旧）。
+func cronLog(store *schedule.Store, args []string) int {
+	if len(args) < 1 || args[0] == "" || strings.HasPrefix(args[0], "-") {
+		fmt.Fprintln(os.Stderr, "用法：zgo cron log <id> [--limit N]")
+		return 2
+	}
+	id := args[0]
+	limit := 20
+	for _, a := range args[1:] {
+		if n, err := strconv.Atoi(strings.TrimPrefix(a, "--limit=")); err == nil && strings.HasPrefix(a, "--limit=") && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	jobs, err := store.List()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	known := false
+	for _, j := range jobs {
+		if j.ID == id {
+			known = true
+		}
+	}
+	if !known {
+		fmt.Fprintf(os.Stderr, "没有任务 %q（zgo cron list 查看）\n", id)
+		return 1
+	}
+	entries := schedule.RunHistory(filepath.Dir(store.Path()), id, limit)
+	if len(entries) == 0 {
+		fmt.Printf("任务 %s 还没有运行记录\n", id)
+		return 0
+	}
+	for _, e := range entries {
+		fmt.Printf("%s  %-6s %s\n", e.Time.Format("01-02 15:04"), statusMark(e.Status), oneLineLog(e.Summary, 80))
+	}
+	return 0
+}
+
+// statusMark 状态短标（ok/err/skip）。
+func statusMark(status string) string {
+	switch {
+	case status == "ok":
+		return "ok"
+	case strings.HasPrefix(status, "error"):
+		return "ERR"
+	case strings.HasPrefix(status, "skipped"):
+		return "skip"
+	}
+	return status
+}
+
+// oneLineLog 压成单行摘要（换行转空格 + 截断）——main.go 已有
+// oneLine（单参形态），此处独立命名避免撞名。
+func oneLineLog(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > max {
+		return string(r[:max]) + "…"
+	}
+	return s
 }

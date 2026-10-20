@@ -907,6 +907,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    容错）。窗口仍是尾部 N 条 user/assistant 文本；30KB 单引用与总量
    预算照旧。前缀解析不变（唯一前缀，ID 含点不含冒号——后缀切割用
    LastIndexByte）。
+118. cron 运行历史：每次 fire/手动触发的结果追加一条到
+   <dataDir>/job-logs/<id>.jsonl（时间/状态/摘要——与 LastStatus 同源
+   同刻；上限 200 条环形裁剪，原子重写）；`zgo cron log <id>
+   [--limit N]`（默认 20 新到旧，ok/ERR/skip 短标 + 单行摘要 80 rune）。
+   历史是尽力而为的观测面：写失败静默不影响任务本身。
+
 
 
 116. agents 层信任门与 CLI：**信任门补齐**——agentRoots 此前未过门
