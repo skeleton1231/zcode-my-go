@@ -973,6 +973,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
    bash 的 cwd 粘滞可进任一根。上限 8 个、幂等去重；显式用户动作即
    本会话对该目录的授权（与授信门同源的同意语义）；会话作用域不落
    盘（重启回单根）；SSH 远程会话 v1 不支持（Remote 单根）。
+129. 权限判定预演：`/perms why <工具> [参数 JSON]`——对假想调用走与
+   loop gate 完全相同的判定链（同一 Check + 同一 capabilityFor 导出
+   面 + 同一参数摘要 SummarizeArgs），展示行为（allow/ask/deny）、来
+   源（规则 ID / 能力兜底）与理由；零副作用（不执行工具、不写规则）。
+   未知工具/坏 JSON 明确报错；plan 模式拦截如实呈现。
 
 
 125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模

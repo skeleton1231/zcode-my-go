@@ -4,6 +4,7 @@
 package slash
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -199,11 +200,31 @@ var commands = []command{
 		},
 	},
 	{
-		name: "/perms", usage: "/perms [export]",
-		help: "本会话累计的「总是允许」权限规则；export 固化成 .zgorules.json 建议",
+		name: "/perms", usage: "/perms [export|why <工具> [参数 JSON]]",
+		help: "本会话累计的「总是允许」权限规则；export 固化成 .zgorules.json；why 预演一次调用的判定",
 		run: func(env *Env, args string) string {
 			if strings.TrimSpace(args) == "export" {
 				return permsExport(env)
+			}
+			if rest, ok := strings.CutPrefix(strings.TrimSpace(args), "why"); ok {
+				// why <工具> [参数 JSON]：判定预演（spec 规则 129）。
+				fields := strings.Fields(rest)
+				if len(fields) == 0 {
+					return "用法：/perms why <工具> [参数 JSON]（例：/perms why webfetch {\"url\":\"https://go.dev\"}）"
+				}
+				tool := fields[0]
+				raw := json.RawMessage(nil)
+				if len(fields) > 1 {
+					raw = json.RawMessage(strings.Join(fields[1:], " "))
+					if !json.Valid(raw) {
+						return "参数不是合法 JSON：" + string(raw)
+					}
+				}
+				why, err := env.Svc.PermWhy(env.SessionID(), tool, raw)
+				if err != nil {
+					return err.Error()
+				}
+				return "[判定预演] " + why
 			}
 			rules := env.Svc.SessionPermissionRules(env.SessionID())
 			if len(rules) == 0 {

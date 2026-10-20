@@ -80,6 +80,12 @@ func capabilityFor(t Tool, args string) permission.Capability {
 	return capabilityOf(t)
 }
 
+// CapabilityFor 是 capabilityFor 的导出面（/perms why 的判定预演用，
+// spec 规则 129）——与 loop 实际 gate 同一条路径，预演即生产。
+func CapabilityFor(t Tool, args string) permission.Capability {
+	return capabilityFor(t, args)
+}
+
 // AskRequest describes an approval the loop needs before executing
 // (ZCode's permission broker asking the surface).
 type AskRequest struct {
