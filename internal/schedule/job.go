@@ -18,12 +18,12 @@ const SummaryCap = 2000
 
 // Job is one scheduled prompt (ZCode's automation task).
 type Job struct {
-	ID          string    `json:"id"`
-	Schedule    string    `json:"schedule"`
-	Prompt      string    `json:"prompt"`
-	Workspace   string    `json:"workspace"`
-	Model       string    `json:"model,omitempty"`
-	Window      string    `json:"window,omitempty"` // HH:MM-HH:MM（本地时区，可跨午夜）；空即不限
+	ID        string `json:"id"`
+	Schedule  string `json:"schedule"`
+	Prompt    string `json:"prompt"`
+	Workspace string `json:"workspace"`
+	Model     string `json:"model,omitempty"`
+	Window    string `json:"window,omitempty"` // HH:MM-HH:MM（本地时区，可跨午夜）；空即不限
 	// At 是创建时的自然语言原文（spec 规则 95）：只作回显，调度仍以
 	// Schedule（五字段 cron）为准。
 	At          string    `json:"at,omitempty"`
@@ -47,6 +47,10 @@ type Store struct {
 
 // NewStore points at <dir>/jobs.json.
 func NewStore(dir string) *Store { return &Store{path: filepath.Join(dir, "jobs.json")} }
+
+// Path 报告 jobs.json 的完整路径（CLI 从它推导数据目录，spec 规则
+// 118 的 log 查询面）。
+func (st *Store) Path() string { return st.path }
 
 // List reads the jobs (missing file = empty, malformed file = error).
 // 持存储锁（issue #117）：读-改-写调用方（recordWithTime/Upsert）曾各
@@ -181,6 +185,8 @@ type Scheduler struct {
 	runner  Runner
 	now     func() time.Time // 注入时钟（经 clockMu 与循环 goroutine 互斥）
 	clockMu sync.Mutex
+	// dir 是数据目录（运行历史的落盘根，spec 规则 118）。
+	dir string
 
 	mu      sync.Mutex
 	running map[string]bool
@@ -203,7 +209,8 @@ const maxConcurrentRuns = 2
 // NewScheduler wires a store and runner.
 func NewScheduler(store *Store, runner Runner) *Scheduler {
 	return &Scheduler{store: store, runner: runner, now: time.Now,
-		running: map[string]bool{}, stopped: make(chan struct{})}
+		running: map[string]bool{}, stopped: make(chan struct{}),
+		dir: filepath.Dir(store.path)}
 }
 
 // Start launches the minute loop on its own goroutine; Stop ends it.
@@ -232,6 +239,11 @@ func (s *Scheduler) Start() {
 			}
 		}
 	}()
+}
+
+// RecordForTesting 直接落一条运行历史（CLI 测试铺数据；不经 fire）。
+func (s *Scheduler) RecordForTesting(id, status, summary string, at time.Time) {
+	s.recordWithTime(id, status, summary, at)
 }
 
 // SetClock injects the time source（测试注入固定时钟）。Start 的循环
@@ -375,6 +387,8 @@ func (s *Scheduler) recordWithTime(id, status, summary string, at time.Time) {
 		summary = string(r[:SummaryCap]) + "…"
 	}
 	trimmed := strings.TrimSpace(summary)
+	// 运行历史（spec 规则 118）：与 LastStatus 同源同刻追加。
+	appendRun(s.dir, id, RunEntry{Time: at, Status: status, Summary: trimmed})
 	_ = s.store.Update(func(jobs []Job) []Job {
 		for i := range jobs {
 			if jobs[i].ID == id {
