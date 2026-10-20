@@ -883,6 +883,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    ws_<hash>.md，与 memory 工具同一存储）——不建服务实例，serve 是
    无会话的静态面。未接 WithResources 的库面默认两方法 404。服务端
    三件套（tools/prompts/resources）至此收口。
+（规则 113 = i18n 服务层扩展，见待并 #323。）
+114. MCP 服务端 dogfood 收口：internal/mcp 客户端（stdio 拨号自重
+   执行进程）对 zgo 服务端三件套全栈往返——tools（既有）+ prompts
+   （Prompts 清单 / GetPrompt 正文）+ resources（Resources 清单 /
+   ReadResource 正文）。两侧生产路径同台：客户端的握手探测与服务器
+   的 list/get 实现互为回归网（一侧改协议形状另一侧即红）。
+
 
 110. bash 工作目录参数：args.cwd——本次运行的起始目录（工作区相
    对，path jail 限界——越界即错误结果不执行）。本地设 cmd.Dir；远
