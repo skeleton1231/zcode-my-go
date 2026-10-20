@@ -188,6 +188,17 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   呈现）；自然语言 `--at` 建任务。
 - **导出合规头**：HTML/MD 导出附用量/$ 成本/谱系链；会话谱系
   `zgo sessions tree` 一图可见。
+- **MCP 服务端**：`zgo mcp serve` 把工具面、技能（prompts）、工作区记忆
+  （resources）一并暴露——ZCode/Claude Code/Cursor 可直接调用。
+- **CLI 家族再添两员**：`zgo skills list/show` 与 `zgo agents list/show`——
+  技能与子代理定义终端可查（同一发现面与信任门）。
+- **agents 层信任门**：未授信工作区不带其 .zgo/agents（persona 是提示注
+  入面）——信任门至此覆盖 rules/命令/技能/工具/子代理五层。
+- **bash cwd 参数**：args.cwd 设定运行起始目录（jail 限界）——monorepo
+  子目录免拼 cd。
+- **@session:<前缀>:N**：跨会话摘录条数可调（默认 20 上限 200）。
+- **cron 运行历史**：`zgo cron log <id>` 查任务历史（200 条环形）——调度
+  全周期可观测。
 ## 快速开始
 
 只依赖 Go 1.27+：

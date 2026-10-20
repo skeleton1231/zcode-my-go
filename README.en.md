@@ -94,6 +94,24 @@ MIT © 2026 skeleton1231
 - Stop/Notification hooks: a round-end hook (exit 2 blocks the wrap-up
   and feeds the output back) and a permission-wait notification hook.
 
+## v0.14.0 highlights
+
+- MCP server complete: `zgo mcp serve` now exposes tools, skills (as
+  prompts) and the workspace memory (as resources) — the full server
+  triad, dogfooded end-to-end against the real client.
+- CLI family grows: `zgo skills list/show` and `zgo agents list/show`
+  make skills and subagent definitions inspectable from the terminal
+  (same discovery surface and trust gate).
+- Agents-layer trust gate (security fix): untrusted workspaces no
+  longer contribute .zgo/agents — personas are a prompt-injection
+  surface; the gate now covers all five workspace layers.
+- bash cwd argument: args.cwd sets the working directory for a run
+  (jail-bounded) — no more `cd subdir &&` chains in monorepos.
+- @session mentions scale: `@session:<prefix>:N` tunes the excerpt
+  length (default 20, max 200).
+- cron run history: `zgo cron log <id>` shows the last runs (ring of
+  200) — the scheduling lifecycle is now observable end to end.
+
 ## v0.13.0 highlights
 
 - Model comparison: `zgo compare <prompt> [--profiles=a,b]` fans one
