@@ -37,6 +37,11 @@ func TestE2ECustomAgentPersona(t *testing.T) {
 		Turn{Text: "收到"}, // 主对话收尾
 	)
 	plantAgentDef(t, h.Workspace, "reviewer.md", reviewerMD)
+	// 信任门（spec 规则 116）：agents 层与技能/工具层同款——未授信
+	// 不带工作区定义。
+	if err := h.Svc.TrustWorkspace(h.Workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
 
 	events := h.Ask("用 reviewer 审查")
 
@@ -87,6 +92,9 @@ func TestE2EUnknownAgentListsAvailable(t *testing.T) {
 		Turn{Text: "改用 reviewer 重试"},
 	)
 	plantAgentDef(t, h.Workspace, "reviewer.md", reviewerMD)
+	if err := h.Svc.TrustWorkspace(h.Workspace, "test"); err != nil { // 规则 116 信任门
+		t.Fatal(err)
+	}
 
 	events := h.Ask("去查")
 	errored := false

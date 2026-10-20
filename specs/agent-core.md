@@ -895,6 +895,15 @@ dc907a4 (feat: glob and grep honor .gitignore)
    （Prompts 清单 / GetPrompt 正文）+ resources（Resources 清单 /
    ReadResource 正文）。两侧生产路径同台：客户端的握手探测与服务器
    的 list/get 实现互为回归网（一侧改协议形状另一侧即红）。
+（规则 115 = skills CLI，见待并 #325。）
+116. agents 层信任门与 CLI：**信任门补齐**——agentRoots 此前未过门
+  （persona 是提示注入面、tools 白名单是能力收窄面，克隆来的恶意仓
+   库可自带 .zgo/agents——规则 53 的遗漏层）：未授信本地工作区不
+   带其层（与 skillRoots 同款；全局层不受影响）。`zgo agents list
+   [工作区]`（名/层级/工具白名单/描述）与 `zgo agents show <名>
+   [工作区]`（定义原文：frontmatter + persona）——与系统提示注入/
+   task 路由同一发现面（服务 Agents/AgentBody）。
+
 
 
 110. bash 工作目录参数：args.cwd——本次运行的起始目录（工作区相

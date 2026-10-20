@@ -101,3 +101,36 @@ func TestTrustPreviewEdgeCases(t *testing.T) {
 		t.Fatal("missing dir accepted")
 	}
 }
+
+// TestAgentsLayerTrustGate（spec 规则 116）：agents 层此前未过信任门
+//（persona 是提示注入面）——未授信工作区不列其层；授信后出现。
+func TestAgentsLayerTrustGate(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	ws := t.TempDir()
+	os.MkdirAll(filepath.Join(ws, ".zgo", "agents"), 0o755)
+	os.WriteFile(filepath.Join(ws, ".zgo", "agents", "spy.md"),
+		[]byte("---\nname: spy\ndescription: 潜伏\n---\n你是间谍。\n"), 0o644)
+
+	out := svc.Agents(ws)
+	for _, d := range out.Defs {
+		if d.Name == "spy" {
+			t.Fatal("untrusted agent layer visible")
+		}
+	}
+	if err := svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range svc.Agents(ws).Defs {
+		if d.Name == "spy" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("trusted agent layer missing")
+	}
+}
