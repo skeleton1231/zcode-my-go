@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 func runEval(argv []string) int {
 	dir := "evals"
 	filter := ""
+	jsonOut := false
 	for i := 0; i < len(argv); i++ {
 		switch argv[i] {
 		case "--filter":
@@ -29,6 +31,8 @@ func runEval(argv []string) int {
 			}
 			i++
 			filter = argv[i]
+		case "--json":
+			jsonOut = true
 		default:
 			dir = argv[i]
 		}
@@ -64,19 +68,42 @@ func runEval(argv []string) int {
 	}
 
 	failed := 0
+	var results []eval.Result
 	for _, s := range scenarios {
 		res := eval.Run(s)
-		mark := "✓"
+		results = append(results, res)
 		if !res.Pass {
-			mark = "✕"
 			failed++
 		}
-		fmt.Printf("%s %s（%d 请求，%s）\n", mark, res.Name, res.Requests, res.Duration.Round(time.Millisecond))
-		for _, f := range res.Failures {
-			fmt.Printf("    %s\n", f)
+		if !jsonOut {
+			mark := "✓"
+			if !res.Pass {
+				mark = "✕"
+			}
+			fmt.Printf("%s %s（%d 请求，%s）\n", mark, res.Name, res.Requests, res.Duration.Round(time.Millisecond))
+			for _, f := range res.Failures {
+				fmt.Printf("    %s\n", f)
+			}
 		}
 	}
-	fmt.Printf("\n%d/%d 通过\n", len(scenarios)-failed, len(scenarios))
+	if jsonOut {
+		// 结构化报告（spec 规则 120）：场景结果逐条 + 汇总；stdout 只出
+		// JSON（CI 消费面），人读信息仍在文本模式。
+		report := struct {
+			Total   int           `json:"total"`
+			Passed  int           `json:"passed"`
+			Failed  int           `json:"failed"`
+			Results []eval.Result `json:"results"`
+		}{Total: len(scenarios), Passed: len(scenarios) - failed, Failed: failed, Results: results}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			fmt.Fprintln(os.Stderr, "错误：", err)
+			return 1
+		}
+	} else {
+		fmt.Printf("\n%d/%d 通过\n", len(scenarios)-failed, len(scenarios))
+	}
 	if failed > 0 {
 		return 1
 	}

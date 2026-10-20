@@ -916,6 +916,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
   （大小写不敏感）扫全部工作区记忆，命中行按工作区分组（5 条/工作区
    20 条总上限）；空查询拒绝。工作区清单来自 MemoryOverview（会话来
    源）——没有会话的孤儿记忆文件不可见（与 list 同源语义）。
+120. eval 结构化报告：`zgo eval --json`——stdout 只出 JSON（CI 消费
+   面）：{total, passed, failed, results:[{Name, Pass, Failures,
+   Duration, Requests}]}；文本模式（默认）逐场景 ✓/✕ + 汇总行不变；
+   失败退出码 1 两模式一致。
+
 
 
 
