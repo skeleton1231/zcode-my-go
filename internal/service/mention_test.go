@@ -356,3 +356,41 @@ func (p *mentionChatProvider) Stream(ctx context.Context, req ai.Request) <-chan
 	close(out)
 	return out
 }
+
+// TestSessionMentionCount（spec 规则 117）：@session:<前缀>:N 条数可调
+//——N=1 只带最后一条；N 越界 clamp 200；坏后缀（非数字）按无后缀。
+func TestSessionMentionCount(t *testing.T) {
+	svc, other, _ := mentionEnv(t)
+	svc.DisableAutoTitleForTesting()
+	svc.DisableAutoMemoryForTesting()
+	p := &mentionChatProvider{}
+	svc.UseProviderForTesting(func() ai.Provider { return p })
+	// 三条用户消息（每回合一问一答）。
+	for i := 1; i <= 3; i++ {
+		if err := svc.Chat(other, fmt.Sprintf("第%d问", i), func(agent.Event) {}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	self, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// :2 只带最后一问一答（第 3 问在；第 1、2 问不出现）。
+	text, _ := svc.expandMentions(self.ID, "@session:"+other+":2", nil)
+	if !strings.Contains(text, "第3问") || strings.Contains(text, "第1问") {
+		t.Fatalf(":2 excerpt wrong:\n%.500s", text)
+	}
+	// 无后缀默认 20 条：三问全在。
+	text, _ = svc.expandMentions(self.ID, "@session:"+other, nil)
+	for i := 1; i <= 3; i++ {
+		if !strings.Contains(text, fmt.Sprintf("第%d问", i)) {
+			t.Fatalf("default excerpt missing 第%d问", i)
+		}
+	}
+	// 坏后缀（非数字）按无后缀形态解析。
+	text, _ = svc.expandMentions(self.ID, "@session:"+other+":abc", nil)
+	if !strings.Contains(text, "第1问") {
+		t.Fatalf("bad suffix not defaulted:\n%.300s", text)
+	}
+}
