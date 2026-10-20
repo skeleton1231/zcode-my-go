@@ -2,6 +2,30 @@
 
 约定式提交驱动的里程碑摘要；每一行都对应一个经完整验证与 PR 评审的变更。
 
+## v0.15.0 — Web 检索、评测评分与 @ 引用家族
+
+- **WebSearch 工具**（#332）：websearch——固定端点搜索后端（默认 DDG
+  html 无 key，settings.search 可切 Brave），命中列表文本化、不回访
+  URL（无 SSRF 面，深挖走 webfetch 守卫）；CC 工具族 web 侧收口。
+- **eval 结构化报告**（#331）：zgo eval --json——stdout 纯 JSON（汇总 +
+  逐场景结果），CI 可直接消费；文本模式不变，失败退出码一致。
+- **eval judge 评分**（#333）：expect.judge {rubric, min}——确定性断言
+  全过后交评分模型（service.OneShot）打 1-5 分，评自由文本质量；转
+  录结构化截断渲染、解析不出如实报错不猜。
+- **cron serve 常驻/单轮**（#334）：zgo cron serve 前台分钟 tick、
+  --once 单轮到期检查——系统定时器拉起即得无人值守调度；运行历史
+  source=tick/manual 落史（死字段接线）。
+- **@git 引用**（#335）：@git:<rev>（git show）/ @git:<a>..<b>（diff
+  --stat）把提交/差异直接带进消息——review/调试免 bash 中转。
+- **模型目录在线刷新**（#336）：zgo models --refresh 按活动剖面拉三协
+  议模型清单，未知 id 落 models.json 覆盖层（内置同名优先）——新模
+  型/自建端点不再等发版。
+- **@git SSH 远程形态**（#337）：ssh:// 工作区经远端 Exec 执行同一只
+  读命令——跨 shell 安全形态（cmd.exe 远端不加引号、去 ^、拒 - 开
+  头）；@ 家族四形态本地/远程全量同构。
+- **跨工作区记忆检索**（#330）：zgo memory search——子串扫全部工作区
+  记忆，命中按工作区分组（5/工作区、20 总上限）。
+
 ## v0.14.0 — MCP 服务端收官、信任门补齐与 CLI 家族
 
 - **MCP 服务端 prompts/resources 面**（#321/#322）：zgo mcp serve 暴露
