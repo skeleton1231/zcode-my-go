@@ -523,6 +523,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **skills CLI**（spec 规则 115）：zgo skills list/show——技能层终端可
    查（同一发现面与信任门；SkillBody 按根 FS 读内置层）。
 
+**agents 层信任门与 CLI**（spec 规则 116）：agentRoots 补信任门
+   （persona 是注入面——规则 53 的遗漏层）；zgo agents list/show 终端
+   可查。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 

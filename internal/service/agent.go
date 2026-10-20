@@ -1790,6 +1790,18 @@ const agentsBaseDir = ".zgo/agents"
 func (s *AgentService) agentRoots(sessionID, workspace string) []agents.Root {
 	ws := s.workspaceFor(sessionID, workspace)
 	var roots []agents.Root
+	// 信任门（spec 规则 116）：未授信的本地工作区不带其 .zgo/agents
+	// 层——persona 是提示注入面、tools 白名单可收窄面，克隆来的恶
+	// 意仓库不得自带（与 skillRoots/规则 54 同款；全局层不受影响）。
+	if !ws.IsRemote() && !s.workspaceTrusted(workspace) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return []agents.Root{{
+				Base:  filepath.Join(home, ".zgo", "agents"),
+				Scope: agents.ScopeUser, FS: agents.LocalFS{},
+			}}
+		}
+		return nil
+	}
 	if ws.IsRemote() {
 		roots = append(roots, agents.Root{
 			Base: agentsBaseDir, Scope: agents.ScopeProject,
@@ -2294,6 +2306,32 @@ func (s *AgentService) lineageTitles(info agent.SessionInfo) []string {
 		chain[i], chain[j] = chain[j], chain[i]
 	}
 	return chain
+}
+
+// Agents 返回子代理定义发现面（spec 规则 116 的 zgo agents list 数
+// 据面；信任门在 agentRoots 内）。
+func (s *AgentService) Agents(workspace string) agents.Outcome {
+	return agents.Discover(s.agentRoots("", workspace))
+}
+
+// AgentBody 按名读定义原文（zgo agents show 的数据面）：persona + 定
+// 义 frontmatter 经发现同源（Path 命中根即读）。展示口径不截断——
+// 定义文件本身有 100KB 截断语义（Def.Truncated 标注）。
+func (s *AgentService) AgentBody(workspace, name string) (string, bool) {
+	roots := s.agentRoots("", workspace)
+	for _, root := range roots {
+		for _, d := range agents.Discover([]agents.Root{root}).Defs {
+			if d.Name != name {
+				continue
+			}
+			data, err := root.FS.ReadFile(d.Path)
+			if err != nil {
+				return "", false
+			}
+			return string(data), true
+		}
+	}
+	return "", false
 }
 
 // SkillBody 按名读技能正文（spec 规则 115 的 zgo skills show 数据

@@ -34,6 +34,10 @@ func TestAgentRootsLayering(t *testing.T) {
 	t.Cleanup(svc.Close)
 	ws := t.TempDir()
 	plantAgent(t, ws, "reviewer.md", "工作区版", "P.")
+	// 信任门（spec 规则 116）：工作区层要授信才带。
+	if err := svc.TrustWorkspace(ws, "test"); err != nil {
+		t.Fatal(err)
+	}
 
 	roots := svc.agentRoots("sess-agents", ws)
 	if len(roots) < 2 || roots[0].Scope != agents.ScopeProject || roots[1].Scope != agents.ScopeUser {
