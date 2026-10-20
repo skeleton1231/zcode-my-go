@@ -161,7 +161,9 @@ func TestSessionErrorsLocalized(t *testing.T) {
 	// hold 竞争运行态——测试自己死锁过）。
 	p := &blockStreamProvider{done: make(chan struct{})}
 	svc.UseProviderForTesting(func() ai.Provider { return p })
+	holdDone := make(chan struct{})
 	go func() {
+		defer close(holdDone)
 		svc.Chat(info.ID, "hold", func(agent.Event) {})
 	}()
 	deadline := time.Now().Add(5 * time.Second)
@@ -181,5 +183,12 @@ func TestSessionErrorsLocalized(t *testing.T) {
 	p.once.Do(func() { close(p.done) })
 	if err == nil || !strings.Contains(err.Error(), "already in progress") {
 		t.Fatalf("in-progress err = %v（en）", err)
+	}
+	// 等 hold 回合收尾再返回——转录仍在写会让 TempDir 清理撞
+	// directory not empty（#160 家族竞态，CI linux 逮的）。
+	select {
+	case <-holdDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("hold turn never finished")
 	}
 }
