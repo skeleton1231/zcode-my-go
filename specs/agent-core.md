@@ -949,6 +949,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    非 git 工作区/未知 rev/SSH 远程工作区原样保留（同 @session 未解
    析语义）。
 
+125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模
+   型清单（anthropic GET /v1/models、openai GET /models（BaseURL 含
+   /v1）、gemini GET /v1beta/models 只收 generateContent 条目；15s/
+   1MB/500 条上限），未知 id 落 dataDir/models.json 覆盖层（启动载入
+   参与目录查询）；同名内置优先——覆盖层只补未知 id（上下文/输出按
+   默认口径，牌价未知不计成本）；列表以 † 标注。
+
 
 
 
