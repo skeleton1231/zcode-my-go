@@ -62,14 +62,21 @@ func TestWorkspaceExtraSymlinkEscape(t *testing.T) {
 	}
 }
 
-// TestBashUnderRootExtra：cd 可以进入任一根。
+// TestBashUnderRootExtra：cd 可以进入任一根。子目录必须真实存在——
+// underRoot 的 8.3 短名归一（winpath.Long）对不存在路径不转换，两侧
+// 不一致会误判（CI Windows 的 runneradmin 路径实测踩到；生产语义里
+// cd 只进已存在目录，不存在路径本就无处可 cd）。
 func TestBashUnderRootExtra(t *testing.T) {
 	ws, _, extra := extraEnv(t)
+	sub := filepath.Join(extra, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	b := NewBash(ws, NewJobs())
 	if !b.underRoot(extra) {
 		t.Fatal("extra root not underRoot")
 	}
-	if !b.underRoot(filepath.Join(extra, "sub")) {
+	if !b.underRoot(sub) {
 		t.Fatal("extra subdir not underRoot")
 	}
 	if b.underRoot(filepath.Dir(extra)) {
