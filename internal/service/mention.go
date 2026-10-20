@@ -151,7 +151,7 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 		out = out + "\n\n" + strings.Join(expansions, "\n\n")
 	}
 	if skipped > 0 {
-		out += fmt.Sprintf("\n\n（另有 %d 个引用因总体积/数量上限未展开，可分条追问）", skipped)
+		out += fmt.Sprintf("\n\n"+s.Copy().Mentions.Skipped, skipped)
 	}
 	return out, media
 }

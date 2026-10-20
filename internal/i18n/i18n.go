@@ -45,6 +45,17 @@ type Copy struct {
 		Over string // 100% 通知（%d=今日 %d=预算）
 		Fuse string // 硬预算熔断错误（%d=今日 %d=预算）
 	}
+	Session struct {
+		Empty      string // 空消息错误
+		InProgress string // 已有运行中回合
+	}
+	Compact struct {
+		Failed string // 自动压缩失败通知（%d=第几次）
+		Done   string // 压缩完成通知
+	}
+	Mentions struct {
+		Skipped string // 超预算引用未展开尾注（%d=条数）
+	}
 }
 
 // zh 返回基准目录（存量文案原样迁入，zh 读者零变化）。
@@ -75,6 +86,11 @@ func zh() Copy {
 	c.Budget.Near = "今日已用 %d token（预算的 80%%+）"
 	c.Budget.Over = "今日已用 %d token，超出预算 %d"
 	c.Budget.Fuse = "今日已计价 %d token，已达硬预算 %d——新回合被熔断（zgo config set hardBudgetStop false 可解除）"
+	c.Session.Empty = "empty message"
+	c.Session.InProgress = "a turn is already in progress"
+	c.Compact.Failed = "自动压缩失败（第 %d 次）：%v"
+	c.Compact.Done = "会话已压缩：旧消息汇总为摘要，保留最近对话"
+	c.Mentions.Skipped = "（另有 %d 个引用因总体积/数量上限未展开，可分条追问）"
 	return c
 }
 
@@ -106,6 +122,11 @@ Without -p zgo enters the REPL.`
 	c.Budget.Near = "Used %d tokens today (80%%+ of budget)"
 	c.Budget.Over = "Used %d tokens today, over the %d budget"
 	c.Budget.Fuse = "Priced %d tokens today, hit the hard budget of %d — new turns are fused off (zgo config set hardBudgetStop false to release)"
+	c.Session.Empty = "empty message"
+	c.Session.InProgress = "a turn is already in progress"
+	c.Compact.Failed = "auto-compaction failed (attempt %d): %v"
+	c.Compact.Done = "Session compacted: older messages summarized, recent turns kept"
+	c.Mentions.Skipped = "(%d more mentions skipped due to the total size/count cap; ask again in smaller batches)"
 	return c
 }
 
