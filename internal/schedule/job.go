@@ -402,3 +402,54 @@ func SortedJobs(jobs []Job) []Job {
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
+
+// PreviewNext 推演任务未来 n 次实际触发时刻（spec 规则 108）：窗口外
+// 的到期不 fire——顺延到窗口开启后的首个分钟 tick（与 fireDue 的
+// 补跑语义一致：LastRun 不动、窗口一开即跑）。disabled 任务零结果。
+func PreviewNext(job Job, after time.Time, n int) []time.Time {
+	if !job.Enabled || n <= 0 {
+		return nil
+	}
+	sched, err := ParseCron(job.Schedule)
+	if err != nil {
+		return nil
+	}
+	var out []time.Time
+	t := after
+	for len(out) < n {
+		next := sched.Next(t)
+		if next.IsZero() {
+			return out
+		}
+		if job.Window != "" && !job.InWindow(next) {
+			// 窗口外：顺延到下一个窗口开启点（对齐跨午夜窗口的两种
+			// 形态——开点在次日或当日稍后）。
+			next = nextWindowOpen(job, next)
+			if next.IsZero() {
+				return out
+			}
+		}
+		out = append(out, next)
+		t = next
+	}
+	return out
+}
+
+// nextWindowOpen 找 from 之后（含 from 所在分钟）的下一个窗口开启时
+// 刻：解析窗口起点，在 from 当日起逐日构造 HH:MM，取首个 > from 的
+// 候选；跨午夜窗口（start > end）的开点即 start 本身（闭区间起点）。
+func nextWindowOpen(job Job, from time.Time) time.Time {
+	start, _, err := ParseWindow(job.Window)
+	if err != nil {
+		return time.Time{}
+	}
+	day := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
+	for i := 0; i < 3; i++ { // 最多看三天，防御畸形窗口
+		cand := day.Add(time.Duration(start) * time.Minute)
+		if cand.After(from) || cand.Equal(from) {
+			return cand
+		}
+		day = day.AddDate(0, 0, 1)
+	}
+	return time.Time{}
+}

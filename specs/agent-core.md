@@ -854,6 +854,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    --err --limit=<N>`——组合过滤（零值字段不过滤；decision 词表同规
    则 102）。Search 与 Recent 同回扫 30 天、新到旧；--since 的时限跨
    文件生效。无过滤时保持默认最近 20 条。
+（规则 107 = 工作区级设置，见待并 #316。）
+108. cron 预演：`zgo cron next <id> [--count N]`（默认 3，上限 50）——
+   PreviewNext 推演未来 N 次实际触发时刻：窗口外的到期不 fire 而是顺
+   延到窗口开启点（与 fireDue 补跑语义一致——LastRun 不动、窗口一开
+   即跑，推演如实呈现补跑点）；跨午夜窗口的开点即 start 本身；
+   disabled/坏计划零结果。相对时长一并打印。
 
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有
