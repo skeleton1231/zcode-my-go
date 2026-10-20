@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -41,6 +42,8 @@ func runCron(argv []string) int {
 		return cronList(store)
 	case "add":
 		return cronAdd(store, rest)
+	case "next":
+		return cronNext(store, rest)
 	case "rm":
 		return cronMutation(store, rest, func(id string) error {
 			ok, err := store.Remove(id)
@@ -159,7 +162,7 @@ func cronAdd(store *schedule.Store, args []string) int {
 		return 1
 	}
 	job := schedule.Job{ID: jobID, Schedule: *scheduleExpr, At: atOrigin,
-		Prompt: strings.TrimSpace(*prompt),
+		Prompt:    strings.TrimSpace(*prompt),
 		Workspace: abs, Model: *model, Window: *window, Enabled: true}
 	if err := store.Upsert(job); err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
@@ -230,4 +233,47 @@ func resolveWorkspaceArg(p string) (string, error) {
 	} else {
 		return abs, nil
 	}
+}
+
+// cronNext 推演任务未来触发时刻（spec 规则 108）：zgo cron next <id>
+// [--count N]（默认 3；含时间窗顺延语义——窗口外到期的补跑点也如实
+// 呈现）。
+func cronNext(store *schedule.Store, args []string) int {
+	if len(args) < 1 || args[0] == "" || strings.HasPrefix(args[0], "-") {
+		fmt.Fprintln(os.Stderr, "用法：zgo cron next <id> [--count N]")
+		return 2
+	}
+	id := args[0]
+	count := 3
+	for _, a := range args[1:] {
+		if n, err := strconv.Atoi(strings.TrimPrefix(a, "--count=")); err == nil && strings.HasPrefix(a, "--count=") && n > 0 && n <= 50 {
+			count = n
+		}
+	}
+	jobs, err := store.List()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "错误：", err)
+		return 1
+	}
+	var job *schedule.Job
+	for i := range jobs {
+		if jobs[i].ID == id {
+			job = &jobs[i]
+			break
+		}
+	}
+	if job == nil {
+		fmt.Fprintf(os.Stderr, "没有任务 %q（zgo cron list 查看）\n", id)
+		return 1
+	}
+	times := schedule.PreviewNext(*job, time.Now(), count)
+	if len(times) == 0 {
+		fmt.Printf("任务 %s 无未来触发（disabled 或计划式坏）\n", id)
+		return 0
+	}
+	for i, t := range times {
+		rel := time.Until(t).Round(time.Minute)
+		fmt.Printf("%d. %s（%s 后）\n", i+1, t.Format("2006-01-02 15:04 Mon"), rel)
+	}
+	return 0
 }

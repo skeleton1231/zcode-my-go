@@ -139,3 +139,40 @@ func captureCronList(t *testing.T, dataDir string) string {
 }
 
 // contains 用 strings.Contains 直接内联（既有 helper 与 models.go 撞名）。
+
+// TestCronNextPreview（spec 规则 108）：next 推演落库任务的触发序列；
+// --count 生效；缺 id 退出码 2；无任务退出码 1。
+func TestCronNextPreview(t *testing.T) {
+	dataDir := cronEnv(t)
+	ws := t.TempDir()
+	store := schedule.NewStore(dataDir)
+	store.Upsert(schedule.Job{ID: "hourly", Schedule: "30 * * * *",
+		Prompt: "p", Workspace: ws, Enabled: true})
+
+	code, out := captureCronOut(func() int { return runCron([]string{"next", "hourly"}) })
+	if code != 0 || !strings.Contains(out, "1.") || !strings.Contains(out, "2.") {
+		t.Fatalf("next = %d %q", code, out)
+	}
+	code, out = captureCronOut(func() int { return runCron([]string{"next", "hourly", "--count=1"}) })
+	if code != 0 || strings.Contains(out, "2.") {
+		t.Fatalf("count=1 = %d %q", code, out)
+	}
+	if code := runCron([]string{"next"}); code != 2 {
+		t.Fatalf("argless = %d", code)
+	}
+	if code := runCron([]string{"next", "missing"}); code != 1 {
+		t.Fatalf("missing = %d", code)
+	}
+}
+
+// captureCronOut 抓 runCron 的 stdout。
+func captureCronOut(fn func() int) (int, string) {
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	code := fn()
+	os.Stdout = old
+	w.Close()
+	data, _ := io.ReadAll(r)
+	return code, string(data)
+}
