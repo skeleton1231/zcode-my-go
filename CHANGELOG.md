@@ -2,6 +2,29 @@
 
 约定式提交驱动的里程碑摘要；每一行都对应一个经完整验证与 PR 评审的变更。
 
+## v0.14.0 — MCP 服务端收官、信任门补齐与 CLI 家族
+
+- **MCP 服务端 prompts/resources 面**（#321/#322）：zgo mcp serve 暴露
+  技能层为 prompts、工作区记忆为 resources——服务端三件套（tools/
+  prompts/resources）收口；库面默认不启用（方法 404）。
+- **MCP 服务端 dogfood**（#324）：真实客户端对三件套全栈往返——两侧
+  协议形状互为回归网。
+- **agents 层信任门补齐**（#326，安全修复）：agentRoots 此前未过信任
+  门（persona 是提示注入面）——未授信工作区不带其 .zgo/agents 层；
+  zgo agents list/show 终端可查。
+- **skills CLI**（#325）：zgo skills list/show——与 /skills 同一发现面
+  与信任门；SkillBody 按根 FS 读（内置层 embed FS）。
+- **bash 工作目录参数**（#320）：args.cwd——jail 限界的运行起始目录
+  （monorepo 子目录免拼 cd）；结果经哨兵入粘滞态；远程 cd 前缀同构。
+- **i18n 服务层扩展**（#323）：会话层错误/压缩通知/引用尾注迁入双语
+  目录（Wiring.Copy 注入，零值回落 zh）。
+- **@session 摘录参数化**（#327）：@session:<前缀>:N 条数可调（默认
+  20 上限 200；坏后缀容错）。
+- **cron 运行历史**（#328，待并）：fire 结果追加 job-logs/<id>.jsonl
+  （200 条环形裁剪）；zgo cron log <id> 查询。
+
+（合并序：#328 → 本发布 PR。）
+
 ## v0.13.0 — 安全闭环、调度预演与导出合规
 
 - **多模型对比**（#312）：`zgo compare <问题> [--profiles=a,b]`——同题
