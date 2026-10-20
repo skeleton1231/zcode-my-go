@@ -860,6 +860,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    延到窗口开启点（与 fireDue 补跑语义一致——LastRun 不动、窗口一开
    即跑，推演如实呈现补跑点）；跨午夜窗口的开点即 start 本身；
    disabled/坏计划零结果。相对时长一并打印。
+（规则 109 = 导出元数据头，见待并 #318。）
+110. bash 工作目录参数：args.cwd——本次运行的起始目录（工作区相
+   对，path jail 限界——越界即错误结果不执行）。本地设 cmd.Dir；远
+   程转根相对斜杠形态拼 `cd '<dir>'` 前缀（单引号封闭注入面；失败
+   cd . 兜底进根）。运行结果经既有 cwd 哨兵成为新粘滞目录（与 cd
+   同语义——「从那跑过」即后续也从那跑）。权限 Args 摘要不含 cwd
+   （jail 已限界，摘要保持命令本体）。
 
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有
