@@ -92,6 +92,7 @@ internal/lsp        gopls 集成（三工具 + edit 诊断回灌；常驻 daemon
 internal/workflow    工作流定义与运行记录持久化（saveAs/run/resume）
 internal/mcp          MCP 客户端（stdio JSON-RPC）
 internal/webfetch    webfetch 工具（URL 归一、SSRF egress 守卫、重定向策略、文本抽取、缓存）
+internal/websearch  websearch 工具后端（DDG html 默认无 key / Brave 可选；命中不回访 URL）
 internal/ai 兜底链   模型 failover（fallbackModels：可重试失败按序降级）
 internal/pdftext     PDF 文本层抽取（read 读 PDF 的内核，可读率闸门）
 
