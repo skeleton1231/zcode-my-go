@@ -544,6 +544,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    同 apiKey），命中列表文本化、不回访 URL（无 SSRF 面）；CC 工具族
    web 侧收口（深挖走 webfetch）。
 
+**eval judge 评分**（spec 规则 122）：expect.judge {rubric, min}——
+   确定性断言过后交评分模型（service.OneShot 活动 provider）打 1-5
+   分，< min 即失败；转录结构化截断渲染、只回 JSON、解析不出如实报
+   错；评自由文本质量（确定性断言覆盖不了的维度）。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 

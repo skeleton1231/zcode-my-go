@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/eval"
+	"github.com/skeleton1231/zcode-my-go/internal/service"
 )
 
 // runEval 是场景评测子命令（spec 规则 55）：
@@ -69,8 +71,25 @@ func runEval(argv []string) int {
 
 	failed := 0
 	var results []eval.Result
+	// judge 评分器（spec 规则 122）：任一场景带 judge 断言才构建——共
+	// 享一个 service（活动 provider）。构建失败不注入：带 judge 的场
+	// 景会在 Run 里明确失败（CI 门禁场景不用 judge）。
+	var opts []eval.Option
 	for _, s := range scenarios {
-		res := eval.Run(s)
+		if s.Expect.Judge != nil {
+			if dataDir, err := userDataDir(); err == nil {
+				if svc, err := service.New(dataDir); err == nil {
+					defer svc.Close()
+					opts = append(opts, eval.WithJudge(func(ctx context.Context, system, user string) (string, error) {
+						return svc.OneShot(ctx, system, user)
+					}))
+				}
+			}
+			break
+		}
+	}
+	for _, s := range scenarios {
+		res := eval.Run(s, opts...)
 		results = append(results, res)
 		if !res.Pass {
 			failed++

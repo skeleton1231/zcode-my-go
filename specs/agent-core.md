@@ -920,7 +920,6 @@ dc907a4 (feat: glob and grep honor .gitignore)
    面）：{total, passed, failed, results:[{Name, Pass, Failures,
    Duration, Requests}]}；文本模式（默认）逐场景 ✓/✕ + 汇总行不变；
    失败退出码 1 两模式一致。
-
 121. WebSearch 工具：websearch {query[, limit 默认 5 上限 10]}——固定
    端点搜索后端出网（默认 DDG html 端点无需 key；settings.search.
    provider=brave + braveKey 走 Brave API，key 脱敏边界同 apiKey）；
@@ -928,6 +927,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    webfetch 的 egress 守卫与询问面）；输出 8KB 截断；空查询拒绝。
    查询词会发给搜索引擎（与 webfetch 预批准站同类的数据出网）——只
    读低风险自动放行。
+122. eval judge 评分：场景 expect.judge {rubric, min（1-5，缺省 4）}
+   ——确定性断言全过后（已失败不评），转录按角色结构化渲染（文本块
+   500r/调用名+参数 200r/工具结果 300r，总量 8KB；思考块不进）交
+   评分模型（service.OneShot 单请求——活动 provider，90s/1024 token
+   上限；系统提示勒令只回 JSON {score, comment}），score < min 即失
+   败（失败行带分数与评语）；解析不出 JSON 或 score 越界如实报错，
+   不猜。judge 需已配置 provider——未注入/未配置时带 judge 的场景
+   明确失败（CI 门禁场景不用 judge）。
 
 
 
