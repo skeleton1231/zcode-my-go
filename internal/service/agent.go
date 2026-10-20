@@ -28,10 +28,10 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
-	"github.com/skeleton1231/zcode-my-go/internal/audit"
 	"github.com/skeleton1231/zcode-my-go/internal/agents"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	aiAuth "github.com/skeleton1231/zcode-my-go/internal/ai/auth"
+	"github.com/skeleton1231/zcode-my-go/internal/audit"
 	"github.com/skeleton1231/zcode-my-go/internal/checkpoint"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
 	"github.com/skeleton1231/zcode-my-go/internal/i18n"
@@ -166,7 +166,7 @@ type AgentService struct {
 	tracer           *telemetry.Tracer                              // span 追踪（spec 规则 91；nil 关闭）
 	prices           *pricing.Table                                 // 模型牌价（spec 规则 93；含设置覆盖）
 	loc              i18n.Locale                                    // 界面语言（spec 规则 94）
-	audit            *audit.Log                                    // 工具执行审计（spec 规则 100；nil 关闭）
+	audit            *audit.Log                                     // 工具执行审计（spec 规则 100；nil 关闭）
 }
 
 // New builds the service: loads settings, loads sessions, wires the loop.
@@ -659,6 +659,8 @@ func (s *AgentService) rewire() {
 		Telemetry: s.tracer,
 		// 审计挂点（spec 规则 100）：nil 即关闭（auditLog 未开）。
 		Audit: s.auditHook(),
+		// 文案目录（spec 规则 113）：会话层错误/通知按语言出。
+		Copy: s.Copy(),
 		// 外部命令钩子来自设置文件（用户自有配置，非工作区），装配后
 		// 随每个会话生效；配置为空时无钩子。
 		Hooks: agent.HooksFromCommands(s.settings.Hooks),
@@ -1137,7 +1139,7 @@ func (s *AgentService) NewSession(workspace string) (agent.SessionInfo, error) {
 			})
 		}()
 	}
-		// 工作区级设置（spec 规则 107）：授信工作区的 .zgo/settings.json
+	// 工作区级设置（spec 规则 107）：授信工作区的 .zgo/settings.json
 	// 覆盖 model/thinking——只本地文件（远程不读远端配置面）；未授信
 	// 不加载（克隆仓库不能改模型偏好以外的任何东西也先别改——信任
 	// 门同 .zgorules）。
@@ -1149,7 +1151,7 @@ func (s *AgentService) NewSession(workspace string) (agent.SessionInfo, error) {
 			s.mgr.SetSessionThinking(info.ID, ov.Thinking)
 		}
 	}
-return info, nil
+	return info, nil
 }
 
 // HasSession reports whether the id (or its unique prefix) names a
