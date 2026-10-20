@@ -30,6 +30,12 @@ func FenceFor(content string) string {
 // sibling): plain text in, plain text out — nothing to escape, fences
 // preserved verbatim, ready to paste into PRs and docs.
 func Markdown(messages []ai.Message, title, model, workspace string) string {
+	return MarkdownWithMeta(messages, title, model, workspace, nil)
+}
+
+// MarkdownWithMeta 在导出头附元数据行（spec 规则 109）——与 HTML 同
+// 源；meta 为 nil 时与 Markdown 等价。
+func MarkdownWithMeta(messages []ai.Message, title, model, workspace string, meta []string) string {
 	var b strings.Builder
 	head := strings.TrimSpace(title)
 	if head == "" {
@@ -38,6 +44,12 @@ func Markdown(messages []ai.Message, title, model, workspace string) string {
 	b.WriteString("# " + head + "\n\n")
 	b.WriteString("> 模型 " + model + " · 工作区 " + workspace +
 		" · 导出于 " + time.Now().Format("2006-01-02 15:04") + "\n\n")
+	for _, m := range meta {
+		b.WriteString("> " + m + "\n")
+	}
+	if len(meta) > 0 {
+		b.WriteString("\n")
+	}
 	b.WriteString("---\n\n")
 
 	toolNames := map[string]string{}

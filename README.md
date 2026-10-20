@@ -177,6 +177,17 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
   留独立遥测 span。
 - **符号搜索**：symbol 工具（gopls workspace/symbol）——「不知道符号在哪」
   先 symbol 再定位。
+- **多模型对比**：`zgo compare <问题> [--profiles=a,b]`——同题并行问 N 个
+  profile 并排呈现（答案/用量/$ 成本/耗时）。
+- **权限三面闭环**：`/perms export` 把会话「总是允许」固化成 .zgorules.json
+  建议；`zgo trust preview` 授信前看清注入面；工具执行审计（bash 命令等参数
+  摘要 + 权限决策标签落盘，`zgo audit --tool/--decision/--since` 可查）。
+- **工作区级设置**：授信工作区 .zgo/settings.json 覆盖 model/thinking（白
+  名单两键，克隆仓库不能借它指路）。
+- **调度预演**：`zgo cron next <id>` 推演未来触发（时间窗顺延与补跑点如实
+  呈现）；自然语言 `--at` 建任务。
+- **导出合规头**：HTML/MD 导出附用量/$ 成本/谱系链；会话谱系
+  `zgo sessions tree` 一图可见。
 ## 快速开始
 
 只依赖 Go 1.27+：

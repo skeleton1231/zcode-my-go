@@ -94,6 +94,26 @@ MIT © 2026 skeleton1231
 - Stop/Notification hooks: a round-end hook (exit 2 blocks the wrap-up
   and feeds the output back) and a permission-wait notification hook.
 
+## v0.13.0 highlights
+
+- Model comparison: `zgo compare <prompt> [--profiles=a,b]` fans one
+  question out to N profiles in parallel — answers, token counts, $
+  costs and latencies side by side.
+- Permission loop closed: `/perms export` turns a session's
+  always-allow grants into a .zgorules.json proposal; `zgo trust
+  preview` shows a workspace's full injection surface before granting;
+  the tool-execution audit log (masked command summaries + permission
+  decision labels) is queryable via `zgo audit --tool/--decision/
+  --since`.
+- Workspace-level settings: a trusted workspace's .zgo/settings.json
+  overrides model/thinking (a two-key allowlist — cloned repos cannot
+  redirect credentials through it).
+- Schedule preview: `zgo cron next <id>` simulates future firings
+  (window deferrals and catch-up points shown as they will happen);
+  natural-language `--at` scheduling.
+- Compliance exports: HTML/MD exports carry usage, $ cost and the
+  session lineage; `zgo sessions tree` renders the fork forest.
+
 ## v0.12.0 highlights
 
 - Cost accounting: $/Mtok pricing (catalog approximations +
