@@ -140,6 +140,7 @@ func (b *Bash) Parameters() map[string]any {
 	return objectSchema(map[string]any{
 		"command":    prop("string", "The command line to run"),
 		"timeout_ms": prop("number", "Timeout in milliseconds (default 120000, max 600000)"),
+		"cwd":        prop("string", "Working directory for this run (workspace-relative; must stay inside the workspace)"),
 		"background": prop("boolean", "Launch without waiting for completion; returns a job id for bash_output/bash_kill"),
 	}, "command")
 }
@@ -149,6 +150,7 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	var a struct {
 		Command    string `json:"command"`
 		TimeoutMS  int    `json:"timeout_ms"`
+		Cwd        string `json:"cwd"`
 		Background bool   `json:"background"`
 	}
 	if err := decodeArgs(args, &a); err != nil {
@@ -156,6 +158,16 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	}
 	if a.Command == "" {
 		return errResult("command is empty")
+	}
+	// cwd 参数（spec 规则 110）：本次运行的起始目录——path jail 限界
+	//（越界即错误结果）；覆盖粘滞 cwd 一次，不污染后续命令的粘滞态。
+	runDir := ""
+	if a.Cwd != "" {
+		abs, err := b.ws.Resolve(a.Cwd)
+		if err != nil {
+			return errResult("cwd: %v", err)
+		}
+		runDir = abs
 	}
 	// 浏览器（wasm）目标没有进程模型：给出明确错误而不是让 exec 在
 	// 运行时报 "not supported"，模型可见结果自纠。
@@ -177,7 +189,17 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	defer cancel()
 
 	if b.ws.IsRemote() {
-		return b.execRemote(ctx, a.Command)
+		command := a.Command
+		if runDir != "" {
+			// 远端 Exec 在会话根执行：abs 转根相对斜杠形态；单引号
+			// 封闭注入面（与远端快照恢复同约定）。失败 cd . 兜底进根。
+			rel, err := filepath.Rel(b.ws.Root, runDir)
+			if err != nil {
+				return errResult("cwd: %v", err)
+			}
+			command = "cd '" + filepath.ToSlash(rel) + "' 2>/dev/null || cd .; " + command
+		}
+		return b.execRemote(ctx, command)
 	}
 
 	// cwd 粘滞（issue #221）：从上次 cd 的目录启动，命令尾部追加目录
@@ -186,7 +208,11 @@ func (b *Bash) Execute(ctx context.Context, args json.RawMessage) agent.ToolResu
 	if err != nil {
 		return errResult("%v", err)
 	}
-	cmd.Dir = b.dirFor()
+	if runDir != "" {
+		cmd.Dir = runDir
+	} else {
+		cmd.Dir = b.dirFor()
+	}
 	// 击杀必须覆盖整棵进程树（issue #7）：exec 的默认 kill 只杀直接
 	// 子进程，Start-Process 派生的孙进程会活过超时/中止。平台差异
 	// 在 prockill_*.go。

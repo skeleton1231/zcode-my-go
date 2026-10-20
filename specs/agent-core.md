@@ -875,6 +875,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    内容对远端客户端无新信息）；未知名报错；未接 prompts 的服务（库
    面默认）两个方法 404。resources 面暂缺（spec 如实注明，可后续补
    ——候选源：工作区记忆）。
+
 112. MCP 服务端 resources 面（111 注明的缺口收口）：zgo mcp serve
    暴露工作区长期记忆为 MCP resources——resources/list（有记忆时单资
    源 zgo://memory/workspace，无记忆空清单）与 resources/read（正文
@@ -882,6 +883,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    ws_<hash>.md，与 memory 工具同一存储）——不建服务实例，serve 是
    无会话的静态面。未接 WithResources 的库面默认两方法 404。服务端
    三件套（tools/prompts/resources）至此收口。
+
+110. bash 工作目录参数：args.cwd——本次运行的起始目录（工作区相
+   对，path jail 限界——越界即错误结果不执行）。本地设 cmd.Dir；远
+   程转根相对斜杠形态拼 `cd '<dir>'` 前缀（单引号封闭注入面；失败
+   cd . 兜底进根）。运行结果经既有 cwd 哨兵成为新粘滞目录（与 cd
+   同语义——「从那跑过」即后续也从那跑）。权限 Args 摘要不含 cwd
+   （jail 已限界，摘要保持命令本体）。
 
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有
