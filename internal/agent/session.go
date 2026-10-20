@@ -72,6 +72,12 @@ type Session struct {
 	telemetry *telemetry.Tracer
 	// audit 是工具执行审计挂点（spec 规则 100）；nil 关闭。
 	audit func(AuditEvent)
+	// modelOverride/thinkingOverride 是会话级覆盖（任务级模型规则
+	// 60 / 工作区级设置规则 107）——wire() 重建闭包时保留（此前
+	// rewire 一次就抹掉：config set / UseProviderForTesting / MCP
+	// 重载都会触发）。
+	modelOverride    string
+	thinkingOverride string
 }
 
 // Info returns the session's projection.
@@ -876,8 +882,20 @@ func (m *Manager) wire(s *Session) {
 		}
 		return m.wiring.Provider()
 	}
-	s.model = m.wiringModel()
-	s.thinking = m.wiring.Thinking
+	// 会话级覆盖（规则 60/107）在 wire 重建时保留——rewire 频繁
+	//（config set/测试注入/MCP 重载），覆盖不该被静默抹掉。
+	if s.modelOverride != "" {
+		fixed := s.modelOverride
+		s.model = func() string { return fixed }
+	} else {
+		s.model = m.wiringModel()
+	}
+	if s.thinkingOverride != "" {
+		fixed := thinkingOf(s.thinkingOverride)
+		s.thinking = func() ai.ThinkingLevel { return fixed }
+	} else {
+		s.thinking = m.wiring.Thinking
+	}
 	s.hooks = m.wiring.Hooks
 	s.telemetry = m.wiring.Telemetry
 	s.audit = m.wiring.Audit
@@ -917,6 +935,36 @@ func (m *Manager) wiringModel() func() string {
 	}
 }
 
+// SetSessionThinking 覆盖单个会话的思考档（spec 规则 107：工作区级
+// 设置的 thinking 键；空串恢复全局解析）。
+func (m *Manager) SetSessionThinking(id, level string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return false
+	}
+	if level == "" {
+		s.thinkingOverride = ""
+		s.thinking = m.wiring.Thinking
+		return true
+	}
+	s.thinkingOverride = level
+	fixed := thinkingOf(level)
+	s.thinking = func() ai.ThinkingLevel { return fixed }
+	return true
+}
+
+// thinkingOf 把设置串翻成档位（非法串落 off——设置面已挡，这里兜
+// 底不报错：偏好键坏不该让会话跑不起来）。
+func thinkingOf(level string) ai.ThinkingLevel {
+	switch level {
+	case "low", "medium", "high":
+		return ai.ThinkingLevel(level)
+	}
+	return ai.ThinkingOff
+}
+
 // SessionModel 返回会话当前解析的模型（spec 规则 93：成本按实际模
 // 型计价——会话可能被任务级模型覆盖）。
 func (m *Manager) SessionModel(id string) string {
@@ -940,9 +988,11 @@ func (m *Manager) SetSessionModel(id, model string) bool {
 		return false
 	}
 	if model == "" {
+		s.modelOverride = ""
 		s.model = m.wiringModel()
 		return true
 	}
+	s.modelOverride = model
 	fixed := model
 	s.model = func() string { return fixed }
 	return true
