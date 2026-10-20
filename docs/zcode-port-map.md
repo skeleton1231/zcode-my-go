@@ -553,6 +553,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    分钟 tick，Ctrl+C 优雅停）与 --once（单轮到期检查，系统定时器拉
    起即得无人值守调度）；运行历史 source=tick/manual 落史。
 
+**@git 引用**（spec 规则 124）：@git:<rev>（git show）与 @git:<a>..
+   <b>（git diff --stat）把提交/差异直接带进消息——@ 家族（路径/目
+   录/会话/git）第四形态；只读子进程无 shell；SSH 远程 v1 原样保留。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 
