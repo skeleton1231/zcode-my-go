@@ -1,14 +1,17 @@
 package service
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
 	exporthtml "github.com/skeleton1231/zcode-my-go/internal/export"
@@ -26,6 +29,11 @@ var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9_./\\-]+(?::[0-9]+(?:-[0-9]
 // 字符集含点：会话 ID 是纳秒时间戳形态（20261019T185848.201967300）
 // ——漏点会把前缀截到秒级造成同秒歧义。
 var sessionMentionPattern = regexp.MustCompile(`@session:([A-Za-z0-9_.-]+(?::[0-9]+)?)`)
+
+// gitMentionPattern 匹配 @git:<rev>（spec 规则 124）：HEAD/HEAD~2/分支/
+// tag/sha，或 <a>..<b> 范围。字符集刻意收窄（无空格无引号——rev 作为
+// 单个 argv 传给 git 子进程，无 shell，本就不构成注入面）。
+var gitMentionPattern = regexp.MustCompile(`@git:([A-Za-z0-9_.~^/\-]+)`)
 
 // Mention caps：文本引用与 read 工具同上限；图片引用与附件同上限
 // （会话持久化层另有 6MB 总量兜底，issue #105）。
@@ -90,6 +98,29 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 		fence := exporthtml.FenceFor(excerpt)
 		expansions = append(expansions, fmt.Sprintf("@session:%s 的最近对话：\n%s\n%s\n%s",
 			token, fence, excerpt, fence))
+	}
+	// git 引用（spec 规则 124）：@git:<rev> 展开该提交（show --stat
+	// --patch）、@git:<a>..<b> 展开范围差异（diff --stat）——review/
+	// 调试高频形态。非 git 工作区/未知 rev/SSH 远程（v1 未做）原样留
+	// 给模型（同 @session 未解析语义）。
+	for _, m := range gitMentionPattern.FindAllStringSubmatch(text, -1) {
+		rev := m[1]
+		if seen["git:"+rev] {
+			continue
+		}
+		seen["git:"+rev] = true
+		excerpt := s.gitExcerpt(sessionID, ws, rev)
+		if excerpt == "" {
+			continue
+		}
+		if len(expansions) >= mentionMaxFiles || total+len(excerpt) > mentionTotalCap {
+			skipped++
+			continue
+		}
+		total += len(excerpt)
+		fence := exporthtml.FenceFor(excerpt)
+		expansions = append(expansions, fmt.Sprintf("@git:%s（提交/差异）：\n%s\n%s\n%s",
+			rev, fence, excerpt, fence))
 	}
 	for _, m := range mentionPattern.FindAllStringSubmatch(text, -1) {
 		rel, lo, hi := splitMentionRange(m[1])
@@ -421,4 +452,35 @@ func (s *AgentService) sessionExcerptN(selfID, prefix string, count int) string 
 		}
 	}
 	return b.String()
+}
+
+// gitMentionTimeout 单次 git 只读子进程上限（review 引用不该拖住回合）。
+const gitMentionTimeout = 10 * time.Second
+
+// gitExcerpt 展开 @git:<rev>（spec 规则 124）：单 rev 走 `git show
+// --stat --patch`，含 ".." 走 `git diff --stat`。只读、无 shell（rev 是
+// 单个 argv）；失败（非 git 工作区/未知 rev/SSH 远程 v1 未做）返回空串
+// ——调用方把引用原样留给模型。
+func (s *AgentService) gitExcerpt(sessionID string, ws tools.Workspace, rev string) string {
+	if ws.IsRemote() {
+		return "" // SSH 远程工作区：v1 原样保留（spec 规则 124 注明）
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), gitMentionTimeout)
+	defer cancel()
+	args := []string{"show", "--stat", "--patch", "--no-color", rev}
+	if strings.Contains(rev, "..") {
+		args = []string{"diff", "--stat", "--no-color", rev}
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = ws.Root
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return ""
+	}
+	content := string(out)
+	if r := []rune(content); len(r) > mentionTextCap {
+		// 按 rune 截断（同 @文件引用语义）。
+		content = string(r[:mentionTextCap]) + "\n…（截断）"
+	}
+	return content
 }

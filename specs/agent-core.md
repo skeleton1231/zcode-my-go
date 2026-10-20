@@ -942,6 +942,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    --once 即得无人值守调度，不必守进程。运行历史照常（source=tick/
    manual 落史——此前字段死置）；管理面（list/add/…）与桌面热重载
    共用 jobs.json。
+124. @git 引用：消息内 @git:<rev>（HEAD/HEAD~2/分支/tag/sha）展开
+   `git show --stat --patch`；@git:<a>..<b> 范围展开 `git diff --stat`。
+   只读 git 子进程（cwd=工作区根、10s 上限、无 shell——rev 是单个
+   argv，不构成注入面）；rune 截断 60KB、预算/条数与文件引用共享；
+   非 git 工作区/未知 rev/SSH 远程工作区原样保留（同 @session 未解
+   析语义）。
 
 
 
