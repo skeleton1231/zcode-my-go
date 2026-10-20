@@ -199,6 +199,17 @@ native UI (package ui)  ──▶  AgentService  ──▶  agent loop
 - **@session:<前缀>:N**：跨会话摘录条数可调（默认 20 上限 200）。
 - **cron 运行历史**：`zgo cron log <id>` 查任务历史（200 条环形）——调度
   全周期可观测。
+- **WebSearch**：websearch 工具搜网（默认 DDG 无 key，可配 Brave）——命中
+  列表文本化、不回访 URL；深挖走 webfetch 的守卫与询问面。
+- **评测面双升级**：`zgo eval --json` 结构化报告（CI 消费）；expect.judge
+  评分断言（LLM-as-judge 评自由文本质量，1-5 分阈值判定）。
+- **cron 无人值守**：`zgo cron serve` 前台常驻 / `--once` 单轮（Windows
+  任务计划/systemd timer 周期拉起即得）——调度不再依赖桌面应用开着。
+- **@git 引用**：`@git:<rev>`（提交）/`@git:<a>..<b>`（差异）直接带进消
+  息——本地与 SSH 远程同构（跨 shell 安全形态）。
+- **模型目录在线刷新**：`zgo models --refresh` 按活动端点拉模型清单——
+  新模型/自建端点即时可用（内置目录优先，覆盖层只补未知）。
+- **跨工作区记忆检索**：`zgo memory search <关键词>` 按工作区分组命中。
 ## 快速开始
 
 只依赖 Go 1.27+：

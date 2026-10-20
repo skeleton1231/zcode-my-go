@@ -94,6 +94,29 @@ MIT © 2026 skeleton1231
 - Stop/Notification hooks: a round-end hook (exit 2 blocks the wrap-up
   and feeds the output back) and a permission-wait notification hook.
 
+## v0.15.0 highlights
+
+- WebSearch tool: searches the web via a fixed backend (DDG by default,
+  no key; Brave configurable) and returns title/URL/snippet lists —
+  result URLs are never fetched (no SSRF surface; deep dives go through
+  webfetch's guards).
+- Eval surface, twice: `zgo eval --json` emits a structured report for
+  CI, and expect.judge adds LLM-as-judge scoring (1-5 against a rubric)
+  for free-form answer quality.
+- Unattended cron: `zgo cron serve` runs the minute-tick scheduler in
+  the foreground, `--once` fires whatever is due and exits — wire it to
+  Task Scheduler/systemd timers and automation no longer needs the
+  desktop app open.
+- @git mentions: `@git:<rev>` (git show) and `@git:<a>..<b>` (diff
+  --stat) pull commits and diffs straight into the message — local and
+  SSH workspaces alike (cross-shell-safe form for cmd.exe remotes).
+- Online model catalog refresh: `zgo models --refresh` pulls the active
+  endpoint's model list into a persisted overlay (built-ins win on
+  name clashes) — new models and self-hosted endpoints work the day
+  they ship.
+- Cross-workspace memory search: `zgo memory search <keyword>` groups
+  hits per workspace.
+
 ## v0.14.0 highlights
 
 - MCP server complete: `zgo mcp serve` now exposes tools, skills (as
