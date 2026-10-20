@@ -520,6 +520,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **MCP 服务端 dogfood 收口**（spec 规则 114）：真实客户端对服务端三件
    套（tools/prompts/resources）全栈往返——两侧协议形状互为回归网。
 
+**skills CLI**（spec 规则 115）：zgo skills list/show——技能层终端可
+   查（同一发现面与信任门；SkillBody 按根 FS 读内置层）。
+
 **agents 层信任门与 CLI**（spec 规则 116）：agentRoots 补信任门
    （persona 是注入面——规则 53 的遗漏层）；zgo agents list/show 终端
    可查。

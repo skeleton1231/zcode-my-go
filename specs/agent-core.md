@@ -895,7 +895,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    （Prompts 清单 / GetPrompt 正文）+ resources（Resources 清单 /
    ReadResource 正文）。两侧生产路径同台：客户端的握手探测与服务器
    的 list/get 实现互为回归网（一侧改协议形状另一侧即红）。
-（规则 115 = skills CLI，见待并 #325。）
+115. skills CLI：`zgo skills list [工作区]`（名/层级[工作区|全局|内
+   置]/描述，坏技能 ⚠ 行）与 `zgo skills show <名>`（SKILL.md 正文，
+   32KB 截断）。与 /skills 同一发现面（服务 Skills）但面向人——不建
+   会话不注入提示；信任门同款（未授信工作区不列其层）；SkillBody
+   按根 FS 读（内置层是 embed FS——os.ReadFile 读不到，经
+   LoadSkill 同源）。
+
 116. agents 层信任门与 CLI：**信任门补齐**——agentRoots 此前未过门
   （persona 是提示注入面、tools 白名单是能力收窄面，克隆来的恶意仓
    库可自带 .zgo/agents——规则 53 的遗漏层）：未授信本地工作区不

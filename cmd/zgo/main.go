@@ -128,6 +128,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "models" {
 		os.Exit(runModels(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "skills" {
+		os.Exit(runSkills(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "agents" {
 		os.Exit(runAgents(os.Args[2:]))
 	}
