@@ -536,6 +536,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **跨工作区记忆检索**（spec 规则 119）：zgo memory search——子串扫全
    部工作区记忆，按工作区分组；与 list 同源（会话来源）。
 
+**eval 结构化报告**（spec 规则 120）：zgo eval --json——stdout 纯
+   JSON（total/passed/failed + 逐场景结果）；文本模式不变。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 
