@@ -959,6 +959,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
 
 
 
+
 116. agents 层信任门与 CLI：**信任门补齐**——agentRoots 此前未过门
   （persona 是提示注入面、tools 白名单是能力收窄面，克隆来的恶意仓
    库可自带 .zgo/agents——规则 53 的遗漏层）：未授信本地工作区不
