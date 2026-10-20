@@ -510,6 +510,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    层为 MCP prompts（list/get；工作区+全局根）；服务端故事补到 prompts
    ——resources 暂缺如实注明。
 
+**MCP 服务端 resources 面**（spec 规则 112）：zgo mcp serve 暴露工
+   作区记忆为 resources（list/read；MemoryPath 同一存储）——服务端三
+   件套 tools/prompts/resources 收口。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 

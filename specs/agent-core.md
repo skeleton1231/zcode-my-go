@@ -875,6 +875,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    内容对远端客户端无新信息）；未知名报错；未接 prompts 的服务（库
    面默认）两个方法 404。resources 面暂缺（spec 如实注明，可后续补
    ——候选源：工作区记忆）。
+112. MCP 服务端 resources 面（111 注明的缺口收口）：zgo mcp serve
+   暴露工作区长期记忆为 MCP resources——resources/list（有记忆时单资
+   源 zgo://memory/workspace，无记忆空清单）与 resources/read（正文
+   text/plain contents）。读经 tools.MemoryPath（dataDir/memory/
+   ws_<hash>.md，与 memory 工具同一存储）——不建服务实例，serve 是
+   无会话的静态面。未接 WithResources 的库面默认两方法 404。服务端
+   三件套（tools/prompts/resources）至此收口。
 
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有
