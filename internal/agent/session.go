@@ -19,8 +19,17 @@ import (
 	"github.com/skeleton1231/zcode-my-go/internal/agent/compact"
 	"github.com/skeleton1231/zcode-my-go/internal/agent/permission"
 	"github.com/skeleton1231/zcode-my-go/internal/ai"
+	"github.com/skeleton1231/zcode-my-go/internal/i18n"
 	"github.com/skeleton1231/zcode-my-go/internal/telemetry"
 )
+
+// copyOrZh 零值目录回落 zh 基准（未接线的路径与既有测试不变）。
+func (s *Session) copyOrZh() i18n.Copy {
+	if s.copy.Lang == "" {
+		return i18n.Catalog(i18n.Zh)
+	}
+	return s.copy
+}
 
 // RunState of a session.
 type RunState string
@@ -72,6 +81,9 @@ type Session struct {
 	telemetry *telemetry.Tracer
 	// audit 是工具执行审计挂点（spec 规则 100）；nil 关闭。
 	audit func(AuditEvent)
+	// copy 是文案目录（spec 规则 113）：会话层错误与通知按语言出；
+	// 零值回落 zh 基准（未接线的测试路径）。
+	copy i18n.Copy
 	// modelOverride/thinkingOverride 是会话级覆盖（任务级模型规则
 	// 60 / 工作区级设置规则 107）——wire() 重建闭包时保留（此前
 	// rewire 一次就抹掉：config set / UseProviderForTesting / MCP
@@ -141,13 +153,13 @@ func userMessage(text string, media []ai.Block) ai.Message {
 func (s *Session) ChatMedia(text string, media []ai.Block, emit func(Event)) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return errors.New("empty message")
+		return errors.New(s.copyOrZh().Session.Empty)
 	}
 
 	s.mu.Lock()
 	if s.cancel != nil {
 		s.mu.Unlock()
-		return errors.New("a run is already in progress")
+		return errors.New(s.copyOrZh().Session.InProgress)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
@@ -832,6 +844,8 @@ type Wiring struct {
 	Telemetry *telemetry.Tracer
 	// Audit 是工具执行审计挂点（spec 规则 100）；nil 关闭。
 	Audit func(AuditEvent)
+	// Copy 是文案目录（spec 规则 113）；零值回落 zh 基准。
+	Copy i18n.Copy
 	// Question delivers the ask tool's questions to the user.
 	Question func(ctx context.Context, q Question) (string, error)
 	// ProjectRules loads the workspace's project rules (its .zgorules.json);
@@ -899,6 +913,7 @@ func (m *Manager) wire(s *Session) {
 	s.hooks = m.wiring.Hooks
 	s.telemetry = m.wiring.Telemetry
 	s.audit = m.wiring.Audit
+	s.copy = m.wiring.Copy
 	s.buildTools = m.wiring.Tools
 	if s.buildTools == nil {
 		s.buildTools = func(string, string) []Tool { return nil }

@@ -514,6 +514,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    plain）；读经 tools.MemoryPath 同源存储；未接面 404——服务端三件
    套（tools/prompts/resources）收口。
 
+**i18n 服务层扩展**（spec 规则 113）：会话层错误/压缩通知/引用尾注
+   迁入双语目录（Wiring.Copy 注入，零值回落 zh）——规则 94 深水区。
+
 **MCP 服务端 dogfood 收口**（spec 规则 114）：真实客户端对服务端三件
    套（tools/prompts/resources）全栈往返——两侧协议形状互为回归网。
 

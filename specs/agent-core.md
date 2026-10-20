@@ -875,6 +875,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    内容对远端客户端无新信息）；未知名报错；未接 prompts 的服务（库
    面默认）两个方法 404。resources 面暂缺（spec 如实注明，可后续补
    ——候选源：工作区记忆）。
+（规则 112 = MCP 服务端 resources 面，见待并 #322。）
+113. i18n 服务层扩展（规则 94 的深水区）：会话层错误与通知迁入目录
+   ——Session{empty message, a turn is already in progress}、Compact
+   {失败（%d 次）, 完成通知}、Mentions{超预算尾注}。Session 持文案
+   副本（Wiring.Copy 注入，rewire 随语言重建；零值回落 zh 基准——
+   未接线的路径与既有测试不变）。zh 文案原样迁移零变化；en 覆盖。
 
 112. MCP 服务端 resources 面（111 注明的缺口收口）：zgo mcp serve
    暴露工作区长期记忆为 MCP resources——resources/list（有记忆时单资

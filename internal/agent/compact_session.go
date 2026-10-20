@@ -116,14 +116,14 @@ func (s *Session) autoCompact(ctx context.Context, emit func(Event), contextWind
 		s.compactFailures++
 		s.mu.Unlock()
 		emit(Event{Kind: EvCompaction, SessionID: s.info.ID,
-			Text: fmt.Sprintf("自动压缩失败（第 %d 次）：%v", failures+1, err)})
+			Text: fmt.Sprintf(s.copyOrZh().Compact.Failed, failures+1, err)})
 		return
 	}
 	s.mu.Lock()
 	s.compactFailures = 0
 	s.mu.Unlock()
 	emit(Event{Kind: EvCompaction, SessionID: s.info.ID,
-		Text: "会话已压缩：旧消息汇总为摘要，保留最近对话", KeptMessages: compact.DefaultKeepTail})
+		Text: s.copyOrZh().Compact.Done, KeptMessages: compact.DefaultKeepTail})
 }
 
 // summarize asks the provider for the structured summary of a transcript.
