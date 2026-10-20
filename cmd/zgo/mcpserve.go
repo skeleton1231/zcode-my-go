@@ -52,11 +52,45 @@ func runMCPServe(argv []string) int {
 			}
 			return "", false
 		})
+	// resources 面（spec 规则 112）：工作区长期记忆——服务端三件套
+	//（tools/prompts/resources）收口。单一资源（本工作区的记忆文件）
+	// 简单诚实；无记忆时清单为空。
+	memURI := "zgo://memory/workspace"
+	srv = srv.WithResources(
+		func() []mcpserver.Resource {
+			mem := readWorkspaceMemory(wd)
+			if mem == "" {
+				return nil
+			}
+			return []mcpserver.Resource{{
+				URI: memURI, Name: "workspace-memory",
+				Description: "本工作区的长期记忆（跨会话的用户偏好与项目约定）",
+			}}
+		},
+		func(uri string) (string, bool) {
+			if uri != memURI {
+				return "", false
+			}
+			mem := readWorkspaceMemory(wd)
+			return mem, mem != ""
+		})
 	if err := srv.Serve(context.Background(), os.Stdin); err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
 		return 1
 	}
 	return 0
+}
+
+// readWorkspaceMemory 直读工作区记忆（服务端 resources 面的源）——
+// 与 tools.Memory 同一存储约定（dataDir/memory/ws_<hash>.md，issue
+// #20 的 sha256 命名）；读侧不建服务实例——serve 是无会话的静态面。
+func readWorkspaceMemory(wd string) string {
+	dataDir, err := userDataDir()
+	if err != nil {
+		return ""
+	}
+	return tools.NewMemory(tools.MemoryPath(
+		filepath.Join(dataDir, "memory"), wd)).Read()
 }
 
 // skillsRootsFor 服务端 prompts 面的技能根（工作区 + 全局）。

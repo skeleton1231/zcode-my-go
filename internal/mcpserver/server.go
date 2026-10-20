@@ -55,7 +55,10 @@ type Server struct {
 	tools  []agent.Tool
 	skills func() []skills.Skill
 	body   func(name string) (string, bool)
-	out    io.Writer
+	// resources 面（spec 规则 112）：nil 即未接（方法 404）。
+	resources func() []Resource
+	resRead   func(uri string) (string, bool)
+	out       io.Writer
 }
 
 // New builds a server for the given tools; responses go to out.
@@ -67,6 +70,20 @@ func New(tools []agent.Tool, out io.Writer) *Server {
 // （返回 ok=false 报 unknown prompt）。
 func (s *Server) WithPrompts(list func() []skills.Skill, body func(name string) (string, bool)) *Server {
 	s.skills, s.body = list, body
+	return s
+}
+
+// Resource 是 MCP resources 面的一个资源（spec 规则 112）。
+type Resource struct {
+	URI         string
+	Name        string
+	Description string
+}
+
+// WithResources 接入 resources 面（spec 规则 112）：list 返回清单，
+// read 按 URI 取正文（ok=false 报 unknown resource）。
+func (s *Server) WithResources(list func() []Resource, read func(uri string) (string, bool)) *Server {
+	s.resources, s.resRead = list, read
 	return s
 }
 
@@ -156,6 +173,42 @@ func (s *Server) dispatch(ctx context.Context, req rpcRequest) {
 			"messages": []map[string]any{{
 				"role":    "user",
 				"content": map[string]any{"type": "text", "text": text},
+			}},
+		}
+	case "resources/list":
+		if s.resources == nil {
+			rerr = &rpcError{Code: codeMethodNotFound, Message: "resources not enabled"}
+			break
+		}
+		list := []map[string]any{}
+		for _, r := range s.resources() {
+			list = append(list, map[string]any{
+				"uri": r.URI, "name": r.Name, "description": r.Description,
+			})
+		}
+		result = map[string]any{"resources": list}
+	case "resources/read":
+		if s.resources == nil || s.resRead == nil {
+			rerr = &rpcError{Code: codeMethodNotFound, Message: "resources not enabled"}
+			break
+		}
+		var p struct {
+			URI string `json:"uri"`
+		}
+		if len(req.Params) == 0 || json.Unmarshal(req.Params, &p) != nil || p.URI == "" {
+			rerr = &rpcError{Code: codeInvalidParams, Message: "resources/read needs {uri}"}
+			break
+		}
+		text, ok := s.resRead(p.URI)
+		if !ok {
+			rerr = &rpcError{Code: codeInvalidParams, Message: "unknown resource: " + p.URI}
+			break
+		}
+		result = map[string]any{
+			"contents": []map[string]any{{
+				"uri":      p.URI,
+				"mimeType": "text/plain",
+				"text":     text,
 			}},
 		}
 	default:

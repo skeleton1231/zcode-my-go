@@ -222,3 +222,52 @@ func TestPromptsDisabledByDefault(t *testing.T) {
 		t.Fatalf("disabled face leaked: %s", out.String())
 	}
 }
+
+// TestResourcesFace（spec 规则 112）：resources/list 与 read——清单、
+// 正文（text/plain contents）、未知 URI、未接面 404。
+
+func TestResourcesFace(t *testing.T) {
+	SetVersion("t")
+	var out strings.Builder
+	s := New(nil, &out).WithResources(
+		func() []Resource {
+			return []Resource{{URI: "zgo://memory/workspace",
+				Name: "workspace-memory", Description: "长期记忆"}}
+		},
+		func(uri string) (string, bool) {
+			if uri == "zgo://memory/workspace" {
+				return "- 偏好：中文", true
+			}
+			return "", false
+		})
+	input := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"resources/list"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"zgo://memory/workspace"}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"zgo://nope"}}`,
+	}, "\n") + "\n"
+	if err := s.Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("lines = %d", len(lines))
+	}
+	if !strings.Contains(lines[0], "workspace-memory") || !strings.Contains(lines[0], "长期记忆") {
+		t.Fatalf("list = %s", lines[0])
+	}
+	if !strings.Contains(lines[1], "- 偏好：中文") || !strings.Contains(lines[1], "text/plain") {
+		t.Fatalf("read = %s", lines[1])
+	}
+	if !strings.Contains(lines[2], "unknown resource") {
+		t.Fatalf("unknown = %s", lines[2])
+	}
+}
+
+func TestResourcesDisabledByDefault(t *testing.T) {
+	var out strings.Builder
+	s := New(nil, &out)
+	s.Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"resources/list"}`+"\n"))
+	if !strings.Contains(out.String(), "resources not enabled") {
+		t.Fatalf("disabled face leaked: %s", out.String())
+	}
+}
