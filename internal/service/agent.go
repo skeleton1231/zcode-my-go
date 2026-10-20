@@ -1137,7 +1137,19 @@ func (s *AgentService) NewSession(workspace string) (agent.SessionInfo, error) {
 			})
 		}()
 	}
-	return info, nil
+		// 工作区级设置（spec 规则 107）：授信工作区的 .zgo/settings.json
+	// 覆盖 model/thinking——只本地文件（远程不读远端配置面）；未授信
+	// 不加载（克隆仓库不能改模型偏好以外的任何东西也先别改——信任
+	// 门同 .zgorules）。
+	if ov := s.workspaceSettingsOverrides(workspace); ov != nil {
+		if ov.Model != "" {
+			s.mgr.SetSessionModel(info.ID, ov.Model)
+		}
+		if ov.Thinking != "" {
+			s.mgr.SetSessionThinking(info.ID, ov.Thinking)
+		}
+	}
+return info, nil
 }
 
 // HasSession reports whether the id (or its unique prefix) names a
@@ -2941,4 +2953,36 @@ func (s *AgentService) UsageAttribution() (sessions []usage.SessionTotal, main, 
 	subagent = s.day.SourceTotal("subagent")
 	workflow = s.day.SourceTotal("workflow")
 	return sessions, main, subagent, workflow
+}
+
+// workspaceSettingsOverrides 读授信工作区的 .zgo/settings.json（spec
+// 规则 107：只认 model/thinking 两键——apiKey/baseUrl 等安全敏感键
+// **不在此层**，克隆仓库不能借它指路）。nil = 无覆盖或不可用。
+func (s *AgentService) workspaceSettingsOverrides(workspace string) *workspaceSettings {
+	if workspace == "" || strings.HasPrefix(workspace, "ssh://") {
+		return nil
+	}
+	if !s.workspaceTrusted(workspace) {
+		return nil
+	}
+	raw, err := os.ReadFile(filepath.Join(workspace, ".zgo", "settings.json"))
+	if err != nil {
+		return nil
+	}
+	var ws workspaceSettings
+	if json.Unmarshal(raw, &ws) != nil {
+		return nil
+	}
+	return &ws
+}
+
+// workspaceSettings 是工作区级设置的白名单形态（未知键忽略）。
+type workspaceSettings struct {
+	Model    string `json:"model"`
+	Thinking string `json:"thinking"`
+}
+
+// SetSessionThinking 服务面入口（测试/后续 CLI 用）。
+func (s *AgentService) SetSessionThinking(sessionID, level string) bool {
+	return s.mgr.SetSessionThinking(sessionID, level)
 }
