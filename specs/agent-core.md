@@ -868,6 +868,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    输出不变——MetaLines 零值不渲染。fork 是新账本：用量不继承根
    （谱系才继承）。
 
+110. bash 工作目录参数：args.cwd——本次运行的起始目录（工作区相
+   对，path jail 限界——越界即错误结果不执行）。本地设 cmd.Dir；远
+   程转根相对斜杠形态拼 `cd '<dir>'` 前缀（单引号封闭注入面；失败
+   cd . 兜底进根）。运行结果经既有 cwd 哨兵成为新粘滞目录（与 cd
+   同语义——「从那跑过」即后续也从那跑）。权限 Args 摘要不含 cwd
+   （jail 已限界，摘要保持命令本体）。
+
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有
    这两键**：apiKey/baseUrl 等安全敏感键不在此层（克隆仓库不能借它
