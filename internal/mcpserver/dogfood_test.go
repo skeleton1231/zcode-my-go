@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/skeleton1231/zcode-my-go/internal/mcp"
+	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
@@ -26,7 +27,29 @@ func TestMCPServeHelperProcess(t *testing.T) {
 	dir := os.Getenv("ZGO_MCP_SERVE_DIR")
 	w := tools.Workspace{Root: dir}
 	SetVersion("dogfood")
-	if err := New(tools.ReadOnlyW(w), os.Stdout).Serve(context.Background(), os.Stdin); err != nil {
+	srv := New(tools.ReadOnlyW(w), os.Stdout).
+		WithPrompts(
+			func() []skills.Skill {
+				return []skills.Skill{{Name: "go-testing", Description: "Go 测试法"}}
+			},
+			func(name string) (string, bool) {
+				if name == "go-testing" {
+					return "# Go 测试\n先写失败测试", true
+				}
+				return "", false
+			}).
+		WithResources(
+			func() []Resource {
+				return []Resource{{URI: "zgo://memory/workspace",
+					Name: "workspace-memory", Description: "长期记忆"}}
+			},
+			func(uri string) (string, bool) {
+				if uri == "zgo://memory/workspace" {
+					return "- 偏好：中文交流", true
+				}
+				return "", false
+			})
+	if err := srv.Serve(context.Background(), os.Stdin); err != nil {
 		os.Exit(1)
 	}
 	os.Exit(0)
@@ -64,5 +87,39 @@ func TestDogfoodClientAgainstServer(t *testing.T) {
 	}
 	if !strings.Contains(out, "# dogfood") {
 		t.Fatalf("read output = %q", out)
+	}
+
+	// 三件套 dogfood 的其余两面（spec 规则 114）：prompts 与
+	// resources 经真实客户端往返。
+	prompts := srv.Prompts()
+	if len(prompts) == 0 {
+		t.Fatal("prompts/list empty")
+	}
+	found := false
+	for _, pd := range prompts {
+		if pd.Name == "go-testing" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("prompts = %+v", prompts)
+	}
+	pr, err := srv.GetPrompt(ctx, "go-testing", nil)
+	if err != nil {
+		t.Fatalf("GetPrompt: %v", err)
+	}
+	if !strings.Contains(pr.PromptText(), "先写失败测试") {
+		t.Fatalf("prompt text = %q", pr.PromptText())
+	}
+	resources := srv.Resources()
+	if len(resources) != 1 || resources[0].URI != "zgo://memory/workspace" {
+		t.Fatalf("resources = %+v", resources)
+	}
+	rc, err := srv.ReadResource(ctx, "zgo://memory/workspace")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	if !strings.Contains(rc.Text, "中文交流") {
+		t.Fatalf("resource text = %q", rc.Text)
 	}
 }
