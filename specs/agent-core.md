@@ -986,6 +986,12 @@ dc907a4 (feat: glob and grep honor .gitignore)
    permission 落转录）、budget-notice（越线 1 条 budget_notice 事
    件）、compact-threshold（巨量回复后下一 Chat 入口 auto-compact
    触发 1 条 compaction 事件）。
+131. 附加目录的项目规则并入：/add-dir 时该目录的 .zgorules.json（同
+   主工作区格式，version 1）**只并入 allow 规则**——附加目录是用户显
+   式授信的扩权面，不是收紧面（deny/ask 不进；要收紧写在主工作区规
+   则里）；入会话规则（随会话消散），ID 加 adddir: 前缀（/perms why
+   与清单可辨来源）；文件缺失/损坏按主工作区同款降级（空集，不阻
+   塞）。
 
 
 125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模

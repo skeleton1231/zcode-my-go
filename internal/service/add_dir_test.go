@@ -87,3 +87,56 @@ func quoteJSONAbs(p string) string {
 	b, _ := json.Marshal(p)
 	return string(b)
 }
+
+// TestAddWorkspaceDirImportsAllowRules：附加目录的 .zgorules.json 只并
+// 入 allow 规则（spec 规则 131）——/perms why 可见 adddir: 来源；deny
+// 不进（收紧写在主工作区）。
+func TestAddWorkspaceDirImportsAllowRules(t *testing.T) {
+	svc, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	info, err := svc.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := t.TempDir()
+	rules := `{"version": 1, "rules":[
+		{"id": "git-ok", "tool": "bash", "args": "git *", "behavior": "allow"},
+		{"id": "no-run", "tool": "bash", "args": "rm *", "behavior": "deny"}
+	]}`
+	if err := os.WriteFile(filepath.Join(extra, ".zgorules.json"), []byte(rules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddWorkspaceDir(info.ID, extra); err != nil {
+		t.Fatal(err)
+	}
+
+	// allow 规则生效：git 命令免问，来源可辨。
+	why, err := svc.PermWhy(info.ID, "bash", json.RawMessage(`{"command":"git status"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(why, "allow") || !strings.Contains(why, "adddir:git-ok") {
+		t.Fatalf("git why = %q", why)
+	}
+	// deny 规则不并入：rm 仍按默认策略（ask）。
+	why, err = svc.PermWhy(info.ID, "bash", json.RawMessage(`{"command":"rm x.txt"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(why, "ask") || strings.Contains(why, "adddir:no-run") {
+		t.Fatalf("rm why = %q", why)
+	}
+	// 会话「总是允许」清单同样可见 adddir: 条目。
+	found := false
+	for _, r := range svc.SessionPermissionRules(info.ID) {
+		if r.ID == "adddir:git-ok" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("adddir rule not in session rules list")
+	}
+}
