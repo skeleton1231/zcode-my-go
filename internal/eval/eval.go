@@ -36,6 +36,24 @@ type Expectations struct {
 	FileContains          map[string]string `json:"file_contains,omitempty"`
 	NoToolErrors          bool              `json:"no_tool_errors,omitempty"`
 	EventCount            map[string]int    `json:"event_count,omitempty"`
+	// Judge 是评分断言（spec 规则 122）：确定性断言全过后交评分模型
+	// 打 1-5 分（评自由文本质量）。需要注入评分器（WithJudge）——
+	// CI 门禁场景不用（无 provider）。
+	Judge *JudgeSpec `json:"judge,omitempty"`
+}
+
+// JudgeSpec 是评分断言：Rubric 评分标准（达标条件写清楚），Min 通过
+// 阈值 1-5（缺省 4）。
+type JudgeSpec struct {
+	Rubric string `json:"rubric"`
+	Min    int    `json:"min,omitempty"`
+}
+
+func (j *JudgeSpec) min() int {
+	if j.Min < 1 {
+		return 4
+	}
+	return j.Min
 }
 
 // Scenario 是一个评测场景。
@@ -94,9 +112,26 @@ func LoadDir(dir string) ([]Scenario, error) {
 	return out, nil
 }
 
+// Option 是 Run 的可选项。
+type Option func(*runConfig)
+
+type runConfig struct {
+	judge JudgeFunc
+}
+
+// WithJudge 注入评分模型（spec 规则 122）：带 judge 断言的场景必需，
+// 缺省时这类场景明确失败（不是静默跳过——断言写了就该有结果）。
+func WithJudge(f JudgeFunc) Option {
+	return func(c *runConfig) { c.judge = f }
+}
+
 // Run 跑一个场景：临时 dataDir + 临时工作区（种文件并授信——场景文件
 // 是用户自己写的，工作区层全量生效）+ 脚本 provider + 自动放行 asker。
-func Run(s Scenario) Result {
+func Run(s Scenario, opts ...Option) Result {
+	var cfg runConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	start := time.Now()
 	res := Result{Name: s.Name}
 
@@ -204,6 +239,25 @@ func Run(s Scenario) Result {
 	for kind, want := range s.Expect.EventCount {
 		if kinds[kind] != want {
 			res.Failures = append(res.Failures, fmt.Sprintf("事件 %s 计数 %d，期望 %d", kind, kinds[kind], want))
+		}
+	}
+	// 断言：judge 评分（spec 规则 122）——确定性断言全过后才评（前
+	// 面已失败时评分无意义，也省一次模型调用）。
+	if s.Expect.Judge != nil && len(res.Failures) == 0 {
+		if cfg.judge == nil {
+			res.Failures = append(res.Failures,
+				"judge: 未注入评分器（需要已配置的 provider——CI 门禁场景不应使用 judge）")
+		} else if s.Expect.Judge.Rubric == "" {
+			res.Failures = append(res.Failures, "judge: rubric 不能为空（达标条件要写清楚）")
+		} else {
+			v, err := judgeOnce(context.Background(), cfg.judge, s.Expect.Judge, msgs)
+			switch {
+			case err != nil:
+				res.Failures = append(res.Failures, err.Error())
+			case v.Score < s.Expect.Judge.min():
+				res.Failures = append(res.Failures, fmt.Sprintf(
+					"judge: %d/5 < %d — %s", v.Score, s.Expect.Judge.min(), v.Comment))
+			}
 		}
 	}
 
