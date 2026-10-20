@@ -570,6 +570,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    景（jail/截断/往返/grep/patch/todo/memory/bash 基线/ls/@ 行窗/
    @ 目录树）——安全与核心工具行为持续钉在门禁上。
 
+**附加工作目录**（spec 规则 128，CC AdditionalDirectories 的 Zgo 形
+   态）：/add-dir 并入会话 path jail（多根判定、symlink 复查按所属
+   根、bash cwd 同权）；上限 8、会话作用域、远程 v1 不支持——跨仓/
+   monorepo 邻目录工作流。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 

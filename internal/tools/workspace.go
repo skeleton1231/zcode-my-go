@@ -19,10 +19,29 @@ import (
 type Workspace struct {
 	Root   string // absolute, cleaned (remote: the host-side root)
 	Remote RemoteFS
+	// Extra 是附加工作目录（spec 规则 128，/add-dir 的执行面）：额外
+	// 的绝对根，jail 判定 = Root ∪ Extra（各自独立做 symlink 复查）。
+	// 相对路径仍只落 Root；远程工作区 v1 不支持（Remote 单根）。
+	Extra []string
 }
 
 // IsRemote reports whether ops delegate to an SSH workspace.
 func (w Workspace) IsRemote() bool { return w.Remote != nil }
+
+// rootFor 返回词法包含 abs 的根（Root 优先，其次 Extra 按序）；都不
+// 包含返回空串。远程工作区只认 Root（附加目录是本地会话形态）。
+func (w Workspace) rootFor(abs string) string {
+	roots := []string{w.Root}
+	if !w.IsRemote() {
+		roots = append(roots, w.Extra...)
+	}
+	for _, root := range roots {
+		if containsPath(root, abs) {
+			return root
+		}
+	}
+	return ""
+}
 
 // Resolve turns a tool path argument into an absolute path inside the
 // workspace. Relative paths join Root; absolute paths must already be
@@ -46,9 +65,8 @@ func (w Workspace) Resolve(name string) (string, error) {
 		abs = filepath.Join(w.Root, name)
 	}
 	abs = filepath.Clean(abs)
-	rel, err := filepath.Rel(w.Root, abs)
-	if err != nil || rel == ".." ||
-		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	root := w.rootFor(abs)
+	if root == "" {
 		return "", fmt.Errorf("path %q is outside the workspace", name)
 	}
 	// 远程工作区走独立的真实路径复查（issue #89）：本地 resolveReal 对
@@ -58,8 +76,8 @@ func (w Workspace) Resolve(name string) (string, error) {
 	if w.IsRemote() {
 		return w.resolveRemoteChecked(abs)
 	}
-	// Root 不存在时保持原有纯词法行为（新建 workspace 等场景）。
-	realRoot, rerr := resolveReal(w.Root)
+	// 所属根不存在时保持原有纯词法行为（新建 workspace 等场景）。
+	realRoot, rerr := resolveReal(root)
 	if rerr != nil {
 		return abs, nil
 	}

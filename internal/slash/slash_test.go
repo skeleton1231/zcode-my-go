@@ -80,7 +80,7 @@ func TestRunDispatch(t *testing.T) {
 	}
 	Run(env, "/help")
 	joined := strings.Join(out.All(), "\n")
-	for _, name := range []string{"/new", "/compact", "/plan", "/model", "/rename", "/status", "/exit"} {
+	for _, name := range []string{"/new", "/compact", "/plan", "/model", "/rename", "/status", "/exit", "/add-dir"} {
 		if !strings.Contains(joined, name) {
 			t.Fatalf("/help missing %s", name)
 		}
@@ -649,5 +649,21 @@ func TestSlashContext(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("segment %q missing:\n%s", want, out)
 		}
+	}
+}
+
+// TestRunAddDir：/add-dir 并入会话 jail 并回执（spec 规则 128）。
+func TestRunAddDir(t *testing.T) {
+	env, out := newEnv(t)
+	extra := t.TempDir()
+	Run(env, "/add-dir "+extra)
+	first := strings.Join(out.All(), "\n")
+	if !strings.Contains(first, "add-dir") || !strings.Contains(first, "1 个") {
+		t.Fatalf("out = %q", first)
+	}
+	// 空参数报用法。
+	Run(env, "/add-dir")
+	if joined := strings.Join(out.All(), "\n"); !strings.Contains(joined, "用法") {
+		t.Fatalf("usage missing: %q", joined)
 	}
 }
