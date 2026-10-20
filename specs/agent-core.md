@@ -850,11 +850,19 @@ dc907a4 (feat: glob and grep honor .gitignore)
    务）、120s 兜底超时；失败的侧如实带错误（不拖垮别的侧）。profile
    provider 经构建缝装配（profileProviderFor——测试注入；不经
    providerOverride 注入面）。
-（规则 105 = 会话规则固化，见待并 #314。）
 106. 审计查询：`zgo audit --tool=<名> --decision=<标签> --since=<Nd>
    --err --limit=<N>`——组合过滤（零值字段不过滤；decision 词表同规
    则 102）。Search 与 Recent 同回扫 30 天、新到旧；--since 的时限跨
    文件生效。无过滤时保持默认最近 20 条。
+
+107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
+   model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有
+   这两键**：apiKey/baseUrl 等安全敏感键不在此层（克隆仓库不能借它
+   指路）；未知键忽略；非法 thinking 兜底 off。未授信不加载（信任门
+   同 .zgorules）；ssh:// 目标不读远端配置面。配套修复：Session 的
+   model/thinking 覆盖记 override 标记，wire() 重建闭包时保留——此前
+   任何 rewire（config set/MCP 重载/测试注入）都会静默抹掉会话级覆
+   盖（含 cron 任务级模型，规则 60 的隐性 bug）。
 
 97. @会话引用：`@session:<前缀>` 把另一会话的最近对话带进当前消息
    ——前缀走 ResolveSession（唯一前缀，字符集含点——会话 ID 是纳秒

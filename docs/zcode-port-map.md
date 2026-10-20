@@ -499,6 +499,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **审计查询**（spec 规则 106）：`zgo audit --tool/--decision/--since/
    --err/--limit` 组合过滤——规则 100/102 的观测面补全。
 
+**工作区级设置**（spec 规则 107）：授信工作区 .zgo/settings.json 覆
+   盖 model/thinking（白名单两键）；顺带修复 wire() 重建抹掉会话级覆
+   盖的隐性 bug（cron 任务级模型同受影响）。
+
 **@会话引用**（spec 规则 97）：`@session:<前缀>` 跨会话带上下文——
    最近 20 条对话有界摘录（30KB、预算与文件引用共享）；自引用/未解
    析原样保留。
