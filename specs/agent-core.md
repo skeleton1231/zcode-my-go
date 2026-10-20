@@ -901,6 +901,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    会话不注入提示；信任门同款（未授信工作区不列其层）；SkillBody
    按根 FS 读（内置层是 embed FS——os.ReadFile 读不到，经
    LoadSkill 同源）。
+（规则 116 = agents 层信任门与 CLI，见待并 #326。）
+117. @session 摘录参数化：`@session:<前缀>:N`——条数可调（默认 20，
+   上限 200 clamp；非数字后缀按无后缀形态解析——与行范围语法共存的
+   容错）。窗口仍是尾部 N 条 user/assistant 文本；30KB 单引用与总量
+   预算照旧。前缀解析不变（唯一前缀，ID 含点不含冒号——后缀切割用
+   LastIndexByte）。
+
 
 116. agents 层信任门与 CLI：**信任门补齐**——agentRoots 此前未过门
   （persona 是提示注入面、tools 白名单是能力收窄面，克隆来的恶意仓
