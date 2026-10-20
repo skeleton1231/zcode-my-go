@@ -920,6 +920,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    面）：{total, passed, failed, results:[{Name, Pass, Failures,
    Duration, Requests}]}；文本模式（默认）逐场景 ✓/✕ + 汇总行不变；
    失败退出码 1 两模式一致。
+121. WebSearch 工具：websearch {query[, limit 默认 5 上限 10]}——固定
+   端点搜索后端出网（默认 DDG html 端点无需 key；settings.search.
+   provider=brave + braveKey 走 Brave API，key 脱敏边界同 apiKey）；
+   命中只回标题/URL/摘录文本，不回访 URL（无 SSRF 面——深挖走
+   webfetch 的 egress 守卫与询问面）；输出 8KB 截断；空查询拒绝。
+   查询词会发给搜索引擎（与 webfetch 预批准站同类的数据出网）——只
+   读低风险自动放行。
 
 
 

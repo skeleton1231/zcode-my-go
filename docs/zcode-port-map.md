@@ -539,6 +539,11 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **eval 结构化报告**（spec 规则 120）：zgo eval --json——stdout 纯
    JSON（total/passed/failed + 逐场景结果）；文本模式不变。
 
+**WebSearch 工具**（spec 规则 121）：websearch——固定端点搜索后端
+   （默认 DDG html 无 key；settings.search 可切 Brave+key，脱敏边界
+   同 apiKey），命中列表文本化、不回访 URL（无 SSRF 面）；CC 工具族
+   web 侧收口（深挖走 webfetch）。
+
 **导出元数据头**（spec 规则 109）：HTML/MD 导出附用量/$ 成本/谱系链
    元数据行（会话实际模型口径；未知价省略；旧调用输出不变）。
 
