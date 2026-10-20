@@ -12,13 +12,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/skeleton1231/zcode-my-go/internal/skills"
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 type resp struct {
 	ID     json.RawMessage `json:"id"`
 	Result struct {
-		ProtocolVersion string `json:"protocolVersion"`
+		ProtocolVersion string         `json:"protocolVersion"`
 		Capabilities    map[string]any `json:"capabilities"`
 		ServerInfo      struct {
 			Name    string `json:"name"`
@@ -159,5 +160,65 @@ func TestCallOutputRedacted(t *testing.T) {
 	s.Serve(context.Background(), strings.NewReader(input))
 	if strings.Contains(out.String(), key) {
 		t.Fatalf("secret leaked: %s", out.String())
+	}
+}
+
+// TestPromptsFace（spec 规则 111）：prompts/list 与 prompts/get——
+// 技能名/描述进清单；正文按名取回（user 消息形态）；未知名报错；
+// 未接 WithPrompts 的服务 prompts 方法 404。
+
+func promptsServe(t *testing.T, lines ...string) []string {
+	t.Helper()
+	var out strings.Builder
+	s := New(nil, &out).WithPrompts(
+		func() []skills.Skill {
+			return []skills.Skill{{Name: "go-testing", Description: "Go 测试法"}, {Name: "debug"}}
+		},
+		func(name string) (string, bool) {
+			if name == "go-testing" {
+				return "# Go 测试\n步骤…", true
+			}
+			return "", false
+		})
+	input := strings.Join(lines, "\n") + "\n"
+	if err := s.Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSpace(out.String()), "\n")
+}
+
+func TestPromptsFace(t *testing.T) {
+	SetVersion("t")
+	lines := promptsServe(t,
+		`{"jsonrpc":"2.0","id":1,"method":"prompts/list"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"prompts/get","params":{"name":"go-testing"}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"prompts/get","params":{"name":"nope"}}`)
+	if len(lines) != 3 {
+		t.Fatalf("lines = %d: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], `"go-testing"`) || !strings.Contains(lines[0], "Go 测试法") {
+		t.Fatalf("list = %s", lines[0])
+	}
+	if !strings.Contains(lines[1], "# Go 测试") || !strings.Contains(lines[1], `"role":"user"`) {
+		t.Fatalf("get = %s", lines[1])
+	}
+	if !strings.Contains(lines[2], "unknown prompt") {
+		t.Fatalf("unknown = %s", lines[2])
+	}
+	// description 空的技能回落 WhenToUse（此处两者皆空——名字仍在）。
+	if !strings.Contains(lines[0], `"debug"`) {
+		t.Fatalf("desc-less skill missing: %s", lines[0])
+	}
+}
+
+func TestPromptsDisabledByDefault(t *testing.T) {
+	var out strings.Builder
+	s := New(nil, &out)
+	err := s.Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"prompts/list"}`+"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "prompts not enabled") {
+		t.Fatalf("disabled face leaked: %s", out.String())
 	}
 }
