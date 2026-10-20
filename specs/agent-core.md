@@ -920,6 +920,7 @@ dc907a4 (feat: glob and grep honor .gitignore)
    面）：{total, passed, failed, results:[{Name, Pass, Failures,
    Duration, Requests}]}；文本模式（默认）逐场景 ✓/✕ + 汇总行不变；
    失败退出码 1 两模式一致。
+
 121. WebSearch 工具：websearch {query[, limit 默认 5 上限 10]}——固定
    端点搜索后端出网（默认 DDG html 端点无需 key；settings.search.
    provider=brave + braveKey 走 Brave API，key 脱敏边界同 apiKey）；
