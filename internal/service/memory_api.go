@@ -2,7 +2,9 @@ package service
 
 import (
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
@@ -57,4 +59,45 @@ func (s *AgentService) ClearMemory(workspace string) error {
 		return err
 	}
 	return nil
+}
+
+// MemorySearchHit 是一条检索命中（spec 规则 119）。
+type MemorySearchHit struct {
+	Workspace string
+	Line      string
+}
+
+// SearchMemory 跨工作区检索记忆（spec 规则 119）：子串匹配（大小写不
+// 敏感），逐行扫描各工作区 memory 文件；命中行带上限（默认 5/工作区
+// 20 总）防刷屏。空查询返回 nil。
+func (s *AgentService) SearchMemory(query string) []MemorySearchHit {
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+	q := strings.ToLower(query)
+	var out []MemorySearchHit
+	for _, e := range s.MemoryOverview() {
+		if e.Bytes == 0 {
+			continue
+		}
+		data, err := os.ReadFile(tools.MemoryPath(
+			filepath.Join(filepath.Dir(s.path), "memory"), e.Workspace))
+		if err != nil {
+			continue
+		}
+		hits := 0
+		for _, line := range strings.Split(string(data), "\n") {
+			if len(out) >= 20 {
+				return out
+			}
+			if strings.Contains(strings.ToLower(line), q) {
+				out = append(out, MemorySearchHit{Workspace: e.Workspace, Line: strings.TrimSpace(line)})
+				hits++
+				if hits >= 5 {
+					break
+				}
+			}
+		}
+	}
+	return out
 }

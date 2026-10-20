@@ -21,7 +21,7 @@ import (
 // workspace 也接受会话 ID 的唯一前缀——解析到该会话的工作区。
 func runMemory(argv []string) int {
 	if len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "用法：zgo memory <list|show|add|clear> [--workspace 路径] …")
+		fmt.Fprintln(os.Stderr, "用法：zgo memory <list|show|add|clear|search> [--workspace 路径] …")
 		return 2
 	}
 	dataDir, err := userDataDir()
@@ -42,6 +42,12 @@ func runMemory(argv []string) int {
 		return memoryList(svc)
 	case "show", "add", "clear":
 		return memoryWithWorkspace(svc, cmd, rest)
+	case "search":
+		if len(rest) < 1 || rest[0] == "" {
+			fmt.Fprintln(os.Stderr, "用法：zgo memory search <关键词>")
+			return 2
+		}
+		return memorySearch(svc, rest[0])
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令 %q\n", cmd)
 		return 2
@@ -125,4 +131,22 @@ func resolveMemoryWorkspace(svc *service.AgentService, v string) string {
 		}
 	}
 	return v // 路径形式但不存在：仍按原样（show 报无记忆，add 会建文件）
+}
+
+// memorySearch 跨工作区检索（spec 规则 119）：命中行按工作区分组打印。
+func memorySearch(svc *service.AgentService, query string) int {
+	hits := svc.SearchMemory(query)
+	if len(hits) == 0 {
+		fmt.Println("（没有命中——记忆是工作区级，zgo memory list 查看清单）")
+		return 0
+	}
+	current := ""
+	for _, h := range hits {
+		if h.Workspace != current {
+			current = h.Workspace
+			fmt.Println(shortPath(h.Workspace) + ":")
+		}
+		fmt.Println("  " + h.Line)
+	}
+	return 0
 }
