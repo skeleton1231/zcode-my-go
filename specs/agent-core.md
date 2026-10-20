@@ -826,6 +826,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    seen 集）；同层按更新时间新到旧；归档过滤同规则 82（--all 全显）。
    `zgo sessions tree` 缩进渲染（标题/时间/📌📦 标记）；无分叉提示。
    谱系是组织态的第三维（归档/置顶/谱系）。
+（规则 104 = 多模型对比，见待并 #312。）
+105. 会话规则固化：`/perms export`——把本会话攒的「总是允许」规则
+   渲染成 .zgorules.json 建议文本（version:1 + rules[]，可被
+   ParseRuleset 直接解析；ID 簿记字段不带）；只导会话增量（不掺现有
+   项目规则——diff 视角）；用户审阅后落盘工作区根，经信任门成为项
+   目规则。空会话给提示不产空 JSON。会话规则与项目规则从此有迁移路
+   径（信任门/审计/规则三面闭环）。
 
 102. 审计的权限决策维度（规则 100 注明的缺口收口）：审计条目带
    decision 标签——rule:<id>（项目/会话规则放行）、capability（只读
@@ -843,7 +850,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
    务）、120s 兜底超时；失败的侧如实带错误（不拖垮别的侧）。profile
    provider 经构建缝装配（profileProviderFor——测试注入；不经
    providerOverride 注入面）。
-（规则 105/106 = 会话规则固化、审计查询，见待并 #314/#315。）
+106. 审计查询：`zgo audit --tool=<名> --decision=<标签> --since=<Nd>
+   --err --limit=<N>`——组合过滤（零值字段不过滤；decision 词表同规
+   则 102）。Search 与 Recent 同回扫 30 天、新到旧；--since 的时限跨
+   文件生效。无过滤时保持默认最近 20 条。
+
 107. 工作区级设置：授信工作区的 .zgo/settings.json 覆盖
    model/thinking（NewSession 时应用——会话级覆盖面）。**白名单只有
    这两键**：apiKey/baseUrl 等安全敏感键不在此层（克隆仓库不能借它

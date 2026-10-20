@@ -476,6 +476,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
    次工具执行一条 JSONL（参数摘要打码 + 成败 + 耗时）；zgo audit 查
    看；与遥测（性能维度）正交的合规维度。
 
+**会话规则固化**（spec 规则 105）：`/perms export`——会话「总是允许」
+   渲染成 .zgorules.json 建议（ParseRuleset 可解析往返）；审阅落盘即项
+   目规则；信任门/审计/规则三面闭环。
+
 **会话谱系**（spec 规则 103）：SessionInfo.ParentID（fork 落父持久）
    + Manager.SessionTree 森林（孤儿当根/环防御）+ `zgo sessions tree`
    缩进渲染；组织态第三维。
@@ -491,6 +495,9 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **多模型对比**（spec 规则 104）：`zgo compare <问题> [--profiles=a,b]`
    ——同题并行问 N 个 profile，并排呈现答案/用量/$ 成本/耗时；单请求
    封顶、失败侧不拖垮。
+
+**审计查询**（spec 规则 106）：`zgo audit --tool/--decision/--since/
+   --err/--limit` 组合过滤——规则 100/102 的观测面补全。
 
 **工作区级设置**（spec 规则 107）：授信工作区 .zgo/settings.json 覆
    盖 model/thinking（白名单两键）；顺带修复 wire() 重建抹掉会话级覆

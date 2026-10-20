@@ -2461,6 +2461,12 @@ func (s *AgentService) SessionPermissionRules(sessionID string) []permission.Rul
 	return s.mgr.SessionPermissions(sessionID).SessionRules()
 }
 
+// SessionPermissions 暴露会话权限面（spec 规则 105 测试与固化面：塞
+// 规则/查规则的底层入口）。
+func (s *AgentService) SessionPermissions(sessionID string) *permission.Service {
+	return s.mgr.SessionPermissions(sessionID)
+}
+
 // SetFallbackModels 更新模型兜底链（spec 规则 56；空即关闭）。模型名
 // 去重且首项不得与自身重复；写盘热生效（rewire 同既有路径）。
 func (s *AgentService) SetFallbackModels(models []string) error {

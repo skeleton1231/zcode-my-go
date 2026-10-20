@@ -79,3 +79,51 @@ func TestHistoryAndRecent(t *testing.T) {
 		t.Fatalf("recent = %+v", recent)
 	}
 }
+
+// TestSearchFilters（spec 规则 106）：工具/决策/时限/仅错误过滤与
+// limit——组合命中与互斥排除。
+func TestSearchFilters(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "audit"), 0o700)
+	entries := []Entry{
+		{Time: time.Now().Add(-1 * time.Hour), Tool: "bash", Args: "git status", Decision: "capability"},
+		{Time: time.Now().Add(-2 * time.Hour), Tool: "bash", Args: "rm -rf x", Decision: "ask:denied", IsError: true},
+		{Time: time.Now().Add(-3 * time.Hour), Tool: "write", Args: "a.txt", Decision: "ask:granted"},
+		{Time: time.Now().Add(-200 * time.Hour), Tool: "bash", Args: "old command", Decision: "capability"},
+	}
+	var b []byte
+	for _, e := range entries[:3] { // 今天文件只放 24h 内的三条
+		line, _ := json.Marshal(e)
+		b = append(b, line...)
+		b = append(b, '\n')
+	}
+	os.WriteFile(filepath.Join(dir, "audit", "audit-"+time.Now().Format("20060102")+".jsonl"), b, 0o600)
+	// 200h 前的条目单独放昨天的文件（Since 过滤要跨文件仍被时限排除）。
+	oldLine, _ := json.Marshal(entries[3])
+	yesterday := time.Now().AddDate(0, 0, -1)
+	os.WriteFile(filepath.Join(dir, "audit", "audit-"+yesterday.Format("20060102")+".jsonl"), oldLine, 0o600)
+
+	if got := Search(dir, Query{Tool: "bash"}); len(got) != 3 {
+		t.Fatalf("tool filter = %d", len(got))
+	}
+	if got := Search(dir, Query{Decision: "ask:denied"}); len(got) != 1 || got[0].Tool != "bash" {
+		t.Fatalf("decision filter = %+v", got)
+	}
+	if got := Search(dir, Query{Since: 24 * time.Hour}); len(got) != 3 {
+		t.Fatalf("since filter = %d（200h 前的两条都排除）", len(got))
+	}
+	if got := Search(dir, Query{OnlyErr: true}); len(got) != 1 {
+		t.Fatalf("onlyErr = %d", len(got))
+	}
+	if got := Search(dir, Query{Limit: 2}); len(got) != 2 {
+		t.Fatalf("limit = %d", len(got))
+	}
+	// 组合。
+	if got := Search(dir, Query{Tool: "bash", Since: 24 * time.Hour}); len(got) != 2 {
+		t.Fatalf("combo = %d", len(got))
+	}
+	// 默认 limit 50 内零命中。
+	if got := Search(dir, Query{Tool: "nope"}); len(got) != 0 {
+		t.Fatalf("no hit = %d", len(got))
+	}
+}
