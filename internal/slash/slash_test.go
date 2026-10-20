@@ -667,3 +667,23 @@ func TestRunAddDir(t *testing.T) {
 		t.Fatalf("usage missing: %q", joined)
 	}
 }
+
+// TestRunPermsWhy：/perms why 判定预演（spec 规则 129）。
+func TestRunPermsWhy(t *testing.T) {
+	env, out := newEnv(t)
+	Run(env, "/perms why read")
+	joined := strings.Join(out.All(), "\n")
+	if !strings.Contains(joined, "判定预演") || !strings.Contains(joined, "allow") {
+		t.Fatalf("out = %q", joined)
+	}
+	// 坏 JSON 与空参数各报各的错（输出累计——按段包含断言）。
+	Run(env, `/perms why bash {"command":oops}`)
+	Run(env, "/perms why")
+	joined = strings.Join(out.All(), "\n")
+	if !strings.Contains(joined, "JSON") {
+		t.Fatalf("bad json missing: %q", joined)
+	}
+	if !strings.Contains(joined, "用法") {
+		t.Fatalf("usage missing: %q", joined)
+	}
+}
