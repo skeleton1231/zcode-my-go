@@ -912,6 +912,11 @@ dc907a4 (feat: glob and grep honor .gitignore)
    同刻；上限 200 条环形裁剪，原子重写）；`zgo cron log <id>
    [--limit N]`（默认 20 新到旧，ok/ERR/skip 短标 + 单行摘要 80 rune）。
    历史是尽力而为的观测面：写失败静默不影响任务本身。
+119. 跨工作区记忆检索：`zgo memory search <关键词>`——子串匹配
+  （大小写不敏感）扫全部工作区记忆，命中行按工作区分组（5 条/工作区
+   20 条总上限）；空查询拒绝。工作区清单来自 MemoryOverview（会话来
+   源）——没有会话的孤儿记忆文件不可见（与 list 同源语义）。
+
 
 
 

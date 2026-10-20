@@ -3,10 +3,12 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/skeleton1231/zcode-my-go/internal/service"
+	"github.com/skeleton1231/zcode-my-go/internal/tools"
 )
 
 func runMemoryCaptured(t *testing.T, dir string, args ...string) (int, string) {
@@ -109,4 +111,44 @@ func TestMemoryRequiresWorkspace(t *testing.T) {
 	if code, _ := runMemoryCaptured(t, dir, "add", "--workspace", ""); code == 0 {
 		t.Fatal("add with empty workspace accepted")
 	}
+}
+
+// TestMemorySearchCLI（spec 规则 119）：search 渲染（按工作区分组）与
+// 空查询退出码。
+func TestMemorySearchCLI(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("ZGO_TEST_DATADIR", dataDir)
+	ws := t.TempDir()
+	svc, err := service.New(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.NewSession(ws)
+	os.MkdirAll(filepath.Join(dataDir, "memory"), 0o755)
+	memPath := tools.MemoryPath(filepath.Join(dataDir, "memory"), ws)
+	os.WriteFile(memPath, []byte("- 偏好：中文交流\n"), 0o600)
+	svc.Close()
+
+	code, out := captureMemoryOut(func() int { return runMemory([]string{"search", "偏好"}) })
+	if code != 0 || !strings.Contains(out, "偏好：中文交流") {
+		t.Fatalf("search = %d\n%s", code, out)
+	}
+	if code, out = captureMemoryOut(func() int { return runMemory([]string{"search", "无命中词"}) }); code != 0 || !strings.Contains(out, "没有命中") {
+		t.Fatalf("no-hit = %d\n%s", code, out)
+	}
+	if code := runMemory([]string{"search"}); code != 2 {
+		t.Fatalf("argless = %d", code)
+	}
+}
+
+// captureMemoryOut 抓 runMemory 的 stdout。
+func captureMemoryOut(fn func() int) (int, string) {
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	code := fn()
+	os.Stdout = old
+	w.Close()
+	data, _ := io.ReadAll(r)
+	return code, string(data)
 }
