@@ -30,10 +30,13 @@ var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9_./\\-]+(?::[0-9]+(?:-[0-9]
 // ——漏点会把前缀截到秒级造成同秒歧义。
 var sessionMentionPattern = regexp.MustCompile(`@session:([A-Za-z0-9_.-]+(?::[0-9]+)?)`)
 
-// gitMentionPattern 匹配 @git:<rev>（spec 规则 124）：HEAD/HEAD~2/分支/
-// tag/sha，或 <a>..<b> 范围。字符集刻意收窄（无空格无引号——rev 作为
-// 单个 argv 传给 git 子进程，无 shell，本就不构成注入面）。
-var gitMentionPattern = regexp.MustCompile(`@git:([A-Za-z0-9_.~^/\-]+)`)
+// gitMentionPattern 匹配 @git:<rev>（spec 规则 124/126）：HEAD/HEAD~2/
+// 分支/tag/sha，或 <a>..<b> 范围。字符集刻意收窄：无空格/引号/`^`——
+// 本地 rev 是单个 argv 无注入面；SSH 远程拼进远端 shell 命令串
+//（Windows 远端默认 cmd.exe，`^` 是其转义符、单引号不剥——不加引号
+// 且无元字符才是双 shell 安全形态）。POSIX 的 `HEAD^` 用 `HEAD~1`
+// 等价表达。
+var gitMentionPattern = regexp.MustCompile(`@git:([A-Za-z0-9_./~-]+)`)
 
 // Mention caps：文本引用与 read 工具同上限；图片引用与附件同上限
 // （会话持久化层另有 6MB 总量兜底，issue #105）。
@@ -99,10 +102,10 @@ func (s *AgentService) expandMentions(sessionID, text string, media []ai.Block) 
 		expansions = append(expansions, fmt.Sprintf("@session:%s 的最近对话：\n%s\n%s\n%s",
 			token, fence, excerpt, fence))
 	}
-	// git 引用（spec 规则 124）：@git:<rev> 展开该提交（show --stat
-	// --patch）、@git:<a>..<b> 展开范围差异（diff --stat）——review/
-	// 调试高频形态。非 git 工作区/未知 rev/SSH 远程（v1 未做）原样留
-	// 给模型（同 @session 未解析语义）。
+	// git 引用（spec 规则 124，SSH 远程形态 126）：@git:<rev> 展开该
+	// 提交（show --stat --patch）、@git:<a>..<b> 展开范围差异（diff
+	// --stat）——review/调试高频形态；本地与 SSH 远程同构。非 git 工
+	// 作区/未知 rev 原样留给模型（同 @session 未解析语义）。
 	for _, m := range gitMentionPattern.FindAllStringSubmatch(text, -1) {
 		rev := m[1]
 		if seen["git:"+rev] {
@@ -457,27 +460,39 @@ func (s *AgentService) sessionExcerptN(selfID, prefix string, count int) string 
 // gitMentionTimeout 单次 git 只读子进程上限（review 引用不该拖住回合）。
 const gitMentionTimeout = 10 * time.Second
 
-// gitExcerpt 展开 @git:<rev>（spec 规则 124）：单 rev 走 `git show
-// --stat --patch`，含 ".." 走 `git diff --stat`。只读、无 shell（rev 是
-// 单个 argv）；失败（非 git 工作区/未知 rev/SSH 远程 v1 未做）返回空串
-// ——调用方把引用原样留给模型。
+// gitExcerpt 展开 @git:<rev>（spec 规则 124；SSH 远程形态 126）：单
+// rev 走 `git show --stat --patch`，含 ".." 走 `git diff --stat`。只
+// 读；失败（非 git 工作区/未知 rev）返回空串——调用方把引用原样留给
+// 模型。
 func (s *AgentService) gitExcerpt(sessionID string, ws tools.Workspace, rev string) string {
-	if ws.IsRemote() {
-		return "" // SSH 远程工作区：v1 原样保留（spec 规则 124 注明）
+	if strings.HasPrefix(rev, "-") {
+		return "" // 选项位形态不安全（git 把它当旗标）：原样保留
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), gitMentionTimeout)
-	defer cancel()
-	args := []string{"show", "--stat", "--patch", "--no-color", rev}
+	args := []string{"show", "--stat", "--patch", "--no-color"}
 	if strings.Contains(rev, "..") {
-		args = []string{"diff", "--stat", "--no-color", rev}
+		args = []string{"diff", "--stat", "--no-color"}
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = ws.Root
-	out, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) == "" {
-		return ""
+	var content string
+	if ws.IsRemote() {
+		// SSH 远程（spec 规则 126）：同一只读命令在远端会话根执行。
+		// rev 字符集无引号/空格/元字符——不加引号即跨 shell（sh 与
+		// cmd.exe）安全。
+		res, err := ws.Remote.Exec(strings.Join(append([]string{"git"}, append(args, rev)...), " "))
+		if err != nil || res.ExitCode != 0 || strings.TrimSpace(res.Output) == "" {
+			return ""
+		}
+		content = res.Output
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), gitMentionTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", append(args, rev)...)
+		cmd.Dir = ws.Root
+		out, err := cmd.Output()
+		if err != nil || strings.TrimSpace(string(out)) == "" {
+			return ""
+		}
+		content = string(out)
 	}
-	content := string(out)
 	if r := []rune(content); len(r) > mentionTextCap {
 		// 按 rune 截断（同 @文件引用语义）。
 		content = string(r[:mentionTextCap]) + "\n…（截断）"
