@@ -18,11 +18,15 @@ import (
 )
 
 // TurnSpec 是一个脚本回合：Tool 非空即工具调用回合（参数 Args 原样
-// 内嵌；工具真实执行——断言看得到真实效果），否则 Text 文本回合。
+// 内嵌；工具真实执行——断言看得到真实效果），否则 Text 文本回合；
+// User 非空是用户消息回合（spec 规则 130）——结束当前 Chat、以该文
+// 本开新 Chat（脚本 provider 跨 Chat 有状态，顺序消费）——多回合形
+// 态让 Chat 入口路径（auto-compact 等）可被场景触发。
 type TurnSpec struct {
 	Tool  string          `json:"tool"`
 	Args  json.RawMessage `json:"args"`
 	Text  string          `json:"text"`
+	User  string          `json:"user,omitempty"`
 	Usage *ai.Usage       `json:"usage,omitempty"`
 }
 
@@ -71,6 +75,12 @@ type Scenario struct {
 	// Prompt 是本场景的用户消息（默认「评测」）——@引用 等用户侧展
 	// 开据此驱动（spec 规则 76 的场景形态）。
 	Prompt string `json:"prompt,omitempty"`
+	// Asker 控制权限询问的回答（spec 规则 130）：默认 allow；"deny" 拒
+	// 绝一切询问——ask 拒绝流（blocked 工具结果）可被场景断言。
+	Asker string `json:"asker,omitempty"`
+	// BudgetDailyTokens 种进临时 dataDir 的 settings.json（spec 规则
+	// 130）——预算通知（near/over）路径可被场景触发；0 = 不种（不限）。
+	BudgetDailyTokens int `json:"budgetDailyTokens,omitempty"`
 }
 
 // Result 是一个场景的运行结果。
@@ -141,6 +151,15 @@ func Run(s Scenario, opts ...Option) Result {
 		return res
 	}
 	defer os.RemoveAll(dataDir)
+	// 预算旋钮（spec 规则 130）：种进 settings.json 再建服务——预算通
+	// 知路径可被场景触发。
+	if s.BudgetDailyTokens > 0 {
+		if err := os.WriteFile(filepath.Join(dataDir, "settings.json"),
+			[]byte(fmt.Sprintf(`{"budgetDailyTokens": %d}`, s.BudgetDailyTokens)), 0o644); err != nil {
+			res.Failures = append(res.Failures, err.Error())
+			return res
+		}
+	}
 	ws, err := os.MkdirTemp("", "zgo-eval-ws-*")
 	if err != nil {
 		res.Failures = append(res.Failures, err.Error())
@@ -166,7 +185,15 @@ func Run(s Scenario, opts ...Option) Result {
 	}
 	defer svc.Close()
 	svc.DisableAutoTitleForTesting()
-	svc.SetAsker(func(agent.AskRequest) agent.AskResponse { return agent.AskResponse{} })
+	// asker 旋钮（spec 规则 130）：默认自动放行；"deny" 拒绝一切询
+	// 问——ask 拒绝流可被场景断言。
+	if s.Asker == "deny" {
+		svc.SetAsker(func(agent.AskRequest) agent.AskResponse {
+			return agent.AskResponse{Deny: true}
+		})
+	} else {
+		svc.SetAsker(func(agent.AskRequest) agent.AskResponse { return agent.AskResponse{} })
+	}
 	provider := &scriptProvider{turns: s.Turns}
 	svc.UseProviderForTesting(func() ai.Provider { return provider })
 	if s.Trusted == nil || *s.Trusted {
@@ -186,8 +213,19 @@ func Run(s Scenario, opts ...Option) Result {
 	if prompt == "" {
 		prompt = "评测"
 	}
-	if err := svc.Chat(info.ID, prompt, func(ev agent.Event) { events = append(events, ev) }); err != nil {
-		res.Failures = append(res.Failures, "chat: "+err.Error())
+	// 多 Chat 形态（spec 规则 130）：首条 Chat 用 Prompt；User 回合依
+	// 序追加 Chat 边界——Chat 入口路径（auto-compact 预检）由此可触
+	// 发；脚本 provider 跨 Chat 顺序消费。
+	chats := []string{prompt}
+	for _, t := range s.Turns {
+		if t.User != "" {
+			chats = append(chats, t.User)
+		}
+	}
+	for _, p := range chats {
+		if err := svc.Chat(info.ID, p, func(ev agent.Event) { events = append(events, ev) }); err != nil {
+			res.Failures = append(res.Failures, "chat: "+err.Error())
+		}
 	}
 	res.Requests = provider.requests
 

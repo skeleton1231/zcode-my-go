@@ -978,6 +978,14 @@ dc907a4 (feat: glob and grep honor .gitignore)
    面 + 同一参数摘要 SummarizeArgs），展示行为（allow/ask/deny）、来
    源（规则 ID / 能力兜底）与理由；零副作用（不执行工具、不写规则）。
    未知工具/坏 JSON 明确报错；plan 模式拦截如实呈现。
+130. eval 深路径旋钮与场景：场景引擎三旋钮——turns[].user（用户消息
+   回合：结束当前 Chat 以该文本开新 Chat，脚本 provider 跨 Chat 顺序
+   消费——Chat 入口路径可被触发）；asker:"deny"（拒绝一切权限询问
+   ——ask 拒绝流可断言）；budgetDailyTokens（种进临时 settings——预
+   算通知可断言）。三个 CI 门禁场景：ask-deny-write（error:
+   permission 落转录）、budget-notice（越线 1 条 budget_notice 事
+   件）、compact-threshold（巨量回复后下一 Chat 入口 auto-compact
+   触发 1 条 compaction 事件）。
 
 
 125. 模型目录在线刷新：`zgo models --refresh`——按活动剖面拉端点模

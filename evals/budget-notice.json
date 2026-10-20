@@ -1,0 +1,12 @@
+{
+  "name": "budget-notice",
+  "description": "预算通知：日预算 100 token，单回合用量越线触发 over 通知事件",
+  "budgetDailyTokens": 100,
+  "turns": [
+    {"text": "完成", "usage": {"inputTokens": 200, "outputTokens": 10}}
+  ],
+  "expect": {
+    "event_count": {"budget_notice": 1},
+    "no_tool_errors": true
+  }
+}
