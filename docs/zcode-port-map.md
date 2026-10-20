@@ -523,6 +523,10 @@ provider）跑进浏览器；第二部分垫片把文件改动逐条落 IndexedD
 **skills CLI**（spec 规则 115）：zgo skills list/show——技能层终端可
    查（同一发现面与信任门；SkillBody 按根 FS 读内置层）。
 
+**agents 层信任门与 CLI**（spec 规则 116）：agentRoots 补信任门
+   （persona 是注入面——规则 53 的遗漏层）；zgo agents list/show 终端
+   可查。
+
 **@session 摘录参数化**（spec 规则 117）：`@session:<前缀>:N` 条数可
    调（默认 20 上限 200；坏后缀容错）——规则 97 的窗口旋钮。
 
