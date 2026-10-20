@@ -2237,8 +2237,61 @@ func (s *AgentService) ExportSessionHTML(id, dest string) error {
 		return fmt.Errorf("no session %s", id)
 	}
 	info := sess.Info()
-	doc := exporthtml.HTML(sess.Messages(), info.Title, s.resolve().Model, info.Workspace)
+	doc := exporthtml.HTMLWithMeta(sess.Messages(), info.Title,
+		s.mgr.SessionModel(id), info.Workspace, s.exportMeta(sess))
 	return os.WriteFile(dest, []byte(doc), 0o644)
+}
+
+// exportMeta 组装导出头元数据行（spec 规则 109）：真实模型（含会话
+// 覆盖）、token 用量、$ 成本（未知价省略）、回合数、谱系链（根到
+// 本会话的标题）。
+func (s *AgentService) exportMeta(sess *agent.Session) []string {
+	info := sess.Info()
+	model := s.mgr.SessionModel(info.ID)
+	u := sess.UsageTotal()
+	var out []string
+	out = append(out, fmt.Sprintf("用量 ↑%d ↓%d ⤒缓存读%d tokens",
+		u.InputTokens, u.OutputTokens, u.CacheReadTokens))
+	if price, ok := s.prices.Lookup(model); ok {
+		out = append(out, "≈ 成本 "+pricing.FormatUSD(pricing.CostMicro(price,
+			int64(u.InputTokens), int64(u.OutputTokens), int64(u.CacheReadTokens))))
+	}
+	if chain := s.lineageTitles(info); len(chain) > 1 {
+		out = append(out, "谱系 "+strings.Join(chain, " → "))
+	}
+	return out
+}
+
+// lineageTitles 沿 ParentID 上溯再反转（根到本会话）；环防御上限 10
+// 层。标题空用 ID 前 8 位。
+func (s *AgentService) lineageTitles(info agent.SessionInfo) []string {
+	var chain []string
+	seen := map[string]bool{info.ID: true}
+	title := info.Title
+	if title == "" {
+		title = info.ID[:8]
+	}
+	chain = append(chain, title)
+	pid := info.ParentID
+	for i := 0; pid != "" && i < 10 && !seen[pid]; i++ {
+		parent, ok := s.mgr.Get(pid)
+		if !ok {
+			break
+		}
+		seen[pid] = true
+		pi := parent.Info()
+		pt := pi.Title
+		if pt == "" {
+			pt = pi.ID[:8]
+		}
+		chain = append(chain, pt)
+		pid = pi.ParentID
+	}
+	// 反转成根→叶。
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	return chain
 }
 
 // AgentJobStates 返回会话的后台子代理快照（e2e 等待终态、后续 UI 面
@@ -2271,7 +2324,8 @@ func (s *AgentService) ExportSessionMarkdown(id, dest string) error {
 		return fmt.Errorf("no session %s", id)
 	}
 	info := sess.Info()
-	doc := exporthtml.Markdown(sess.Messages(), info.Title, s.resolve().Model, info.Workspace)
+	doc := exporthtml.MarkdownWithMeta(sess.Messages(), info.Title,
+		s.mgr.SessionModel(id), info.Workspace, s.exportMeta(sess))
 	return os.WriteFile(dest, []byte(doc), 0o644)
 }
 
