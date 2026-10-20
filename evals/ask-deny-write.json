@@ -1,0 +1,14 @@
+{
+  "name": "ask-deny-write",
+  "description": "ask 拒绝流：权限询问被拒后工具结果带 error: permission，文件不落盘",
+  "asker": "deny",
+  "turns": [
+    {"tool": "write", "args": {"path": "secret.txt", "content": "不应写入"}},
+    {"text": "已处理"}
+  ],
+  "expect": {
+    "transcript_contains": ["error: permission"],
+    "transcript_not_contains": ["已处理权限"],
+    "event_count": {"tool_execution_end": 1}
+  }
+}
