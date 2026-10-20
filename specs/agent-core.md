@@ -895,6 +895,13 @@ dc907a4 (feat: glob and grep honor .gitignore)
    （Prompts 清单 / GetPrompt 正文）+ resources（Resources 清单 /
    ReadResource 正文）。两侧生产路径同台：客户端的握手探测与服务器
    的 list/get 实现互为回归网（一侧改协议形状另一侧即红）。
+115. skills CLI：`zgo skills list [工作区]`（名/层级[工作区|全局|内
+   置]/描述，坏技能 ⚠ 行）与 `zgo skills show <名>`（SKILL.md 正文，
+   32KB 截断）。与 /skills 同一发现面（服务 Skills）但面向人——不建
+   会话不注入提示；信任门同款（未授信工作区不列其层）；SkillBody
+   按根 FS 读（内置层是 embed FS——os.ReadFile 读不到，经
+   LoadSkill 同源）。
+
 
 
 110. bash 工作目录参数：args.cwd——本次运行的起始目录（工作区相
